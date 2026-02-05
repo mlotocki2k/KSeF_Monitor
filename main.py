@@ -57,7 +57,7 @@ def main():
     try:
         # Load configuration
         logger.info("Loading configuration...")
-        config = ConfigManager("config.json")
+        config = ConfigManager("/data/config.json")
         logger.info("✓ Configuration loaded")
         
         # Initialize KSeF client
