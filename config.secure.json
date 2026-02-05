@@ -1,0 +1,15 @@
+{
+  "ksef": {
+    "environment": "test",
+    "nip": "1234567890",
+    "description": "KSeF API Configuration. Environment: 'test', 'demo', or 'prod'. Token loaded from environment or Docker secrets."
+  },
+  "pushover": {
+    "description": "Pushover notification settings. Credentials loaded from environment or Docker secrets."
+  },
+  "monitoring": {
+    "check_interval": 300,
+    "test_notification": false,
+    "description": "Monitoring settings. check_interval in seconds (300 = 5 minutes)."
+  }
+}

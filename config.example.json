@@ -1,0 +1,21 @@
+{
+  "ksef": {
+    "environment": "test",
+    "nip": "1234567890",
+    "token": "your-ksef-authorization-token-here",
+    "description": "KSeF API Configuration. Environment: 'test', 'demo', or 'prod'. Get token from KSeF portal."
+  },
+  "pushover": {
+    "user_key": "your-pushover-user-key-here",
+    "api_token": "your-pushover-app-token-here",
+    "description": "Pushover notification settings. Get credentials from https://pushover.net/"
+  },
+  "monitoring": {
+    "check_interval": 300,
+    "subject_types": ["Subject1", "Subject2"],
+    "date_type": "Invoicing",
+    "message_priority": 0,
+    "test_notification": false,
+    "description": "Monitoring settings. check_interval in seconds. subject_types: Subject1 (sprzedażowe), Subject2 (zakupowe). date_type: Issue (data wystawienia) | Invoicing (data przyjęcia w KSeF) | PermanentStorage (data trwałego zapisu) — default: Invoicing. message_priority: -2 (cisza) | -1 (cicho) | 0 (normalne, default) | 1 (wysoka) | 2 (pilne, wymaga potwierdzenia). test_notification: send test on startup."
+  }
+}
