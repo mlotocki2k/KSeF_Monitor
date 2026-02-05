@@ -7,6 +7,7 @@ Based on KSeF API v2.0 specification:
 https://github.com/CIRFMF/ksef-docs
 """
 
+import os
 import sys
 import signal
 import logging
@@ -57,7 +58,8 @@ def main():
     try:
         # Load configuration
         logger.info("Loading configuration...")
-        config = ConfigManager("/data/config.json")
+        config_path = "/data/config.json" if os.path.exists("/data/config.json") else "config.json"
+        config = ConfigManager(config_path)
         logger.info("✓ Configuration loaded")
         
         # Initialize KSeF client
