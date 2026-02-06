@@ -11,11 +11,22 @@
     "description": "Pushover notification settings. Get credentials from https://pushover.net/"
   },
   "monitoring": {
-    "check_interval": 300,
     "subject_types": ["Subject1", "Subject2"],
     "date_type": "Invoicing",
     "message_priority": 0,
     "test_notification": false,
-    "description": "Monitoring settings. check_interval in seconds. subject_types: Subject1 (sprzedażowe), Subject2 (zakupowe). date_type: Issue (data wystawienia) | Invoicing (data przyjęcia w KSeF) | PermanentStorage (data trwałego zapisu) — default: Invoicing. message_priority: -2 (cisza) | -1 (cicho) | 0 (normalne, default) | 1 (wysoka) | 2 (pilne, wymaga potwierdzenia). test_notification: send test on startup."
+    "description": "Monitoring settings. subject_types: Subject1 (sprzedażowe), Subject2 (zakupowe). date_type: Issue (data wystawienia) | Invoicing (data przyjęcia w KSeF) | PermanentStorage (data trwałego zapisu) — default: Invoicing. message_priority: -2 (cisza) | -1 (cicho) | 0 (normalne, default) | 1 (wysoka) | 2 (pilne, wymaga potwierdzenia). test_notification: send test on startup."
+  },
+  "schedule": {
+    "mode": "minutes",
+    "interval": 5,
+    "description": "Schedule configuration. MODES: 'simple' (seconds), 'minutes' (minutes), 'hourly' (hours), 'daily' (specific time), 'weekly' (specific days and time). For 'simple'/'minutes'/'hourly': set 'interval'. For 'daily': set 'time' (e.g., '09:00'). For 'weekly': set 'days' array (e.g., ['monday','friday']) and 'time'.",
+    "examples": {
+      "every_5_minutes": {"mode": "minutes", "interval": 5},
+      "every_2_hours": {"mode": "hourly", "interval": 2},
+      "daily_at_9am": {"mode": "daily", "time": "09:00"},
+      "weekly_workdays_9am": {"mode": "weekly", "days": ["monday", "tuesday", "wednesday", "thursday", "friday"], "time": "09:00"},
+      "twice_weekly": {"mode": "weekly", "days": ["monday", "thursday"], "time": "14:30"}
+    }
   }
 }

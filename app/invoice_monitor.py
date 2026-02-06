@@ -11,6 +11,8 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict, List
 
+from .scheduler import Scheduler
+
 logger = logging.getLogger(__name__)
 
 
@@ -36,7 +38,6 @@ class InvoiceMonitor:
         self.ksef = ksef_client
         self.pushover = pushover_notifier
         self.state_file = Path("/data/last_check.json")
-        self.check_interval = config.get("monitoring", "check_interval")
         self.subject_types = config.get("monitoring", "subject_types") or ["Subject1"]
 
         message_priority = config.get("monitoring", "message_priority")
@@ -44,6 +45,20 @@ class InvoiceMonitor:
             logger.warning(f"Invalid message_priority '{message_priority}', falling back to 0")
             message_priority = 0
         self.message_priority = message_priority
+
+        # Initialize scheduler with new flexible scheduling system
+        schedule_config = config.get("schedule")
+        if not schedule_config:
+            # Fallback to old check_interval for backwards compatibility
+            check_interval = config.get("monitoring", "check_interval")
+            if check_interval:
+                logger.warning("Using deprecated 'check_interval' - please migrate to 'schedule' configuration")
+                schedule_config = {"mode": "simple", "interval": check_interval}
+            else:
+                logger.warning("No schedule configuration found, using default: 5 minutes")
+                schedule_config = {"mode": "minutes", "interval": 5}
+
+        self.scheduler = Scheduler(schedule_config)
 
         logger.info(f"Invoice Monitor initialized, subject_types: {self.subject_types}, message_priority: {self.message_priority}")
     
@@ -207,31 +222,33 @@ class InvoiceMonitor:
         logger.info("=" * 60)
         logger.info(f"Environment: {self.ksef.environment}")
         logger.info(f"NIP: {self.ksef.nip}")
-        logger.info(f"Check interval: {self.check_interval} seconds")
+        self.scheduler._log_schedule_info()
         logger.info("=" * 60)
-        
+
         # Send startup notification
         self.pushover.send_notification(
             title="KSeF Monitor Started",
             message=f"Monitoring invoices for NIP: {self.ksef.nip}",
             priority=-1  # Quiet notification
         )
-        
+
         while True:
             try:
-                logger.info("Checking for new invoices...")
-                self.check_for_new_invoices()
-                
+                if self.scheduler.should_run():
+                    logger.info("Checking for new invoices...")
+                    self.check_for_new_invoices()
+                    logger.info(self.scheduler.get_next_run_info())
+                    logger.info("-" * 60)
+
             except Exception as e:
                 logger.error(f"Error during check: {e}", exc_info=True)
-                
+
                 # Send error notification
                 error_msg = f"Error occurred: {str(e)[:200]}"
                 self.pushover.send_error_notification(error_msg)
-            
-            logger.info(f"Waiting {self.check_interval} seconds until next check...")
-            logger.info("-" * 60)
-            time.sleep(self.check_interval)
+
+            # Wait until next scheduled run
+            self.scheduler.wait_until_next_run()
     
     def shutdown(self):
         """
