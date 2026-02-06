@@ -5,32 +5,49 @@ Sends push notifications via Pushover API
 
 import logging
 import requests
+from typing import Optional
+
+from .base_notifier import BaseNotifier
 
 logger = logging.getLogger(__name__)
 
 
-class PushoverNotifier:
-    """Send notifications via Pushover"""
-    
+class PushoverNotifier(BaseNotifier):
+    """Send notifications via Pushover mobile app"""
+
     API_URL = "https://api.pushover.net/1/messages.json"
-    
+
     def __init__(self, config):
         """
         Initialize Pushover notifier
-        
+
         Args:
-            config: ConfigManager instance
+            config: ConfigManager instance or dict with notifications configuration
         """
-        self.user_key = config.get("pushover", "user_key")
-        self.api_token = config.get("pushover", "api_token")
-        
-        if not self.user_key or not self.api_token:
-            logger.warning("Pushover credentials not configured")
-    
-    def send_notification(self, title: str, message: str, priority: int = 0, url: str = None) -> bool:
+        # Support both new notifications structure and legacy root-level pushover
+        notifications_config = config.get("notifications") or {}
+        pushover_config = notifications_config.get("pushover") or config.get("pushover") or {}
+
+        self.user_key = pushover_config.get("user_key")
+        self.api_token = pushover_config.get("api_token")
+
+        if not self.is_configured:
+            logger.debug("Pushover credentials not configured")
+
+    @property
+    def is_configured(self) -> bool:
+        """Check if Pushover credentials are configured"""
+        return bool(self.user_key and self.api_token)
+
+    @property
+    def channel_name(self) -> str:
+        """Return channel name for logging"""
+        return "Pushover"
+
+    def send_notification(self, title: str, message: str, priority: int = 0, url: Optional[str] = None) -> bool:
         """
         Send notification via Pushover
-        
+
         Args:
             title: Notification title
             message: Notification message
@@ -41,49 +58,49 @@ class PushoverNotifier:
                 1: High priority
                 2: Emergency (requires acknowledgment)
             url: Optional URL to include in notification
-            
+
         Returns:
             True if successful, False otherwise
         """
-        if not self.user_key or not self.api_token:
+        if not self.is_configured:
             logger.error("Pushover not configured - notification not sent")
             return False
-        
+
         try:
             payload = {
                 "token": self.api_token,
                 "user": self.user_key,
                 "title": title,
-                "message": message,
+                "message": message[:1024],  # Pushover max message length
                 "priority": priority
             }
-            
+
             if url:
                 payload["url"] = url
                 payload["url_title"] = "View in KSeF"
-            
+
             response = requests.post(self.API_URL, data=payload, timeout=10)
             response.raise_for_status()
-            
-            logger.info(f"Notification sent: {title}")
+
+            logger.info(f"Pushover notification sent: {title}")
             return True
-            
+
         except requests.exceptions.RequestException as e:
-            logger.error(f"Failed to send notification: {e}")
+            logger.error(f"Failed to send Pushover notification: {e}")
             if hasattr(e, 'response') and e.response is not None:
-                logger.error(f"Response: {e.response.text}")
+                logger.error(f"Pushover API response: {e.response.text}")
             return False
         except Exception as e:
-            logger.error(f"Unexpected error sending notification: {e}")
+            logger.error(f"Unexpected error sending Pushover notification: {e}")
             return False
-    
+
     def send_error_notification(self, error_message: str) -> bool:
         """
         Send error notification with high priority
-        
+
         Args:
             error_message: Error message to send
-            
+
         Returns:
             True if successful, False otherwise
         """
@@ -92,16 +109,16 @@ class PushoverNotifier:
             message=error_message[:1024],  # Pushover max message length
             priority=1  # High priority for errors
         )
-    
+
     def test_connection(self) -> bool:
         """
         Test Pushover connection by sending a test notification
-        
+
         Returns:
             True if test successful
         """
         return self.send_notification(
             title="KSeF Monitor Test",
-            message="Test notification - KSeF monitor is configured correctly!",
+            message="Test notification - Pushover is configured correctly!",
             priority=0
         )

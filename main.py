@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 KSeF Invoice Monitor - Main Entry Point
-Monitors KSeF API for new invoices and sends Pushover notifications
+Monitors KSeF API for new invoices and sends multi-channel notifications
 
 Based on KSeF API v2.0 specification:
 https://github.com/CIRFMF/ksef-docs
@@ -14,7 +14,7 @@ import logging
 
 from app.config_manager import ConfigManager
 from app.ksef_client import KSeFClient
-from app.pushover_notifier import PushoverNotifier
+from app.notifiers import NotificationManager
 from app.invoice_monitor import InvoiceMonitor
 
 # Configure logging
@@ -51,8 +51,9 @@ def main():
     global monitor
     
     logger.info("=" * 70)
-    logger.info("KSeF Invoice Monitor v2.0")
+    logger.info("KSeF Invoice Monitor v0.2")
     logger.info("Based on KSeF API v2.0 (github.com/CIRFMF/ksef-docs)")
+    logger.info("Multi-channel notifications: Pushover, Discord, Slack, Email, Webhook")
     logger.info("=" * 70)
     
     try:
@@ -66,23 +67,34 @@ def main():
         logger.info("Initializing KSeF client...")
         ksef_client = KSeFClient(config)
         logger.info("✓ KSeF client initialized")
-        
-        # Initialize Pushover notifier
-        logger.info("Initializing Pushover notifier...")
-        pushover_notifier = PushoverNotifier(config)
-        logger.info("✓ Pushover notifier initialized")
-        
-        # Test Pushover connection (optional)
-        if config.get("monitoring", "test_notification") is True:
-            logger.info("Sending test notification...")
-            if pushover_notifier.test_connection():
-                logger.info("✓ Test notification sent successfully")
+
+        # Initialize notification manager
+        logger.info("Initializing notification channels...")
+        notification_manager = NotificationManager(config)
+        logger.info("✓ Notification system initialized")
+
+        # Display enabled channels
+        if notification_manager.enabled_channels:
+            logger.info(f"  Enabled channels: {', '.join(notification_manager.enabled_channels)}")
+        else:
+            logger.warning("  No notification channels enabled - notifications disabled")
+
+        # Test notification connections (optional)
+        notifications_config = config.get("notifications") or {}
+        test_notification = notifications_config.get("test_notification")
+        if test_notification is None:
+            test_notification = config.get("monitoring", "test_notification", False)
+
+        if test_notification is True:
+            logger.info("Testing notification channels...")
+            if notification_manager.test_connection():
+                logger.info("✓ Notification test completed successfully")
             else:
-                logger.warning("⚠ Test notification failed")
-        
+                logger.warning("⚠ Notification test failed for all channels")
+
         # Initialize and run monitor
         logger.info("Initializing invoice monitor...")
-        monitor = InvoiceMonitor(config, ksef_client, pushover_notifier)
+        monitor = InvoiceMonitor(config, ksef_client, notification_manager)
         logger.info("✓ Invoice monitor initialized")
         
         # Register signal handlers for graceful shutdown

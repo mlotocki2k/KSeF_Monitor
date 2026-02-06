@@ -2,30 +2,52 @@
   "ksef": {
     "environment": "test",
     "nip": "1234567890",
-    "description": "KSeF API Configuration. Environment: 'test', 'demo', or 'prod'. Token loaded from environment or Docker secrets."
+    "description": "KSeF API Configuration. Environment: 'test', 'demo', or 'prod'. Token loaded from KSEF_TOKEN environment variable or Docker secret 'ksef_token'."
   },
-  "pushover": {
-    "description": "Pushover notification settings. Credentials loaded from environment or Docker secrets."
+  "notifications": {
+    "channels": ["pushover"],
+    "message_priority": 0,
+    "test_notification": false,
+    "description": "Multi-channel notification system. Enable channels by listing them in 'channels' array. All secrets loaded from environment variables or Docker secrets.",
+    "pushover": {
+      "description": "Pushover credentials loaded from PUSHOVER_USER_KEY and PUSHOVER_API_TOKEN (env vars or Docker secrets: pushover_user_key, pushover_api_token)"
+    },
+    "discord": {
+      "username": "KSeF Monitor",
+      "description": "Discord webhook URL loaded from DISCORD_WEBHOOK_URL (env var or Docker secret: discord_webhook_url)"
+    },
+    "slack": {
+      "username": "KSeF Monitor",
+      "icon_emoji": ":receipt:",
+      "description": "Slack webhook URL loaded from SLACK_WEBHOOK_URL (env var or Docker secret: slack_webhook_url)"
+    },
+    "email": {
+      "smtp_server": "smtp.gmail.com",
+      "smtp_port": 587,
+      "use_tls": true,
+      "username": "your-email@gmail.com",
+      "from_address": "ksef-monitor@yourdomain.com",
+      "to_addresses": ["recipient@example.com"],
+      "description": "Email password loaded from EMAIL_PASSWORD (env var or Docker secret: email_password). Configure SMTP settings here."
+    },
+    "webhook": {
+      "url": "https://your-server.com/webhook",
+      "method": "POST",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "timeout": 10,
+      "description": "Webhook token (if needed) loaded from WEBHOOK_TOKEN (env var or Docker secret: webhook_token) into Authorization header"
+    }
   },
   "monitoring": {
     "subject_types": ["Subject1", "Subject2"],
     "date_type": "Invoicing",
-    "message_priority": 0,
-    "test_notification": false,
-    "description": "Monitoring settings. subject_types: Subject1 (sprzedażowe), Subject2 (zakupowe). date_type: Issue | Invoicing | PermanentStorage (default: Invoicing). message_priority: -2 (cisza) | -1 (cicho) | 0 (normalne) | 1 (wysoka) | 2 (pilne). test_notification: send test on startup."
+    "description": "Monitoring settings. subject_types: Subject1 (sprzedażowe), Subject2 (zakupowe). date_type: Issue | Invoicing | PermanentStorage"
   },
   "schedule": {
     "mode": "minutes",
     "interval": 5,
-    "description": "Schedule configuration. MODES: 'simple' (seconds), 'minutes' (minutes), 'hourly' (hours), 'daily' (specific time), 'weekly' (specific days and time). For 'simple'/'minutes'/'hourly': set 'interval'. For 'daily': set 'time' (string or array, e.g., '09:00' or ['09:00','14:00','18:00']). For 'weekly': set 'days' array (e.g., ['monday','friday']) and 'time' (string or array).",
-    "examples": {
-      "every_5_minutes": {"mode": "minutes", "interval": 5},
-      "every_2_hours": {"mode": "hourly", "interval": 2},
-      "daily_at_9am": {"mode": "daily", "time": "09:00"},
-      "daily_3_times": {"mode": "daily", "time": ["09:00", "14:00", "18:00"]},
-      "weekly_workdays_9am": {"mode": "weekly", "days": ["monday", "tuesday", "wednesday", "thursday", "friday"], "time": "09:00"},
-      "weekly_multiple_times": {"mode": "weekly", "days": ["monday", "wednesday", "friday"], "time": ["08:00", "12:00", "16:00"]},
-      "twice_weekly": {"mode": "weekly", "days": ["monday", "thursday"], "time": "14:30"}
-    }
+    "description": "Schedule configuration. See config.example.json for all scheduling options and examples."
   }
 }

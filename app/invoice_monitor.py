@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Dict, List
 
 from .scheduler import Scheduler
+from .notifiers import NotificationManager
 
 logger = logging.getLogger(__name__)
 
@@ -25,22 +26,27 @@ class InvoiceMonitor:
     }
     DEFAULT_TITLE = "Nowa faktura w KSeF"
 
-    def __init__(self, config, ksef_client, pushover_notifier):
+    def __init__(self, config, ksef_client, notification_manager):
         """
         Initialize invoice monitor
 
         Args:
             config: ConfigManager instance
             ksef_client: KSeFClient instance
-            pushover_notifier: PushoverNotifier instance
+            notification_manager: NotificationManager instance
         """
         self.config = config
         self.ksef = ksef_client
-        self.pushover = pushover_notifier
+        self.notifier = notification_manager
         self.state_file = Path("/data/last_check.json")
         self.subject_types = config.get("monitoring", "subject_types") or ["Subject1"]
 
-        message_priority = config.get("monitoring", "message_priority")
+        # Get message priority from notifications section (with fallback to monitoring for backwards compatibility)
+        notifications_config = config.get("notifications") or {}
+        message_priority = notifications_config.get("message_priority")
+        if message_priority is None:
+            message_priority = config.get("monitoring", "message_priority", 0)
+
         if not isinstance(message_priority, int) or message_priority not in range(-2, 3):
             logger.warning(f"Invalid message_priority '{message_priority}', falling back to 0")
             message_priority = 0
@@ -151,7 +157,7 @@ class InvoiceMonitor:
                 found_any = True
 
                 message = self.format_invoice_message(invoice, subject_type)
-                success = self.pushover.send_notification(
+                success = self.notifier.send_notification(
                     title=title,
                     message=message,
                     priority=self.message_priority
@@ -226,7 +232,7 @@ class InvoiceMonitor:
         logger.info("=" * 60)
 
         # Send startup notification
-        self.pushover.send_notification(
+        self.notifier.send_notification(
             title="KSeF Monitor Started",
             message=f"Monitoring invoices for NIP: {self.ksef.nip}",
             priority=-1  # Quiet notification
@@ -245,7 +251,7 @@ class InvoiceMonitor:
 
                 # Send error notification
                 error_msg = f"Error occurred: {str(e)[:200]}"
-                self.pushover.send_error_notification(error_msg)
+                self.notifier.send_error_notification(error_msg)
 
             # Wait until next scheduled run
             self.scheduler.wait_until_next_run()
@@ -261,7 +267,7 @@ class InvoiceMonitor:
         self.ksef.revoke_current_session()
         
         # Send shutdown notification
-        self.pushover.send_notification(
+        self.notifier.send_notification(
             title="KSeF Monitor Stopped",
             message="Invoice monitoring has been stopped",
             priority=-1  # Quiet notification
