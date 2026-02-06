@@ -20,12 +20,14 @@
   "schedule": {
     "mode": "minutes",
     "interval": 5,
-    "description": "Schedule configuration. MODES: 'simple' (seconds), 'minutes' (minutes), 'hourly' (hours), 'daily' (specific time), 'weekly' (specific days and time). For 'simple'/'minutes'/'hourly': set 'interval'. For 'daily': set 'time' (e.g., '09:00'). For 'weekly': set 'days' array (e.g., ['monday','friday']) and 'time'.",
+    "description": "Schedule configuration. MODES: 'simple' (seconds), 'minutes' (minutes), 'hourly' (hours), 'daily' (specific time), 'weekly' (specific days and time). For 'simple'/'minutes'/'hourly': set 'interval'. For 'daily': set 'time' (string or array, e.g., '09:00' or ['09:00','14:00','18:00']). For 'weekly': set 'days' array (e.g., ['monday','friday']) and 'time' (string or array).",
     "examples": {
       "every_5_minutes": {"mode": "minutes", "interval": 5},
       "every_2_hours": {"mode": "hourly", "interval": 2},
       "daily_at_9am": {"mode": "daily", "time": "09:00"},
+      "daily_3_times": {"mode": "daily", "time": ["09:00", "14:00", "18:00"]},
       "weekly_workdays_9am": {"mode": "weekly", "days": ["monday", "tuesday", "wednesday", "thursday", "friday"], "time": "09:00"},
+      "weekly_multiple_times": {"mode": "weekly", "days": ["monday", "wednesday", "friday"], "time": ["08:00", "12:00", "16:00"]},
       "twice_weekly": {"mode": "weekly", "days": ["monday", "thursday"], "time": "14:30"}
     }
   }

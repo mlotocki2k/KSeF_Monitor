@@ -34,14 +34,15 @@ class Scheduler:
                 For 'hourly' mode:
                     interval: hours between checks
                 For 'daily' mode:
-                    time: "HH:MM" - time of day to run
+                    time: "HH:MM" or ["HH:MM", "HH:MM", ...] - time(s) of day to run
                 For 'weekly' mode:
                     days: list of weekday names (e.g., ['monday', 'friday'])
-                    time: "HH:MM" - time of day to run
+                    time: "HH:MM" or ["HH:MM", "HH:MM", ...] - time(s) of day to run
         """
         self.mode = config.get('mode', 'simple').lower()
         self.config = config
         self.last_run = None
+        self.completed_times_today = set()  # Track completed times for current day
 
         self._validate_config()
         logger.info(f"Scheduler initialized with mode: {self.mode}")
@@ -58,13 +59,15 @@ class Scheduler:
                 raise ValueError(f"Invalid interval for {self.mode} mode: {interval}")
 
         elif self.mode in ['daily', 'weekly']:
-            time_str = self.config.get('time')
-            if not time_str:
+            time_config = self.config.get('time')
+            if not time_config:
                 raise ValueError(f"Missing 'time' for {self.mode} mode")
+
+            # Validate time(s) - can be string or list
             try:
-                self._parse_time(time_str)
+                self._parse_times(time_config)
             except ValueError as e:
-                raise ValueError(f"Invalid time format '{time_str}': {e}")
+                raise ValueError(f"Invalid time format: {e}")
 
             if self.mode == 'weekly':
                 days = self.config.get('days', [])
@@ -84,6 +87,26 @@ class Scheduler:
         except Exception as e:
             raise ValueError(f"Time must be in HH:MM format: {e}")
 
+    def _parse_times(self, time_config) -> List[dt_time]:
+        """
+        Parse time configuration - can be single string or list of strings
+
+        Args:
+            time_config: Either "HH:MM" or ["HH:MM", "HH:MM", ...]
+
+        Returns:
+            List of dt_time objects, sorted chronologically
+        """
+        if isinstance(time_config, str):
+            return [self._parse_time(time_config)]
+        elif isinstance(time_config, list):
+            if not time_config:
+                raise ValueError("Time list cannot be empty")
+            times = [self._parse_time(t) for t in time_config]
+            return sorted(times)
+        else:
+            raise ValueError("Time must be a string or list of strings")
+
     def _log_schedule_info(self):
         """Log human-readable schedule information"""
         if self.mode == 'simple':
@@ -99,14 +122,22 @@ class Scheduler:
             logger.info(f"  Schedule: Every {interval} hour(s)")
 
         elif self.mode == 'daily':
-            time_str = self.config['time']
-            logger.info(f"  Schedule: Daily at {time_str}")
+            times = self._parse_times(self.config['time'])
+            if len(times) == 1:
+                logger.info(f"  Schedule: Daily at {times[0].strftime('%H:%M')}")
+            else:
+                times_str = ', '.join(t.strftime('%H:%M') for t in times)
+                logger.info(f"  Schedule: Daily at {times_str} ({len(times)} times per day)")
 
         elif self.mode == 'weekly':
             days = self.config['days']
-            time_str = self.config['time']
+            times = self._parse_times(self.config['time'])
             days_str = ', '.join(d.capitalize() for d in days)
-            logger.info(f"  Schedule: Weekly on {days_str} at {time_str}")
+            if len(times) == 1:
+                logger.info(f"  Schedule: Weekly on {days_str} at {times[0].strftime('%H:%M')}")
+            else:
+                times_str = ', '.join(t.strftime('%H:%M') for t in times)
+                logger.info(f"  Schedule: Weekly on {days_str} at {times_str} ({len(times)} times per day)")
 
     def should_run(self) -> bool:
         """
@@ -143,18 +174,29 @@ class Scheduler:
                 return True
 
         elif self.mode == 'daily':
-            target_time = self._parse_time(self.config['time'])
+            times = self._parse_times(self.config['time'])
             current_time = now.time()
 
-            # Check if we've passed target time since last run
-            if (current_time >= target_time and
-                (self.last_run.date() < now.date() or
-                 self.last_run.time() < target_time)):
-                self.last_run = now
-                return True
+            # Reset completed times if it's a new day
+            if self.last_run and self.last_run.date() < now.date():
+                self.completed_times_today = set()
+
+            # Find next scheduled time that hasn't been completed today
+            for target_time in times:
+                time_key = target_time.strftime('%H:%M')
+                if time_key in self.completed_times_today:
+                    continue
+
+                # Check if we've passed this target time
+                if current_time >= target_time:
+                    self.last_run = now
+                    self.completed_times_today.add(time_key)
+                    return True
+
+            return False
 
         elif self.mode == 'weekly':
-            target_time = self._parse_time(self.config['time'])
+            times = self._parse_times(self.config['time'])
             current_time = now.time()
             current_weekday_num = now.weekday()
             current_weekday = self.VALID_WEEKDAYS[current_weekday_num]
@@ -164,12 +206,23 @@ class Scheduler:
             if current_weekday not in scheduled_days:
                 return False
 
-            # Check if we've passed target time today and haven't run yet
-            if (current_time >= target_time and
-                (self.last_run.date() < now.date() or
-                 (self.last_run.date() == now.date() and self.last_run.time() < target_time))):
-                self.last_run = now
-                return True
+            # Reset completed times if it's a new day
+            if self.last_run and self.last_run.date() < now.date():
+                self.completed_times_today = set()
+
+            # Find next scheduled time that hasn't been completed today
+            for target_time in times:
+                time_key = target_time.strftime('%H:%M')
+                if time_key in self.completed_times_today:
+                    continue
+
+                # Check if we've passed this target time
+                if current_time >= target_time:
+                    self.last_run = now
+                    self.completed_times_today.add(time_key)
+                    return True
+
+            return False
 
         return False
 
@@ -211,34 +264,46 @@ class Scheduler:
             return "Next check immediately"
 
         elif self.mode == 'daily':
-            target_time = self._parse_time(self.config['time'])
-            today_target = datetime.combine(now.date(), target_time)
+            times = self._parse_times(self.config['time'])
+            current_time = now.time()
 
-            if now.time() < target_time:
-                return f"Next check today at {self.config['time']}"
-            else:
-                return f"Next check tomorrow at {self.config['time']}"
+            # Find next time today that hasn't been completed
+            for target_time in times:
+                time_key = target_time.strftime('%H:%M')
+                if time_key not in self.completed_times_today and current_time < target_time:
+                    return f"Next check today at {time_key}"
+
+            # All times for today are done or passed, show first time tomorrow
+            next_time = times[0].strftime('%H:%M')
+            return f"Next check tomorrow at {next_time}"
 
         elif self.mode == 'weekly':
-            target_time = self._parse_time(self.config['time'])
+            times = self._parse_times(self.config['time'])
             scheduled_days = [self.WEEKDAY_MAP[day.lower()] for day in self.config['days']]
             current_weekday = now.weekday()
+            current_time = now.time()
+
+            # Check if there's a time remaining today (if today is a scheduled day)
+            if current_weekday in scheduled_days:
+                for target_time in times:
+                    time_key = target_time.strftime('%H:%M')
+                    if time_key not in self.completed_times_today and current_time < target_time:
+                        return f"Next check today at {time_key}"
 
             # Find next scheduled day
-            next_days = [d for d in scheduled_days if d > current_weekday or
-                        (d == current_weekday and now.time() < target_time)]
+            next_days = [d for d in scheduled_days if d > current_weekday]
 
             if next_days:
                 next_day = min(next_days)
                 next_day_name = self.VALID_WEEKDAYS[next_day]
-                if next_day == current_weekday:
-                    return f"Next check today at {self.config['time']}"
-                return f"Next check on {next_day_name.capitalize()} at {self.config['time']}"
+                next_time = times[0].strftime('%H:%M')
+                return f"Next check on {next_day_name.capitalize()} at {next_time}"
             else:
                 # Next week
                 next_day = min(scheduled_days)
                 next_day_name = self.VALID_WEEKDAYS[next_day]
-                return f"Next check next {next_day_name.capitalize()} at {self.config['time']}"
+                next_time = times[0].strftime('%H:%M')
+                return f"Next check next {next_day_name.capitalize()} at {next_time}"
 
         return "Unknown"
 
