@@ -14,7 +14,7 @@ Bazuje na oficjalnej specyfikacji API: https://github.com/CIRFMF/ksef-docs
 ```
 ksef_monitor_v0_1/
 ├── main.py                      # Entry point — logging, signal handling, bootstrap
-├── app/
+├── app/                         # Application modules
 │   ├── __init__.py
 │   ├── config_manager.py        # Wczytanie i walidacja config.json
 │   ├── secrets_manager.py       # Sekretne wartości z env / Docker secrets / config
@@ -22,17 +22,38 @@ ksef_monitor_v0_1/
 │   ├── invoice_monitor.py       # Główna pętla monitorowania + formatowanie
 │   ├── pushover_notifier.py     # Klient API Pushover
 │   └── scheduler.py             # Elastyczny system schedulowania (5 trybów)
-├── config.example.json          # Szablon konfiguracji
-├── .env.example                 # Szablon zmiennych środowiska
-├── requirements.txt             # Zależności Python
-├── Dockerfile                   # Obraz kontenerowy (Python 3.11-slim)
-├── docker-compose.yml           # Uruchomienie podstawowe
-├── docker-compose.env.yml       # Uruchomienie z plikiem .env
-├── docker-compose.secrets.yml   # Produkcja — Docker Swarm secrets
-└── .gitignore
+├── docs/                        # Documentation
+│   ├── QUICKSTART.md            # Quick start guide
+│   ├── SECURITY.md              # Security best practices
+│   ├── TESTING.md               # Testing guide
+│   ├── PROJECT_STRUCTURE.md     # Project architecture
+│   ├── IDE_TROUBLESHOOTING.md   # IDE setup help
+│   └── INDEX.md                 # Documentation index
+├── examples/                    # Example configuration files
+│   ├── config.example.json      # Configuration template
+│   ├── config.secure.json       # Config for Docker secrets
+│   └── .env.example             # Environment variables template
+├── requirements.txt             # Python dependencies
+├── Dockerfile                   # Docker image definition
+├── docker-compose.yml           # Basic Docker Compose setup
+├── docker-compose.env.yml       # Docker Compose with .env
+├── docker-compose.secrets.yml   # Docker Compose with secrets
+├── LICENSE                      # MIT License
+└── README.md                    # This file
 ```
 
 Katalog `data/` powstaje w runtime i zawiera plik stanu `last_check.json`.
+
+---
+
+## Dokumentacja
+
+- 📖 [QUICKSTART.md](docs/QUICKSTART.md) — Szybki start w 5 minut
+- 🔒 [SECURITY.md](docs/SECURITY.md) — Najlepsze praktyki bezpieczeństwa
+- 🧪 [TESTING.md](docs/TESTING.md) — Przewodnik testowania
+- 🏗️ [PROJECT_STRUCTURE.md](docs/PROJECT_STRUCTURE.md) — Architektura projektu
+- 💻 [IDE_TROUBLESHOOTING.md](docs/IDE_TROUBLESHOOTING.md) — Pomoc z konfiguracją IDE
+- 📚 [INDEX.md](docs/INDEX.md) — Indeks dokumentacji
 
 ---
 
@@ -54,7 +75,7 @@ Katalog `data/` powstaje w runtime i zawiera plik stanu `last_check.json`.
 
 ## Konfiguracja
 
-Skopiuj `config.example.json` do `config.json` i uzupełnij wartości.
+Skopiuj `examples/config.example.json` do `config.json` i uzupełnij wartości.
 
 ### Sekcja `ksef`
 
@@ -173,7 +194,7 @@ Trzy wartości (`token`, `user_key`, `api_token`) mogą być dostarczone na trzy
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-cp config.example.json config.json   # uzupełnij wartości
+cp examples/config.example.json config.json   # uzupełnij wartości
 python main.py
 ```
 
@@ -182,7 +203,7 @@ python main.py
 Sekretne wartości wpisane bezpośrednio w `config.json`. Najprostsze podejście do testowania.
 
 ```bash
-cp config.example.json config.json   # uzupełnij wszystkie wartości
+cp examples/config.example.json config.json   # uzupełnij wszystkie wartości
 docker compose -f docker-compose.yml up -d
 ```
 
@@ -191,8 +212,8 @@ docker compose -f docker-compose.yml up -d
 Sekretne wartości w osobnym pliku `.env`. Konfiguracja podzielona na `config.secure.json` (bez sekretów) i `.env` (sam sekrety).
 
 ```bash
-cp config.example.json config.secure.json   # uzupełnij tylko pola niesekretne
-cp .env.example .env                        # uzupełnij KSEF_TOKEN, PUSHOVER_*
+cp examples/config.secure.json config.secure.json   # lub dostosuj ręcznie
+cp examples/.env.example .env                       # uzupełnij KSEF_TOKEN, PUSHOVER_*
 chmod 600 .env
 docker compose -f docker-compose.env.yml up -d
 ```
@@ -208,7 +229,7 @@ echo "twoj-pushover-user-key"   | docker secret create pushover_user_key -
 echo "twoj-pushover-api-token"  | docker secret create pushover_api_token -
 
 # config.secure.json bez sekretów
-cp config.example.json config.secure.json
+cp examples/config.secure.json config.secure.json
 
 # Deploy
 docker swarm init   # jeśli jeszcze nie zrobione

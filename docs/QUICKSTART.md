@@ -38,8 +38,8 @@ chmod +x setup.sh
 **Step 3: Configure**
 ```bash
 # Copy templates
-cp .env.example .env
-cp config.secure.json config.json
+cp examples/.env.example .env
+cp examples/config.secure.json config.json
 cp docker-compose.env.yml docker-compose.yml
 
 # Edit .env with your credentials
@@ -81,7 +81,7 @@ echo "your-pushover-api-token" | docker secret create pushover_api_token -
 docker secret ls
 
 # Copy config
-cp config.secure.json config.json
+cp examples/config.secure.json config.json
 
 # Deploy
 docker stack deploy -c docker-compose.secrets.yml ksef
@@ -255,7 +255,7 @@ chmod 600 .env
 ```
 
 ### IDE import errors
-See [IDE_TROUBLESHOOTING.md](IDE_TROUBLESHOOTING.md)
+See [IDE_TROUBLESHOOTING.md](./IDE_TROUBLESHOOTING.md)
 
 This is just an IDE issue - the code runs fine!
 
@@ -283,9 +283,9 @@ ksef-invoice-monitor/
 ## Next Steps
 
 1. **Read the docs:**
-   - [README.md](README.md) - Full documentation
-   - [SECURITY.md](SECURITY.md) - Security best practices
-   - [PROJECT_STRUCTURE.md](PROJECT_STRUCTURE.md) - Architecture details
+   - [README.md](../README.md) - Full documentation
+   - [SECURITY.md](./SECURITY.md) - Security best practices
+   - [PROJECT_STRUCTURE.md](./PROJECT_STRUCTURE.md) - Architecture details
 
 2. **Customize:**
    - Change check interval
@@ -322,4 +322,4 @@ ksef-invoice-monitor/
 
 **Ready to go! Your KSeF invoices will be monitored automatically.**
 
-For detailed documentation, see [README.md](README.md)
+For detailed documentation, see [README.md](../README.md)
