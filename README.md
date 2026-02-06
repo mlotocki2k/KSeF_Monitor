@@ -1,5 +1,8 @@
 # KSeF Invoice Monitor v0.1
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
+
 Monitor faktur w Krajowym Systemie e-Faktur (KSeF). Aplikacja cyklicznie pobiera metadata faktur z API KSeF v2 i wysyła powiadomienia przez Pushover o nowych fakturach sprzedażowych i/lub zakupowych.
 
 Bazuje na oficjalnej specyfikacji API: https://github.com/CIRFMF/ksef-docs
@@ -398,6 +401,21 @@ python3 -m json.tool config.json
 
 ---
 
+## Licencja
+
+Projekt udostępniony na licencji MIT License. Zobacz plik [LICENSE](LICENSE) po szczegóły.
+
+**Co to oznacza:**
+- ✅ Wolno używać komercyjnie
+- ✅ Wolno modyfikować i dostosowywać
+- ✅ Wolno dystrybuować
+- ✅ Wolno używać prywatnie
+- ⚠️ Bez gwarancji
+
+---
+
 ## Zastrzeżenia
 
 Niezależne narzędzie, nie afiliowane z Ministerstwa Finansów ani KSeF. Korzystaj na własne ryzyko i zgodnie z regulaminami KSeF.
+
+**Oprogramowanie dostarczane "TAK JAK JEST", bez jakichkolwiek gwarancji.** Autorzy nie ponoszą odpowiedzialności za jakiekolwiek szkody wynikające z użytkowania tego oprogramowania.
