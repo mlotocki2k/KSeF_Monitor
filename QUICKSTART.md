@@ -184,6 +184,11 @@ Edit `config.json` to customize:
 {"mode": "weekly", "days": ["monday", "wednesday", "friday"], "time": ["08:00", "16:00"]}
 ```
 
+**Validation:**
+- interval-based modes (`simple`, `minutes`, `hourly`): require positive `interval`
+- time-based modes (`daily`, `weekly`): require `time` in HH:MM format
+- `weekly` mode: requires `days` array with valid weekday names
+
 Secrets are in `.env` (or Docker secrets):
 ```bash
 KSEF_TOKEN=...

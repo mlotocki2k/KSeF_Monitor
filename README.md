@@ -121,6 +121,29 @@ Elastyczny system schedulowania z 5 trybami:
 
 **Uwaga:** Stary parametr `check_interval` w sekcji `monitoring` nadal działa dla kompatybilności wstecznej, ale zaleca się migrację do nowej sekcji `schedule`.
 
+### Walidacja konfiguracji
+
+Aplikacja automatycznie waliduje konfigurację przy starcie:
+
+**Wymagania dla trybów interval-based (`simple`, `minutes`, `hourly`):**
+- Pole `interval` musi być liczbą dodatnią
+
+**Wymagania dla trybów time-based (`daily`, `weekly`):**
+- Pole `time` jest wymagane (może być string lub array)
+- Format czasu: `HH:MM` (godziny 0-23, minuty 0-59)
+- Dla `weekly`: pole `days` jest wymagane (niepusta lista nazw dni tygodnia)
+
+**Dozwolone nazwy dni:** `monday`, `tuesday`, `wednesday`, `thursday`, `friday`, `saturday`, `sunday`
+
+**Przykłady błędów walidacji:**
+```
+❌ Missing required field 'interval' for schedule mode 'minutes'
+❌ Missing required field 'time' for schedule mode 'daily'
+❌ Invalid hour in '25:00'. Hour must be 0-23
+❌ Field 'schedule.time' cannot be an empty list
+❌ Invalid weekday: mondayy
+```
+
 ---
 
 ## Sekretne wartości
