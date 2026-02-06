@@ -15,6 +15,13 @@ try:
 except ImportError:
     from app.secrets_manager import SecretsManager
 
+# Optional timezone support
+try:
+    import pytz
+    PYTZ_AVAILABLE = True
+except ImportError:
+    PYTZ_AVAILABLE = False
+
 logger = logging.getLogger(__name__)
 
 
@@ -136,6 +143,9 @@ class ConfigManager:
             self._validate_notifications(config["notifications"])
         else:
             logger.warning("No 'notifications' section found - notifications disabled")
+
+        # Validate timezone (optional, defaults to Europe/Warsaw)
+        self._validate_timezone(config)
 
     def _validate_schedule(self, schedule: Dict[str, Any]):
         """
@@ -293,6 +303,43 @@ class ConfigManager:
         if method not in ["GET", "POST", "PUT"]:
             raise ValueError(f"Invalid webhook method: '{method}'. Valid methods: GET, POST, PUT")
 
+    def _validate_timezone(self, config: Dict[str, Any]):
+        """
+        Validate timezone configuration and set default if not provided
+
+        Args:
+            config: Configuration dictionary
+
+        Raises:
+            ValueError: If timezone is invalid
+        """
+        # Get timezone from monitoring section or root level
+        timezone = config.get("monitoring", {}).get("timezone") or config.get("timezone")
+
+        if not timezone:
+            # Set default timezone
+            default_tz = "Europe/Warsaw"
+            if "monitoring" not in config:
+                config["monitoring"] = {}
+            config["monitoring"]["timezone"] = default_tz
+            logger.info(f"No timezone configured, using default: {default_tz}")
+            return
+
+        # Validate timezone if pytz is available
+        if PYTZ_AVAILABLE:
+            try:
+                pytz.timezone(timezone)
+                logger.info(f"Timezone configured: {timezone}")
+            except pytz.exceptions.UnknownTimeZoneError:
+                logger.warning(f"Invalid timezone '{timezone}', falling back to 'Europe/Warsaw'")
+                logger.warning(f"Valid timezones: https://en.wikipedia.org/wiki/List_of_tz_database_time_zones")
+                config["monitoring"]["timezone"] = "Europe/Warsaw"
+        else:
+            # pytz not available, accept timezone but warn
+            logger.warning("pytz not installed - timezone validation disabled")
+            logger.warning("Install pytz for timezone support: pip install pytz")
+            logger.info(f"Using configured timezone without validation: {timezone}")
+
     def get(self, *keys: str) -> Optional[Any]:
         """
         Get configuration value using dot notation
@@ -315,6 +362,31 @@ class ConfigManager:
                 return None
         return value
     
+    def get_timezone(self) -> str:
+        """
+        Get configured timezone
+
+        Returns:
+            Timezone string (e.g., "Europe/Warsaw")
+        """
+        return self.get("monitoring", "timezone") or "Europe/Warsaw"
+
+    def get_timezone_object(self):
+        """
+        Get timezone as pytz timezone object
+
+        Returns:
+            pytz timezone object or None if pytz not available
+
+        Raises:
+            ImportError: If pytz is not installed
+        """
+        if not PYTZ_AVAILABLE:
+            raise ImportError("pytz is required for timezone support. Install with: pip install pytz")
+
+        tz_name = self.get_timezone()
+        return pytz.timezone(tz_name)
+
     def reload(self):
         """Reload configuration from file"""
         self.config = self.load_config()

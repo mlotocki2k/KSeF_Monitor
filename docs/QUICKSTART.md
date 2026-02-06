@@ -292,7 +292,8 @@ Edit `config.json` to customize:
     }
   },
   "monitoring": {
-    "subject_types": ["Subject1", "Subject2"]  // Invoice types to monitor
+    "subject_types": ["Subject1", "Subject2"],  // Invoice types to monitor
+    "timezone": "Europe/Warsaw"                // IANA timezone (default)
   },
   "schedule": {
     "mode": "minutes",          // Scheduling mode

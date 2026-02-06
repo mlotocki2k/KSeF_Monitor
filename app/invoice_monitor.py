@@ -14,6 +14,13 @@ from typing import Dict, List
 from .scheduler import Scheduler
 from .notifiers import NotificationManager
 
+# Optional timezone support
+try:
+    import pytz
+    PYTZ_AVAILABLE = True
+except ImportError:
+    PYTZ_AVAILABLE = False
+
 logger = logging.getLogger(__name__)
 
 
@@ -43,6 +50,13 @@ class InvoiceMonitor:
         self.state_file = Path("/data/last_check.json")
         self.subject_types = config.get("monitoring", "subject_types") or ["Subject1"]
 
+        # Get timezone from config
+        if PYTZ_AVAILABLE:
+            self.timezone = config.get_timezone_object()
+        else:
+            logger.warning("pytz not available - timezone support disabled, using system timezone")
+            self.timezone = None
+
         # Get message priority from notifications section (with fallback to monitoring for backwards compatibility)
         notifications_config = config.get("notifications") or {}
         message_priority = notifications_config.get("message_priority")
@@ -69,7 +83,44 @@ class InvoiceMonitor:
         self.scheduler = Scheduler(schedule_config)
 
         logger.info(f"Invoice Monitor initialized, subject_types: {self.subject_types}, message_priority: {self.message_priority}")
-    
+
+    def _get_now(self) -> datetime:
+        """
+        Get current datetime in configured timezone
+
+        Returns:
+            Timezone-aware datetime object, or naive datetime if pytz not available
+        """
+        if self.timezone:
+            return datetime.now(self.timezone)
+        else:
+            return datetime.now()
+
+    def _parse_datetime(self, date_string: str) -> datetime:
+        """
+        Parse datetime string and convert to configured timezone
+
+        Args:
+            date_string: ISO format datetime string
+
+        Returns:
+            Timezone-aware datetime object in configured timezone
+        """
+        try:
+            dt = datetime.fromisoformat(date_string)
+
+            # If datetime is naive, assume it's in configured timezone
+            if dt.tzinfo is None and self.timezone:
+                dt = self.timezone.localize(dt)
+            # If datetime has timezone info and we have a configured timezone, convert to it
+            elif dt.tzinfo is not None and self.timezone:
+                dt = dt.astimezone(self.timezone)
+
+            return dt
+        except (ValueError, TypeError) as e:
+            logger.warning(f"Failed to parse datetime '{date_string}': {e}")
+            raise
+
     def load_state(self) -> Dict:
         """
         Load last check state from file
@@ -128,13 +179,14 @@ class InvoiceMonitor:
         """
         Check for new invoices and send notifications.
         Sends one query per subject_type (API accepts only one at a time).
+        All dates use configured timezone (default: Europe/Warsaw).
         """
         state = self.load_state()
 
-        now = datetime.now()
+        now = self._get_now()
         if state.get("last_check"):
             try:
-                date_from = datetime.fromisoformat(state["last_check"])
+                date_from = self._parse_datetime(state["last_check"])
             except (ValueError, TypeError):
                 logger.warning("Invalid last_check date, using 24h ago")
                 date_from = now - timedelta(hours=24)
@@ -182,6 +234,7 @@ class InvoiceMonitor:
         if not found_any:
             logger.info("No new invoices found")
 
+        # Save timestamp in ISO format (includes timezone if available)
         state["last_check"] = now.isoformat()
         state["seen_invoices"] = list(seen_invoices)[-1000:]
         self.save_state(state)

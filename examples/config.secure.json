@@ -43,7 +43,8 @@
   "monitoring": {
     "subject_types": ["Subject1", "Subject2"],
     "date_type": "Invoicing",
-    "description": "Monitoring settings. subject_types: Subject1 (sprzedażowe), Subject2 (zakupowe). date_type: Issue | Invoicing | PermanentStorage"
+    "timezone": "Europe/Warsaw",
+    "description": "Monitoring settings. subject_types: Subject1 (sprzedażowe), Subject2 (zakupowe). date_type: Issue | Invoicing | PermanentStorage. timezone: IANA timezone name (default: Europe/Warsaw)"
   },
   "schedule": {
     "mode": "minutes",

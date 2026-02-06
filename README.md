@@ -21,12 +21,15 @@ Bazuje na oficjalnej specyfikacji API: https://github.com/CIRFMF/ksef-docs
 ```
 ksef_monitor_v0_1/
 ├── main.py                      # Entry point — logging, signal handling, bootstrap
+├── test_invoice_pdf.py          # [IN DEV] Test script for PDF generation
 ├── app/                         # Application modules
 │   ├── __init__.py
 │   ├── config_manager.py        # Wczytanie i walidacja config.json
 │   ├── secrets_manager.py       # Sekretne wartości z env / Docker secrets / config
 │   ├── ksef_client.py           # Klient API KSeF v2 (autentykacja + zapytania)
 │   ├── invoice_monitor.py       # Główna pętla monitorowania + formatowanie
+│   ├── invoice_pdf_generator.py # [IN DEV] XML parser + PDF generator
+│   ├── prometheus_metrics.py    # Prometheus metrics endpoint
 │   ├── scheduler.py             # Elastyczny system schedulowania (5 trybów)
 │   └── notifiers/               # Multi-channel notification system
 │       ├── __init__.py
@@ -88,9 +91,12 @@ Katalog `data/` powstaje w runtime i zawiera plik stanu `last_check.json`.
 
 | Pakiet | Wersja | Przeznaczenie |
 |---|---|---|
-| `requests` | 2.31.0 | HTTP calls do KSeF API i Pushover API |
-| `python-dateutil` | 2.8.2 | Parsing dat |
+| `requests` | 2.31.0 | HTTP calls do KSeF API i webhook notifiers |
+| `python-dateutil` | 2.8.2 | Parsing dat w odpowiedziach API |
 | `cryptography` | >=41.0.0 | RSA-OAEP encryption tokena w auth flow |
+| `pytz` | 2024.1 | Obsługa stref czasowych (timezone support) |
+| `prometheus-client` | 0.19.0 | Eksport metryk Prometheus |
+| `reportlab` | 4.0.7 | **[Opcjonalny]** Generowanie PDF faktur (IN DEV) |
 
 ---
 
@@ -269,6 +275,7 @@ Pełna dokumentacja: [docs/NOTIFICATIONS.md](docs/NOTIFICATIONS.md)
 |---|---|---|
 | `subject_types` | `["Subject1", "Subject2"]` | Typy faktur do monitorowania. `Subject1` = sprzedażowe (Ty = sprzedawca), `Subject2` = zakupowe (Ty = nabywca). Jedno zapytanie API na każdy typ. |
 | `date_type` | `"Invoicing"` | Typ daty w zakresie zapytania. Dozwolone wartości: `Issue` (data wystawienia), `Invoicing` (data przyjęcia w KSeF), `PermanentStorage` (data trwałego zapisu). Fallback na `Invoicing` przy niepoprawnej wartości. |
+| `timezone` | `"Europe/Warsaw"` | Strefa czasowa używana do wszystkich operacji z datami. Nazwa według standardu IANA (np. `Europe/Warsaw`, `America/New_York`). Zobacz [listę stref czasowych](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones). Fallback na `Europe/Warsaw` przy niepoprawnej wartości. |
 | `message_priority` | `0` | Priority powiadomień Pushover dla nowych faktur. `-2` cisza \| `-1` cicho \| `0` normalne \| `1` wysoka \| `2` pilne (wymaga potwierdzenia). Fallback na `0`. |
 | `test_notification` | `false` | Jeśli `true` — wysyła testowe powiadomienie przy starcie aplikacji. |
 
@@ -557,6 +564,7 @@ Endpoint: `POST /v2/invoices/query/metadata`
 - Jedno zapytanie na `subjectType` — iteracja po liście `subject_types` z konfiguracji.
 - `dateType` pochodzi z pola `date_type` w konfiguracji.
 - Daty w formacie ISO 8601 z sufixem `Z` (UTC).
+- Wszystkie daty są konwertowane z skonfigurowanej strefy czasowej (`timezone`) do UTC przed wysłaniem do API.
 - `pageSize: 100`, `pageOffset: 0`.
 
 Przykładowy payload:
@@ -673,8 +681,151 @@ Plik `data/last_check.json` przechowuje stan między restartami:
 | `/v2/auth/sessions` | GET | Lista aktywnych sesji |
 | `/v2/auth/sessions/current` | DELETE | Revoke sesji |
 | `/v2/invoices/query/metadata` | POST | Zapytanie o metadata faktur |
+| `/v2/invoices/ksef/{ksefNumber}` | GET | **[IN DEV]** Pobranie XML faktury |
 
 Dokumentacja API: https://api.ksef.mf.gov.pl/docs/v2/
+
+---
+
+## 🧪 Generowanie PDF faktur (IN DEVELOPMENT)
+
+**Status:** W fazie rozwoju, nie zintegrowane z główną aplikacją
+
+Moduł do pobierania XML faktur z KSeF i konwersji do PDF według wzoru KSeF.
+
+### Funkcjonalność
+
+**Co jest zaimplementowane:**
+- ✅ Pobieranie XML faktury po numerze KSeF (endpoint `GET /v2/invoices/ksef/{ksefNumber}`)
+- ✅ Parser XML faktury FA_VAT (wszystkie główne sekcje)
+- ✅ Generator PDF według oficjalnego wzoru KSeF
+- ✅ Skrypt testowy do manualnego generowania PDF
+- ✅ Obsługa autoryzacji Bearer token
+- ✅ Walidacja numeru KSeF
+
+**Czego brakuje:**
+- ❌ Integracja z główną pętlą monitorowania
+- ❌ UI/CLI do wyboru faktury z listy
+- ❌ Auto-download PDF dla nowych faktur
+- ❌ Wysyłanie PDF w powiadomieniach
+
+### Wymagania
+
+```bash
+# Odkomentuj w requirements.txt
+pip install reportlab==4.0.7
+```
+
+### Użycie - Skrypt testowy
+
+```bash
+# Podstawowe użycie - pobierz XML i wygeneruj PDF
+python test_invoice_pdf.py <numer-ksef>
+
+# Przykład
+python test_invoice_pdf.py 1234567890-20240101-ABCDEF123456-AB
+
+# Z własną nazwą pliku
+python test_invoice_pdf.py 1234567890-20240101-ABCDEF123456-AB -o moja_faktura.pdf
+
+# Tylko XML (bez PDF)
+python test_invoice_pdf.py 1234567890-20240101-ABCDEF123456-AB --xml-only
+
+# Debug mode
+python test_invoice_pdf.py 1234567890-20240101-ABCDEF123456-AB --debug
+```
+
+### Użycie programatyczne
+
+```python
+from app.config_manager import ConfigManager
+from app.ksef_client import KSeFClient
+from app.invoice_pdf_generator import generate_invoice_pdf
+
+# Załaduj config i zaloguj się
+config = ConfigManager('config.json')
+client = KSeFClient(config)
+client.authenticate()
+
+# Pobierz XML faktury
+result = client.get_invoice_xml("1234567890-20240101-ABCDEF123456-AB")
+
+if result:
+    # Wygeneruj PDF
+    pdf_buffer = generate_invoice_pdf(
+        xml_content=result['xml_content'],
+        ksef_number=result['ksef_number'],
+        output_path="faktura.pdf"
+    )
+    print(f"PDF wygenerowany: faktura.pdf")
+```
+
+### Format PDF
+
+Generator tworzy PDF według wzoru KSeF zawierający:
+- ✅ Nagłówek z numerem faktury i datami
+- ✅ Dane sprzedawcy i nabywcy (NIP, nazwa, adres)
+- ✅ Tabelę pozycji faktury (ilość, cena, VAT)
+- ✅ Podsumowanie kwot (netto, VAT, brutto)
+- ✅ Informacje o płatności (termin, konto bankowe)
+- ✅ Uwagi dodatkowe
+
+### Pliki modułu
+
+| Plik | Opis |
+|------|------|
+| `app/ksef_client.py` | Metoda `get_invoice_xml()` - pobieranie XML |
+| `app/invoice_pdf_generator.py` | Parser XML + generator PDF |
+| `test_invoice_pdf.py` | Skrypt testowy CLI |
+
+### Walidacja numeru KSeF
+
+Format numeru KSeF: `NIP-YYYYMMDD-RANDOM-XX`
+
+Przykład: `1234567890-20240101-ABCDEF123456-AB`
+
+- `NIP` - 10 cyfr
+- `YYYYMMDD` - data (8 cyfr)
+- `RANDOM` - identyfikator alfanumeryczny
+- `XX` - sufiks (2 wielkie litery)
+
+### Troubleshooting
+
+**ImportError: No module named 'reportlab'**
+```bash
+pip install reportlab
+```
+
+**Authentication failed**
+- Sprawdź poprawność tokenu KSeF w config.json
+- Upewnij się, że token nie wygasł
+- Zweryfikuj NIP w konfiguracji
+
+**Failed to fetch invoice XML**
+- Faktura nie istnieje lub nie masz do niej dostępu
+- Sprawdź format numeru KSeF (użyj `--debug`)
+- Zweryfikuj uprawnienia tokena
+
+**Invalid KSeF number format**
+```bash
+# Poprawny format
+python test_invoice_pdf.py 1234567890-20240101-ABCDEF123456-AB
+
+# Niepoprawne
+python test_invoice_pdf.py 123456789020240101ABCDEF123456AB  # brak myślników
+python test_invoice_pdf.py 12345-20240101-ABCDEF123456-AB     # NIP za krótki
+```
+
+### Przyszłe funkcje (planowane)
+
+Funkcje które będą dodane w przyszłości:
+- 🔜 Automatyczne pobieranie PDF dla nowych faktur
+- 🔜 Katalog archiwum PDF (np. `invoices/2024/01/`)
+- 🔜 Załączanie PDF do powiadomień email
+- 🔜 Batch download - pobieranie wielu faktur naraz
+- 🔜 CLI interaktywny do przeglądania i pobierania faktur
+- 🔜 Konfiguracja w config.json (auto-download, katalog docelowy)
+- 🔜 Metadane w PDF (QR kod KSeF, numer referencyjny)
 
 ---
 

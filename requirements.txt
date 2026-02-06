@@ -2,3 +2,7 @@ requests==2.31.0
 python-dateutil==2.8.2
 cryptography>=41.0.0
 prometheus-client==0.19.0
+pytz==2024.1
+
+# Optional: PDF generation (IN DEVELOPMENT - not yet integrated)
+# reportlab==4.0.7
