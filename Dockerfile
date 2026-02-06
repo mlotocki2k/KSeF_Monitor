@@ -17,5 +17,8 @@ RUN mkdir -p /data
 # Make main script executable
 RUN chmod +x main.py
 
+# Expose Prometheus metrics port
+EXPOSE 8000
+
 # Run the application
 CMD ["python", "-u", "main.py"]

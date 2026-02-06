@@ -65,5 +65,10 @@
       "weekly_workdays": {"mode": "weekly", "days": ["monday", "tuesday", "wednesday", "thursday", "friday"], "time": "09:00"},
       "weekly_multi_times": {"mode": "weekly", "days": ["monday", "wednesday", "friday"], "time": ["08:00", "16:00"]}
     }
+  },
+  "prometheus": {
+    "enabled": true,
+    "port": 8000,
+    "description": "Prometheus metrics endpoint. Exposes /metrics on specified port. Metrics: ksef_last_check_timestamp (last API check), ksef_new_invoices_total (new invoices by subject_type), ksef_monitor_up (health status)"
   }
 }

@@ -16,6 +16,7 @@ from app.config_manager import ConfigManager
 from app.ksef_client import KSeFClient
 from app.notifiers import NotificationManager
 from app.invoice_monitor import InvoiceMonitor
+from app.prometheus_metrics import PrometheusMetrics
 
 # Configure logging
 logging.basicConfig(
@@ -92,9 +93,25 @@ def main():
             else:
                 logger.warning("⚠ Notification test failed for all channels")
 
+        # Initialize Prometheus metrics
+        logger.info("Initializing Prometheus metrics...")
+        prometheus_port = config.get("prometheus", "port", 8000)
+        prometheus_enabled = config.get("prometheus", "enabled", True)
+
+        prometheus_metrics = None
+        if prometheus_enabled:
+            try:
+                prometheus_metrics = PrometheusMetrics(port=prometheus_port)
+                prometheus_metrics.start_server()
+            except Exception as e:
+                logger.warning(f"Failed to initialize Prometheus metrics: {e}")
+                logger.info("Continuing without Prometheus monitoring")
+        else:
+            logger.info("Prometheus metrics disabled in configuration")
+
         # Initialize and run monitor
         logger.info("Initializing invoice monitor...")
-        monitor = InvoiceMonitor(config, ksef_client, notification_manager)
+        monitor = InvoiceMonitor(config, ksef_client, notification_manager, prometheus_metrics)
         logger.info("✓ Invoice monitor initialized")
         
         # Register signal handlers for graceful shutdown

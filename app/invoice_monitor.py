@@ -26,7 +26,7 @@ class InvoiceMonitor:
     }
     DEFAULT_TITLE = "Nowa faktura w KSeF"
 
-    def __init__(self, config, ksef_client, notification_manager):
+    def __init__(self, config, ksef_client, notification_manager, prometheus_metrics=None):
         """
         Initialize invoice monitor
 
@@ -34,10 +34,12 @@ class InvoiceMonitor:
             config: ConfigManager instance
             ksef_client: KSeFClient instance
             notification_manager: NotificationManager instance
+            prometheus_metrics: PrometheusMetrics instance (optional)
         """
         self.config = config
         self.ksef = ksef_client
         self.notifier = notification_manager
+        self.metrics = prometheus_metrics
         self.state_file = Path("/data/last_check.json")
         self.subject_types = config.get("monitoring", "subject_types") or ["Subject1"]
 
@@ -144,9 +146,13 @@ class InvoiceMonitor:
         seen_invoices = set(state.get("seen_invoices", []))
         found_any = False
 
+        # Track new invoices per subject type for Prometheus
+        new_invoices_count = {}
+
         for subject_type in self.subject_types:
             invoices = self.ksef.get_invoices_metadata(date_from, date_to, subject_type)
             title = self.SUBJECT_TYPE_TITLES.get(subject_type, self.DEFAULT_TITLE)
+            new_count = 0
 
             for invoice in invoices:
                 invoice_hash = self.get_invoice_hash(invoice)
@@ -155,6 +161,7 @@ class InvoiceMonitor:
 
                 seen_invoices.add(invoice_hash)
                 found_any = True
+                new_count += 1
 
                 message = self.format_invoice_message(invoice, subject_type)
                 success = self.notifier.send_notification(
@@ -168,12 +175,22 @@ class InvoiceMonitor:
                 else:
                     logger.warning(f"Failed to send notification [{subject_type}] invoice: {invoice.get('ksefNumber')}")
 
+            # Store count for this subject type
+            if new_count > 0:
+                new_invoices_count[subject_type] = new_count
+
         if not found_any:
             logger.info("No new invoices found")
 
         state["last_check"] = now.isoformat()
         state["seen_invoices"] = list(seen_invoices)[-1000:]
         self.save_state(state)
+
+        # Update Prometheus metrics
+        if self.metrics:
+            self.metrics.update_last_check(now)
+            for subject_type, count in new_invoices_count.items():
+                self.metrics.increment_new_invoices(subject_type, count)
     
     def format_invoice_message(self, invoice: Dict, subject_type: str) -> str:
         """
@@ -262,10 +279,14 @@ class InvoiceMonitor:
         Revokes KSeF session and sends shutdown notification
         """
         logger.info("Shutting down...")
-        
+
+        # Mark metrics as stopped
+        if self.metrics:
+            self.metrics.shutdown()
+
         # Revoke session
         self.ksef.revoke_current_session()
-        
+
         # Send shutdown notification
         self.notifier.send_notification(
             title="KSeF Monitor Stopped",

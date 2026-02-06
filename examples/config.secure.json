@@ -49,5 +49,10 @@
     "mode": "minutes",
     "interval": 5,
     "description": "Schedule configuration. See config.example.json for all scheduling options and examples."
+  },
+  "prometheus": {
+    "enabled": true,
+    "port": 8000,
+    "description": "Prometheus metrics endpoint on /metrics. Set enabled: false to disable."
   }
 }

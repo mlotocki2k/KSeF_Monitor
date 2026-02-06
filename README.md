@@ -331,6 +331,81 @@ Aplikacja automatycznie waliduje konfigurację przy starcie:
 ❌ Invalid weekday: mondayy
 ```
 
+### Sekcja `prometheus`
+
+Eksport metryk dla systemów monitorowania (Prometheus, Grafana, etc.)
+
+| Pole | Default | Opis |
+|---|---|---|
+| `enabled` | `true` | Włącz/wyłącz endpoint metryk Prometheus |
+| `port` | `8000` | Port HTTP dla endpointu `/metrics` |
+
+**Dostępne metryki:**
+
+| Metryka | Typ | Opis |
+|---|---|---|
+| `ksef_last_check_timestamp` | Gauge | Unix timestamp ostatniego sprawdzenia API KSeF (seconds since epoch) |
+| `ksef_new_invoices_total{subject_type}` | Counter | Łączna liczba nowych faktur per `subject_type` (`Subject1`, `Subject2`) |
+| `ksef_monitor_up` | Gauge | Status monitora: `1` = running, `0` = stopped |
+
+**Przykład konfiguracji:**
+
+```json
+{
+  "prometheus": {
+    "enabled": true,
+    "port": 8000
+  }
+}
+```
+
+**Dostęp do metryk:**
+```bash
+# Lokalnie
+curl http://localhost:8000/metrics
+
+# Z Docker (jeśli port jest zmapowany)
+curl http://localhost:8000/metrics
+```
+
+**Przykładowy output:**
+```
+# HELP ksef_last_check_timestamp Unix timestamp of last KSeF API check
+# TYPE ksef_last_check_timestamp gauge
+ksef_last_check_timestamp 1675612345.0
+
+# HELP ksef_new_invoices_total Total number of new invoices found
+# TYPE ksef_new_invoices_total counter
+ksef_new_invoices_total{subject_type="Subject1"} 5
+ksef_new_invoices_total{subject_type="Subject2"} 3
+
+# HELP ksef_monitor_up KSeF Monitor health status (1 = running, 0 = stopped)
+# TYPE ksef_monitor_up gauge
+ksef_monitor_up 1.0
+```
+
+**Integracja z Prometheus:**
+
+Dodaj do `prometheus.yml`:
+```yaml
+scrape_configs:
+  - job_name: 'ksef-monitor'
+    static_configs:
+      - targets: ['ksef-invoice-monitor:8000']
+    scrape_interval: 30s
+```
+
+**Wyłączenie Prometheus:**
+
+Jeśli nie używasz monitorowania, możesz wyłączyć endpoint:
+```json
+{
+  "prometheus": {
+    "enabled": false
+  }
+}
+```
+
 ---
 
 ## Sekretne wartości
