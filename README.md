@@ -605,20 +605,264 @@ Dokumentacja API: https://api.ksef.mf.gov.pl/docs/v2/
 
 ## Troubleshooting
 
-**Brak powiadomień:**
-- Sprawdź poprawność User Key i API Token w Pushover.
-- Upewnij się, że aplikacja Pushover jest zainstalowana na urządzeniu.
-- Przejrzyć logi: `docker logs ksef-invoice-monitor -f`
+### Brak powiadomień
 
-**Błędy autentykacji:**
-- Zweryfikuj token KSeF — tokeny mają ograniczoną żywotność, regeneruj jeśli wygasł.
-- Sprawdź format NIP (dokładnie 10 cyfr, bez spacji).
-- Upewnij się, że `environment` w konfiguracji odpowiada portalowi, z którego pochodzi token.
+**1. Sprawdź które kanały są włączone:**
+```bash
+docker logs ksef-invoice-monitor | grep "Enabled channels"
+# Powinno pokazać: Enabled channels: discord, email, pushover
+```
+
+**2. Jeśli żaden kanał nie jest włączony:**
+- Sprawdź sekcję `notifications.channels` w `config.json`
+- Upewnij się, że lista nie jest pusta: `"channels": ["pushover", "discord"]`
+- Sprawdź czy nazwy kanałów są poprawne (lowercase)
+
+**3. Problemy z konkretnymi kanałami:**
+
+<details>
+<summary><b>Pushover</b> - Brak powiadomień mobilnych</summary>
+
+- Sprawdź poprawność `user_key` i `api_token` w `.env` lub `config.json`
+- Upewnij się, że aplikacja Pushover jest zainstalowana na urządzeniu
+- Zweryfikuj API Token w panelu [pushover.net](https://pushover.net/)
+- Sprawdź logi: `docker logs ksef-invoice-monitor | grep -i pushover`
+- Test manualny:
+  ```bash
+  curl -s \
+    --form-string "token=YOUR_API_TOKEN" \
+    --form-string "user=YOUR_USER_KEY" \
+    --form-string "message=Test" \
+    https://api.pushover.net/1/messages.json
+  ```
+</details>
+
+<details>
+<summary><b>Discord</b> - Brak wiadomości na serwerze</summary>
+
+- Zweryfikuj `webhook_url` - musi zaczynać się od `https://discord.com/api/webhooks/`
+- Sprawdź czy webhook nie został usunięty w Server Settings → Integrations
+- Test webhook bezpośrednio:
+  ```bash
+  curl -H "Content-Type: application/json" \
+    -d '{"content":"Test"}' \
+    "YOUR_WEBHOOK_URL"
+  ```
+- Upewnij się, że bot ma uprawnienia do pisania na kanale
+- Sprawdź logi: `docker logs ksef-invoice-monitor | grep -i discord`
+</details>
+
+<details>
+<summary><b>Slack</b> - Brak wiadomości w workspace</summary>
+
+- Zweryfikuj `webhook_url` - musi zaczynać się od `https://hooks.slack.com/services/`
+- Sprawdź czy Incoming Webhook jest nadal aktywny w [api.slack.com](https://api.slack.com/apps)
+- Test webhook bezpośrednio:
+  ```bash
+  curl -X POST \
+    -H "Content-Type: application/json" \
+    -d '{"text":"Test"}' \
+    "YOUR_WEBHOOK_URL"
+  ```
+- Upewnij się, że aplikacja jest zainstalowana w workspace
+- Sprawdź logi: `docker logs ksef-invoice-monitor | grep -i slack`
+</details>
+
+<details>
+<summary><b>Email</b> - Brak emaili</summary>
+
+- **Gmail:**
+  - Użyj App Password, nie zwykłego hasła: [myaccount.google.com/apppasswords](https://myaccount.google.com/apppasswords)
+  - Włącz 2FA przed utworzeniem App Password
+  - SMTP: `smtp.gmail.com:587`, `use_tls: true`
+- **Outlook:**
+  - SMTP: `smtp-mail.outlook.com:587`, `use_tls: true`
+  - Może wymagać App Password jeśli 2FA włączone
+- **Inne:**
+  - Sprawdź czy port SMTP jest otwarty (587 dla TLS, 465 dla SSL)
+  - Zweryfikuj credentials SMTP u swojego providera
+- Test SMTP:
+  ```bash
+  docker logs ksef-invoice-monitor | grep -i "smtp\|email"
+  ```
+- Sprawdź spam folder w skrzynce odbiorczej
+</details>
+
+<details>
+<summary><b>Webhook</b> - Endpoint nie otrzymuje danych</summary>
+
+- Sprawdź czy URL endpointu jest dostępny z kontenera Docker
+- Zweryfikuj metodę HTTP (`POST`, `PUT`, `GET`)
+- Sprawdź logi endpoint (jeśli masz do nich dostęp)
+- Test endpoint bezpośrednio:
+  ```bash
+  curl -X POST \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer YOUR_TOKEN" \
+    -d '{"title":"Test","message":"Test message"}' \
+    "YOUR_WEBHOOK_URL"
+  ```
+- Dla localhost z Docker: użyj `host.docker.internal` zamiast `localhost`
+- Sprawdź logi: `docker logs ksef-invoice-monitor | grep -i webhook`
+</details>
+
+**4. Włącz testowe powiadomienie:**
+```json
+{
+  "notifications": {
+    "test_notification": true
+  }
+}
+```
+Restart kontenera wyśle powiadomienie testowe na wszystkie włączone kanały.
+
+**5. Sprawdź szczegółowe logi błędów:**
+```bash
+docker logs ksef-invoice-monitor -f | grep -i "error\|failed\|✗"
+```
+
+### Błędy autentykacji KSeF
+
+**Token wygasł lub nieprawidłowy:**
+- Zweryfikuj token w portalu KSeF — tokeny mają ograniczoną żywotność
+- Wygeneruj nowy token i zaktualizuj w `.env` lub Docker secret
+- Sprawdź logi: `docker logs ksef-invoice-monitor | grep -i "auth\|401\|403"`
+
+**Nieprawidłowy NIP:**
+- Format: dokładnie 10 cyfr, bez spacji, myślników, prefiksów
+- Przykład poprawny: `"nip": "1234567890"`
+- Przykład błędny: `"nip": "123-456-78-90"` lub `"nip": "PL1234567890"`
+
+**Niezgodne środowisko:**
+- Upewnij się, że `environment` w config odpowiada portalowi, z którego pochodzi token
+- Token z `ksef-test.mf.gov.pl` → `"environment": "test"`
+- Token z `ksef.mf.gov.pl` → `"environment": "prod"`
+
+### Błędy konfiguracji
 
 **Walidacja JSON:**
 ```bash
+# Sprawdź poprawność składni
 python3 -m json.tool config.json
+
+# Jeśli błąd składni, pokaże linię problemu
+cat config.json | jq .
 ```
+
+**Brakujące wymagane pola:**
+```bash
+# Sprawdź logi przy starcie
+docker logs ksef-invoice-monitor | grep -i "validation\|missing\|required"
+```
+
+**Nieprawidłowe wartości schedulera:**
+```bash
+# Sprawdź logi walidacji
+docker logs ksef-invoice-monitor | grep -i "schedule\|invalid"
+```
+
+### Problemy z Docker
+
+**Kontener nie startuje:**
+```bash
+# Sprawdź szczegółowe logi
+docker logs ksef-invoice-monitor --tail=100
+
+# Sprawdź czy kontener żyje
+docker ps -a | grep ksef
+
+# Sprawdź czy config.json istnieje i jest montowany
+docker inspect ksef-invoice-monitor | grep -A 10 Mounts
+```
+
+**Brak dostępu do plików:**
+```bash
+# Sprawdź uprawnienia
+ls -la config.json .env data/
+
+# Powinny być:
+# -rw------- .env (600)
+# -rw-r--r-- config.json (644 jeśli bez sekretów)
+# drwxr-xr-x data/ (755)
+```
+
+**Problem z secretami Docker:**
+```bash
+# Lista sekretów
+docker secret ls
+
+# Sprawdź czy sekrety są dostępne w kontenerze
+docker exec ksef-invoice-monitor ls -la /run/secrets/
+
+# Powinny być widoczne:
+# -r-------- ksef_token
+# -r-------- discord_webhook_url
+# etc.
+```
+
+### Problemy z siecią
+
+**Brak połączenia z KSeF API:**
+```bash
+# Test połączenia z kontenera
+docker exec ksef-invoice-monitor curl -v https://api-test.ksef.mf.gov.pl/v2/health
+
+# Sprawdź DNS
+docker exec ksef-invoice-monitor nslookup api-test.ksef.mf.gov.pl
+```
+
+**Webhook/SMTP timeout:**
+- Sprawdź ustawienie `timeout` w konfiguracji webhook
+- Zweryfikuj czy firewall nie blokuje połączeń wychodzących
+- Dla SMTP sprawdź czy porty 587/465 są otwarte
+
+### Pomocne komendy diagnostyczne
+
+```bash
+# Pełne logi z timestampami
+docker logs ksef-invoice-monitor --timestamps
+
+# Tylko błędy
+docker logs ksef-invoice-monitor 2>&1 | grep -i error
+
+# Tail ostatnich 50 linii
+docker logs ksef-invoice-monitor --tail=50
+
+# Restart z czystymi logami
+docker restart ksef-invoice-monitor && docker logs -f ksef-invoice-monitor
+
+# Sprawdź wykorzystanie zasobów
+docker stats ksef-invoice-monitor --no-stream
+
+# Wejdź do kontenera (debugging)
+docker exec -it ksef-invoice-monitor /bin/bash
+```
+
+### Dalsze wsparcie
+
+Jeśli problem nie został rozwiązany:
+
+1. **Zbierz informacje:**
+   ```bash
+   # Wersja
+   docker logs ksef-invoice-monitor | grep "KSeF Invoice Monitor"
+
+   # Pełne logi (wyczyść sekrety przed udostępnieniem!)
+   docker logs ksef-invoice-monitor > ksef-logs.txt
+   ```
+
+2. **Sprawdź dokumentację:**
+   - [NOTIFICATIONS.md](docs/NOTIFICATIONS.md) - Szczegółowa konfiguracja kanałów
+   - [SECURITY.md](docs/SECURITY.md) - Zarządzanie sekretami
+   - [QUICKSTART.md](docs/QUICKSTART.md) - Przewodnik szybkiego startu
+
+3. **GitHub Issues:**
+   - Otwórz issue na GitHub (NIE dołączaj tokenów/sekretów!)
+   - Opisz problem, środowisko (test/prod), logi (bez sekretów)
+
+4. **Problemy IDE:**
+   - Zobacz [IDE_TROUBLESHOOTING.md](docs/IDE_TROUBLESHOOTING.md)
+   - Są to tylko problemy edytora - kod działa poprawnie
 
 ---
 
