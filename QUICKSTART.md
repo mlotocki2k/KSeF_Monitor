@@ -152,10 +152,36 @@ Edit `config.json` to customize:
     "nip": "1234567890"         // Your NIP
   },
   "monitoring": {
-    "check_interval": 300,      // Seconds between checks
+    "subject_types": ["Subject1", "Subject2"],  // Invoice types to monitor
     "test_notification": false  // Send test on startup
+  },
+  "schedule": {
+    "mode": "minutes",          // Scheduling mode
+    "interval": 5               // Check every 5 minutes
   }
 }
+```
+
+**Scheduling Options:**
+
+```json
+// Every 5 minutes
+{"mode": "minutes", "interval": 5}
+
+// Every 2 hours
+{"mode": "hourly", "interval": 2}
+
+// Daily at 9:00 AM
+{"mode": "daily", "time": "09:00"}
+
+// 3 times daily: morning, afternoon, evening
+{"mode": "daily", "time": ["09:00", "14:00", "18:00"]}
+
+// Weekdays only at 9:00 AM
+{"mode": "weekly", "days": ["monday", "tuesday", "wednesday", "thursday", "friday"], "time": "09:00"}
+
+// Mon, Wed, Fri - twice daily
+{"mode": "weekly", "days": ["monday", "wednesday", "friday"], "time": ["08:00", "16:00"]}
 ```
 
 Secrets are in `.env` (or Docker secrets):
@@ -239,7 +265,8 @@ ksef-invoice-monitor/
 │   ├── config_manager.py
 │   ├── ksef_client.py
 │   ├── pushover_notifier.py
-│   └── invoice_monitor.py
+│   ├── invoice_monitor.py
+│   └── scheduler.py           # Flexible scheduling system
 ├── config.json                # Configuration (git-ignored)
 ├── .env                       # Secrets (git-ignored)
 ├── docker-compose.yml         # Docker Compose config

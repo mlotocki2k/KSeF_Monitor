@@ -17,7 +17,8 @@ ksef_monitor_v0_1/
 │   ├── secrets_manager.py       # Sekretne wartości z env / Docker secrets / config
 │   ├── ksef_client.py           # Klient API KSeF v2 (autentykacja + zapytania)
 │   ├── invoice_monitor.py       # Główna pętla monitorowania + formatowanie
-│   └── pushover_notifier.py     # Klient API Pushover
+│   ├── pushover_notifier.py     # Klient API Pushover
+│   └── scheduler.py             # Elastyczny system schedulowania (5 trybów)
 ├── config.example.json          # Szablon konfiguracji
 ├── .env.example                 # Szablon zmiennych środowiska
 ├── requirements.txt             # Zależności Python
@@ -79,11 +80,46 @@ Base URLs przypisane automatycznie:
 
 | Pole | Default | Opis |
 |---|---|---|
-| `check_interval` | `300` | Czas między sprawdzeniami w sekundach. |
 | `subject_types` | `["Subject1", "Subject2"]` | Typy faktur do monitorowania. `Subject1` = sprzedażowe (Ty = sprzedawca), `Subject2` = zakupowe (Ty = nabywca). Jedno zapytanie API na każdy typ. |
 | `date_type` | `"Invoicing"` | Typ daty w zakresie zapytania. Dozwolone wartości: `Issue` (data wystawienia), `Invoicing` (data przyjęcia w KSeF), `PermanentStorage` (data trwałego zapisu). Fallback na `Invoicing` przy niepoprawnej wartości. |
 | `message_priority` | `0` | Priority powiadomień Pushover dla nowych faktur. `-2` cisza \| `-1` cicho \| `0` normalne \| `1` wysoka \| `2` pilne (wymaga potwierdzenia). Fallback na `0`. |
 | `test_notification` | `false` | Jeśli `true` — wysyła testowe powiadomienie przy starcie aplikacji. |
+
+### Sekcja `schedule`
+
+Elastyczny system schedulowania z 5 trybami:
+
+| Tryb | Opis | Parametry |
+|---|---|---|
+| `simple` | Co X sekund (tryb kompatybilności wstecznej) | `interval`: liczba sekund |
+| `minutes` | Co X minut | `interval`: liczba minut |
+| `hourly` | Co X godzin | `interval`: liczba godzin |
+| `daily` | O konkretnej godzinie/godzinach każdego dnia | `time`: `"HH:MM"` lub `["HH:MM", "HH:MM", ...]` |
+| `weekly` | W konkretne dni tygodnia o konkretnej godzinie/godzinach | `days`: `["monday", "tuesday", ...]`<br>`time`: `"HH:MM"` lub `["HH:MM", ...]` |
+
+**Przykłady konfiguracji:**
+
+```json
+// Co 5 minut
+{"mode": "minutes", "interval": 5}
+
+// Co 2 godziny
+{"mode": "hourly", "interval": 2}
+
+// Codziennie o 9:00
+{"mode": "daily", "time": "09:00"}
+
+// 3 razy dziennie: rano, po południu, wieczorem
+{"mode": "daily", "time": ["09:00", "14:00", "18:00"]}
+
+// W dni robocze o 9:00
+{"mode": "weekly", "days": ["monday", "tuesday", "wednesday", "thursday", "friday"], "time": "09:00"}
+
+// Poniedziałek, środa, piątek - 2 razy dziennie
+{"mode": "weekly", "days": ["monday", "wednesday", "friday"], "time": ["08:00", "16:00"]}
+```
+
+**Uwaga:** Stary parametr `check_interval` w sekcji `monitoring` nadal działa dla kompatybilności wstecznej, ale zaleca się migrację do nowej sekcji `schedule`.
 
 ---
 
