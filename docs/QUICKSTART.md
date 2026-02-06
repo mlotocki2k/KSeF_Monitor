@@ -1,13 +1,18 @@
 # Quick Start Guide
 
-Get your KSeF Invoice Monitor running in 5 minutes!
+Get your KSeF Invoice Monitor v0.2 running in 5 minutes!
 
 ## Prerequisites
 
 - Docker installed ([Get Docker](https://docs.docker.com/get-docker/))
 - Docker Compose installed
-- Pushover account ([Sign up free](https://pushover.net/))
 - KSeF authorization token
+- At least one notification channel (choose from):
+  - **Pushover** - Mobile notifications ([Sign up](https://pushover.net/))
+  - **Discord** - Create a webhook in Server Settings → Integrations
+  - **Slack** - Create incoming webhook at [api.slack.com](https://api.slack.com/messaging/webhooks)
+  - **Email** - SMTP credentials (Gmail, Outlook, etc.)
+  - **Webhook** - Your own HTTP endpoint
 
 ## Installation Methods
 
@@ -25,10 +30,51 @@ chmod +x setup.sh
 
 ### 🔧 Method 2: Manual Setup (Development)
 
-**Step 1: Get Pushover Credentials**
+**Step 1: Choose Your Notification Channel(s)**
+
+Choose one or more from:
+
+<details>
+<summary><b>Pushover</b> (Mobile notifications)</summary>
+
 - Go to [pushover.net](https://pushover.net/)
 - Copy your User Key
 - Create an application and copy the API Token
+</details>
+
+<details>
+<summary><b>Discord</b> (Webhook)</summary>
+
+- Open Discord server settings
+- Navigate to Integrations → Webhooks
+- Click "New Webhook"
+- Copy the Webhook URL
+</details>
+
+<details>
+<summary><b>Slack</b> (Webhook)</summary>
+
+- Go to [api.slack.com/messaging/webhooks](https://api.slack.com/messaging/webhooks)
+- Create a new app or use existing
+- Enable Incoming Webhooks
+- Copy the Webhook URL
+</details>
+
+<details>
+<summary><b>Email</b> (SMTP)</summary>
+
+- Gmail: Create App Password at [myaccount.google.com/apppasswords](https://myaccount.google.com/apppasswords)
+- Outlook: Use account password with `smtp-mail.outlook.com:587`
+- Other: Get SMTP server, port, and credentials from provider
+</details>
+
+<details>
+<summary><b>Webhook</b> (Custom endpoint)</summary>
+
+- Set up your own HTTP endpoint
+- Optionally prepare authentication token
+- Endpoint will receive POST with JSON: `{title, message, priority, timestamp}`
+</details>
 
 **Step 2: Get KSeF Token**
 - Log in to [ksef-test.mf.gov.pl](https://ksef-test.mf.gov.pl/web/login) (or production)
@@ -46,11 +92,53 @@ cp docker-compose.env.yml docker-compose.yml
 nano .env
 ```
 
-Add your credentials:
+**Add your credentials** (only for channels you're using):
 ```bash
+# Required
 KSEF_TOKEN=your-ksef-token-here
+
+# Pushover (optional)
 PUSHOVER_USER_KEY=your-pushover-user-key
 PUSHOVER_API_TOKEN=your-pushover-api-token
+
+# Discord (optional)
+DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...
+
+# Slack (optional)
+SLACK_WEBHOOK_URL=https://hooks.slack.com/services/...
+
+# Email (optional)
+EMAIL_PASSWORD=your-smtp-password-or-app-password
+
+# Webhook (optional)
+WEBHOOK_TOKEN=your-auth-token
+```
+
+**Edit config.json** to enable your channels:
+```bash
+nano config.json
+```
+
+Enable channels in `notifications` section:
+```json
+{
+  "notifications": {
+    "channels": ["discord", "email"],  // ← Enable channels here
+    "message_priority": 0,
+    "discord": {
+      "webhook_url": "loaded-from-env"
+    },
+    "email": {
+      "smtp_server": "smtp.gmail.com",
+      "smtp_port": 587,
+      "use_tls": true,
+      "username": "your-email@gmail.com",
+      "password": "loaded-from-env",
+      "from_address": "KSeF Monitor <your-email@gmail.com>",
+      "to_addresses": ["recipient@example.com"]
+    }
+  }
+}
 ```
 
 **Step 4: Secure and Run**
@@ -72,16 +160,31 @@ docker-compose logs -f
 # Initialize Swarm (if not already)
 docker swarm init
 
-# Create secrets
+# Create secrets (only for channels you're using)
 echo "your-ksef-token" | docker secret create ksef_token -
+
+# Pushover
 echo "your-pushover-user-key" | docker secret create pushover_user_key -
 echo "your-pushover-api-token" | docker secret create pushover_api_token -
+
+# Discord
+echo "https://discord.com/api/webhooks/..." | docker secret create discord_webhook_url -
+
+# Slack
+echo "https://hooks.slack.com/services/..." | docker secret create slack_webhook_url -
+
+# Email
+echo "your-smtp-password" | docker secret create email_password -
+
+# Webhook
+echo "your-auth-token" | docker secret create webhook_token -
 
 # Verify secrets
 docker secret ls
 
-# Copy config
+# Copy config and enable channels
 cp examples/config.secure.json config.json
+nano config.json  # Set notifications.channels to ["pushover", "discord", ...]
 
 # Deploy
 docker stack deploy -c docker-compose.secrets.yml ksef
@@ -109,30 +212,54 @@ docker service logs -f ksef_ksef-monitor
 ### Expected output:
 ```
 ksef-monitor | ======================================================================
-ksef-monitor | KSeF Invoice Monitor v2.0
+ksef-monitor | KSeF Invoice Monitor v0.2
 ksef-monitor | Based on KSeF API v2.0 (github.com/CIRFMF/ksef-docs)
+ksef-monitor | Multi-channel notifications: Pushover, Discord, Slack, Email, Webhook
 ksef-monitor | ======================================================================
 ksef-monitor | Loading configuration...
 ksef-monitor | ✓ Configuration loaded
 ksef-monitor | ✓ KSeF client initialized
-ksef-monitor | ✓ Pushover notifier initialized
+ksef-monitor | Initializing notification channels...
+ksef-monitor | ✓ Notification system initialized
+ksef-monitor |   Enabled channels: discord, email
 ksef-monitor | ✓ Invoice monitor initialized
 ksef-monitor | Checking for new invoices...
 ```
 
 ## Testing
 
-### Test Pushover:
-You should receive a startup notification on your device.
+### Automatic test notification:
+Enable test notification in `config.json`:
+```json
+{
+  "notifications": {
+    "test_notification": true
+  }
+}
+```
+
+Restart and you'll receive a test notification on all enabled channels:
+```bash
+docker-compose restart
+docker-compose logs -f
+```
 
 ### Manual test:
 ```bash
 docker-compose exec ksef-monitor python3 -c "
-from app import ConfigManager, PushoverNotifier
+from app.config_manager import ConfigManager
+from app.notifiers import NotificationManager
 config = ConfigManager('/data/config.json')
-notifier = PushoverNotifier(config)
+notifier = NotificationManager(config)
+print('Testing all channels...')
 notifier.test_connection()
 "
+```
+
+### Check which channels are enabled:
+```bash
+docker-compose logs | grep "Enabled channels"
+# Output: Enabled channels: discord, email, pushover
 ```
 
 ### Force invoice check:
@@ -151,9 +278,21 @@ Edit `config.json` to customize:
     "environment": "test",      // "test" or "prod"
     "nip": "1234567890"         // Your NIP
   },
+  "notifications": {
+    "channels": ["pushover", "discord"],  // Enabled notification channels
+    "message_priority": 0,                // Priority for new invoices
+    "test_notification": false,           // Send test on startup
+    "pushover": {
+      "user_key": "loaded-from-env",
+      "api_token": "loaded-from-env"
+    },
+    "discord": {
+      "webhook_url": "loaded-from-env",
+      "username": "KSeF Monitor"
+    }
+  },
   "monitoring": {
-    "subject_types": ["Subject1", "Subject2"],  // Invoice types to monitor
-    "test_notification": false  // Send test on startup
+    "subject_types": ["Subject1", "Subject2"]  // Invoice types to monitor
   },
   "schedule": {
     "mode": "minutes",          // Scheduling mode
@@ -161,6 +300,50 @@ Edit `config.json` to customize:
   }
 }
 ```
+
+**Multi-Channel Examples:**
+
+```json
+// Pushover + Email
+{
+  "notifications": {
+    "channels": ["pushover", "email"],
+    "pushover": { "user_key": "...", "api_token": "..." },
+    "email": {
+      "smtp_server": "smtp.gmail.com",
+      "smtp_port": 587,
+      "use_tls": true,
+      "username": "monitor@example.com",
+      "password": "loaded-from-env",
+      "from_address": "KSeF Monitor <monitor@example.com>",
+      "to_addresses": ["admin@example.com"]
+    }
+  }
+}
+
+// Discord + Slack (team notifications)
+{
+  "notifications": {
+    "channels": ["discord", "slack"],
+    "discord": { "webhook_url": "loaded-from-env" },
+    "slack": { "webhook_url": "loaded-from-env" }
+  }
+}
+
+// All 5 channels
+{
+  "notifications": {
+    "channels": ["pushover", "discord", "slack", "email", "webhook"],
+    "pushover": { ... },
+    "discord": { ... },
+    "slack": { ... },
+    "email": { ... },
+    "webhook": { "url": "https://example.com/webhook" }
+  }
+}
+```
+
+For detailed channel configuration, see [NOTIFICATIONS.md](./NOTIFICATIONS.md)
 
 **Scheduling Options:**
 
@@ -189,11 +372,26 @@ Edit `config.json` to customize:
 - time-based modes (`daily`, `weekly`): require `time` in HH:MM format
 - `weekly` mode: requires `days` array with valid weekday names
 
-Secrets are in `.env` (or Docker secrets):
+Secrets are in `.env` (or Docker secrets). Only include secrets for channels you're using:
 ```bash
-KSEF_TOKEN=...
-PUSHOVER_USER_KEY=...
-PUSHOVER_API_TOKEN=...
+# Required
+KSEF_TOKEN=your-ksef-token
+
+# Pushover (optional)
+PUSHOVER_USER_KEY=your-user-key
+PUSHOVER_API_TOKEN=your-api-token
+
+# Discord (optional)
+DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...
+
+# Slack (optional)
+SLACK_WEBHOOK_URL=https://hooks.slack.com/services/...
+
+# Email (optional)
+EMAIL_PASSWORD=your-smtp-password
+
+# Webhook (optional)
+WEBHOOK_TOKEN=your-auth-token
 ```
 
 ## Common Commands
@@ -228,10 +426,25 @@ docker-compose exec ksef-monitor /bin/bash
 ## Troubleshooting
 
 ### No notifications received
-1. Check Pushover credentials in `.env`
-2. Verify Pushover app installed on device
-3. Check logs: `docker-compose logs -f`
-4. Test connection (see Testing section above)
+1. Check which channels are enabled in logs:
+   ```bash
+   docker-compose logs | grep "Enabled channels"
+   ```
+2. Verify credentials in `.env` for enabled channels
+3. Check channel-specific requirements:
+   - **Pushover**: App installed on device
+   - **Discord**: Webhook URL valid and not expired
+   - **Slack**: Webhook URL valid and app installed in workspace
+   - **Email**: SMTP credentials correct, port open (587/465)
+   - **Webhook**: Endpoint accessible and responding
+4. Enable test notification and restart:
+   ```json
+   "notifications": { "test_notification": true }
+   ```
+5. Check logs for errors:
+   ```bash
+   docker-compose logs -f | grep -i "notification\|error"
+   ```
 
 ### Authentication failed
 1. Verify KSeF token is correct
@@ -269,9 +482,15 @@ ksef-invoice-monitor/
 │   ├── secrets_manager.py
 │   ├── config_manager.py
 │   ├── ksef_client.py
-│   ├── pushover_notifier.py
 │   ├── invoice_monitor.py
-│   └── scheduler.py           # Flexible scheduling system
+│   ├── scheduler.py           # Flexible scheduling system
+│   └── notifiers/             # Multi-channel notification system
+│       ├── notification_manager.py
+│       ├── pushover_notifier.py
+│       ├── discord_notifier.py
+│       ├── slack_notifier.py
+│       ├── email_notifier.py
+│       └── webhook_notifier.py
 ├── config.json                # Configuration (git-ignored)
 ├── .env                       # Secrets (git-ignored)
 ├── docker-compose.yml         # Docker Compose config
@@ -284,6 +503,7 @@ ksef-invoice-monitor/
 
 1. **Read the docs:**
    - [README.md](../README.md) - Full documentation
+   - [NOTIFICATIONS.md](./NOTIFICATIONS.md) - Complete notification channel guide
    - [SECURITY.md](./SECURITY.md) - Security best practices
    - [PROJECT_STRUCTURE.md](./PROJECT_STRUCTURE.md) - Architecture details
 

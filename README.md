@@ -1,9 +1,16 @@
-# KSeF Invoice Monitor v0.1
+# KSeF Invoice Monitor v0.2
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
 
-Monitor faktur w Krajowym Systemie e-Faktur (KSeF). Aplikacja cyklicznie pobiera metadata faktur z API KSeF v2 i wysyła powiadomienia przez Pushover o nowych fakturach sprzedażowych i/lub zakupowych.
+Monitor faktur w Krajowym Systemie e-Faktur (KSeF). Aplikacja cyklicznie pobiera metadata faktur z API KSeF v2 i wysyła powiadomienia o nowych fakturach sprzedażowych i/lub zakupowych przez **5 kanałów notyfikacji**.
+
+**Obsługiwane kanały:**
+- 📱 **Pushover** - powiadomienia mobilne
+- 💬 **Discord** - webhook z rich embeds
+- 💼 **Slack** - webhook z Block Kit
+- 📧 **Email** - SMTP z HTML formatowaniem
+- 🔗 **Webhook** - generyczny HTTP endpoint
 
 Bazuje na oficjalnej specyfikacji API: https://github.com/CIRFMF/ksef-docs
 
@@ -20,8 +27,16 @@ ksef_monitor_v0_1/
 │   ├── secrets_manager.py       # Sekretne wartości z env / Docker secrets / config
 │   ├── ksef_client.py           # Klient API KSeF v2 (autentykacja + zapytania)
 │   ├── invoice_monitor.py       # Główna pętla monitorowania + formatowanie
-│   ├── pushover_notifier.py     # Klient API Pushover
-│   └── scheduler.py             # Elastyczny system schedulowania (5 trybów)
+│   ├── scheduler.py             # Elastyczny system schedulowania (5 trybów)
+│   └── notifiers/               # Multi-channel notification system
+│       ├── __init__.py
+│       ├── base_notifier.py     # Abstract base class dla notifierów
+│       ├── notification_manager.py  # Facade zarządzający wieloma kanałami
+│       ├── pushover_notifier.py     # Powiadomienia mobilne Pushover
+│       ├── discord_notifier.py      # Webhook Discord z rich embeds
+│       ├── slack_notifier.py        # Webhook Slack z Block Kit
+│       ├── email_notifier.py        # SMTP email z HTML
+│       └── webhook_notifier.py      # Generyczny HTTP endpoint
 ├── docs/                        # Documentation
 │   ├── QUICKSTART.md            # Quick start guide
 │   ├── SECURITY.md              # Security best practices
@@ -49,6 +64,7 @@ Katalog `data/` powstaje w runtime i zawiera plik stanu `last_check.json`.
 ## Dokumentacja
 
 - 📖 [QUICKSTART.md](docs/QUICKSTART.md) — Szybki start w 5 minut
+- 🔔 [NOTIFICATIONS.md](docs/NOTIFICATIONS.md) — Konfiguracja powiadomień (5 kanałów)
 - 🔒 [SECURITY.md](docs/SECURITY.md) — Najlepsze praktyki bezpieczeństwa
 - 🧪 [TESTING.md](docs/TESTING.md) — Przewodnik testowania
 - 🏗️ [PROJECT_STRUCTURE.md](docs/PROJECT_STRUCTURE.md) — Architektura projektu
@@ -61,7 +77,12 @@ Katalog `data/` powstaje w runtime i zawiera plik stanu `last_check.json`.
 
 - Python 3.9+ lub Docker
 - Token autoryzacyjny z portalu KSeF (https://ksef.gov.pl)
-- Konto w Pushover (https://pushover.net) — User Key + API Token aplikacji
+- Co najmniej jeden kanał powiadomień (opcjonalnie — możesz wyłączyć wszystkie):
+  - **Pushover** — User Key + API Token (https://pushover.net)
+  - **Discord** — Webhook URL (https://discord.com)
+  - **Slack** — Webhook URL (https://slack.com)
+  - **Email** — Konto SMTP (Gmail, Outlook, własny serwer)
+  - **Webhook** — Własny HTTP endpoint
 
 ### Zależności Python
 
@@ -93,12 +114,154 @@ Base URLs przypisane automatycznie:
 | `demo` | `https://api-demo.ksef.mf.gov.pl` |
 | `test` | `https://api-test.ksef.mf.gov.pl` |
 
-### Sekcja `pushover`
+### Sekcja `notifications`
+
+System powiadomień obsługuje **5 kanałów** jednocześnie. Możesz włączyć jeden lub wiele.
 
 | Pole | Opis |
 |---|---|
-| `user_key` | User Key z konta Pushover. |
-| `api_token` | API Token aplikacji w Pushover. |
+| `channels` | Lista włączonych kanałów: `["pushover", "discord", "slack", "email", "webhook"]` |
+| `message_priority` | Priority dla nowych faktur. `-2` cisza \| `-1` cicho \| `0` normalne \| `1` wysoka \| `2` pilne (Pushover). |
+| `test_notification` | `true` wysyła testowe powiadomienie przy starcie. |
+
+**Konfiguracja kanałów:**
+
+<details>
+<summary><b>Pushover</b> — Powiadomienia mobilne</summary>
+
+```json
+"pushover": {
+  "user_key": "twoj-user-key",
+  "api_token": "twoj-api-token"
+}
+```
+
+- `user_key` — User Key z konta Pushover
+- `api_token` — API Token aplikacji w Pushover
+- Pobierz z: https://pushover.net
+</details>
+
+<details>
+<summary><b>Discord</b> — Webhook z rich embeds</summary>
+
+```json
+"discord": {
+  "webhook_url": "https://discord.com/api/webhooks/...",
+  "username": "KSeF Monitor",
+  "avatar_url": "https://example.com/avatar.png"
+}
+```
+
+- `webhook_url` — **Wymagane.** Webhook URL z serwera Discord
+- `username` — Opcjonalne. Nazwa bota (default: "KSeF Monitor")
+- `avatar_url` — Opcjonalne. Avatar bota
+- Jak utworzyć: Server Settings → Integrations → Webhooks → New Webhook
+</details>
+
+<details>
+<summary><b>Slack</b> — Webhook z Block Kit</summary>
+
+```json
+"slack": {
+  "webhook_url": "https://hooks.slack.com/services/...",
+  "username": "KSeF Monitor",
+  "icon_emoji": ":receipt:"
+}
+```
+
+- `webhook_url` — **Wymagane.** Incoming Webhook URL
+- `username` — Opcjonalne. Nazwa bota (default: "KSeF Monitor")
+- `icon_emoji` — Opcjonalne. Emoji ikony (np. `:receipt:`, `:bell:`)
+- Jak utworzyć: https://api.slack.com/messaging/webhooks
+</details>
+
+<details>
+<summary><b>Email</b> — SMTP z HTML formatowaniem</summary>
+
+```json
+"email": {
+  "smtp_server": "smtp.gmail.com",
+  "smtp_port": 587,
+  "use_tls": true,
+  "username": "twoj-email@gmail.com",
+  "password": "twoje-haslo-aplikacji",
+  "from_address": "KSeF Monitor <twoj-email@gmail.com>",
+  "to_addresses": ["email1@example.com", "email2@example.com"]
+}
+```
+
+- `smtp_server` — Adres serwera SMTP
+- `smtp_port` — Port (587 dla TLS, 465 dla SSL, 25 dla plain)
+- `use_tls` — `true` dla STARTTLS (Gmail, Outlook)
+- `username` — Login SMTP
+- `password` — Hasło SMTP (dla Gmail: App Password)
+- `from_address` — Adres nadawcy
+- `to_addresses` — Lista adresów odbiorców
+
+**Gmail App Password:** https://myaccount.google.com/apppasswords
+</details>
+
+<details>
+<summary><b>Webhook</b> — Generyczny HTTP endpoint</summary>
+
+```json
+"webhook": {
+  "url": "https://example.com/webhook",
+  "method": "POST",
+  "headers": {
+    "Authorization": "Bearer token123",
+    "Content-Type": "application/json"
+  },
+  "timeout": 10
+}
+```
+
+- `url` — **Wymagane.** URL endpointu
+- `method` — HTTP metoda: `POST`, `PUT`, `GET` (default: `POST`)
+- `headers` — Opcjonalne. Dodatkowe nagłówki
+- `timeout` — Timeout w sekundach (default: 10)
+
+**Payload JSON:**
+```json
+{
+  "title": "Nowa faktura sprzedażowa w KSeF",
+  "message": "Do: Firma ABC - NIP 1234567890\n...",
+  "priority": 0,
+  "timestamp": "2026-02-06T10:30:00Z",
+  "url": null
+}
+```
+</details>
+
+**Przykładowa konfiguracja (3 kanały włączone):**
+
+```json
+{
+  "notifications": {
+    "channels": ["pushover", "discord", "email"],
+    "message_priority": 0,
+    "test_notification": false,
+    "pushover": {
+      "user_key": "abc123...",
+      "api_token": "xyz789..."
+    },
+    "discord": {
+      "webhook_url": "https://discord.com/api/webhooks/..."
+    },
+    "email": {
+      "smtp_server": "smtp.gmail.com",
+      "smtp_port": 587,
+      "use_tls": true,
+      "username": "monitor@example.com",
+      "password": "app-password-here",
+      "from_address": "KSeF Monitor <monitor@example.com>",
+      "to_addresses": ["admin@example.com"]
+    }
+  }
+}
+```
+
+Pełna dokumentacja: [docs/NOTIFICATIONS.md](docs/NOTIFICATIONS.md)
 
 ### Sekcja `monitoring`
 
@@ -172,17 +335,32 @@ Aplikacja automatycznie waliduje konfigurację przy starcie:
 
 ## Sekretne wartości
 
-Trzy wartości (`token`, `user_key`, `api_token`) mogą być dostarczone na trzy sposoby. Kolejność priorytetów od najwyższego:
+Wrażliwe dane mogą być dostarczone na trzy sposoby. Kolejność priorytetów od najwyższego:
 
-1. Zmienne środowiska
-2. Docker secrets (pliki w `/run/secrets/`)
-3. Wartość wpisana bezpośrednio w `config.json`
+1. **Zmienne środowiska** (`.env` file lub `docker-compose.env.yml`)
+2. **Docker secrets** (pliki w `/run/secrets/` — dla Swarm)
+3. **Config file** (wartość wpisana bezpośrednio w `config.json`)
 
-| Wartość | Zmienne środowiska | Docker secret |
-|---|---|---|
-| KSeF token | `KSEF_TOKEN` | `ksef_token` |
-| Pushover User Key | `PUSHOVER_USER_KEY` | `pushover_user_key` |
-| Pushover API Token | `PUSHOVER_API_TOKEN` | `pushover_api_token` |
+| Wartość | Zmienne środowiska | Docker secret | Kanał |
+|---|---|---|---|
+| KSeF token | `KSEF_TOKEN` | `ksef_token` | — |
+| Pushover User Key | `PUSHOVER_USER_KEY` | `pushover_user_key` | Pushover |
+| Pushover API Token | `PUSHOVER_API_TOKEN` | `pushover_api_token` | Pushover |
+| Discord Webhook URL | `DISCORD_WEBHOOK_URL` | `discord_webhook_url` | Discord |
+| Slack Webhook URL | `SLACK_WEBHOOK_URL` | `slack_webhook_url` | Slack |
+| Email Password | `EMAIL_PASSWORD` | `email_password` | Email |
+| Webhook Token | `WEBHOOK_TOKEN` | `webhook_token` | Webhook |
+
+**Uwaga:** Tylko sekrety dla włączonych kanałów są wymagane. Jeśli używasz tylko Discord, nie musisz podawać credentials dla Pushover, Email, etc.
+
+**Przykład `.env` file:**
+```bash
+KSEF_TOKEN=your-ksef-token
+DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...
+EMAIL_PASSWORD=your-app-password
+```
+
+Więcej informacji: [docs/SECURITY.md](docs/SECURITY.md)
 
 ---
 
@@ -223,10 +401,14 @@ docker compose -f docker-compose.env.yml up -d
 Sekretne wartości przechowywane w Docker Swarm. Wymaga uruchomionego Swarm.
 
 ```bash
-# Utworzenie sekretów
+# Utworzenie sekretów (tylko dla kanałów których używasz)
 echo "twoj-ksef-token"          | docker secret create ksef_token -
 echo "twoj-pushover-user-key"   | docker secret create pushover_user_key -
 echo "twoj-pushover-api-token"  | docker secret create pushover_api_token -
+echo "https://discord.com/api/webhooks/..." | docker secret create discord_webhook_url -
+echo "https://hooks.slack.com/services/..." | docker secret create slack_webhook_url -
+echo "twoj-smtp-password"       | docker secret create email_password -
+echo "twoj-webhook-token"       | docker secret create webhook_token -
 
 # config.secure.json bez sekretów
 cp examples/config.secure.json config.secure.json
@@ -235,6 +417,8 @@ cp examples/config.secure.json config.secure.json
 docker swarm init   # jeśli jeszcze nie zrobione
 docker compose -f docker-compose.secrets.yml up -d
 ```
+
+**Uwaga:** Twórz tylko sekrety dla kanałów, które włączyłeś w `notifications.channels`.
 
 ### Zarządzanie kontenerem
 
@@ -317,9 +501,11 @@ Przykładowy payload:
 
 ---
 
-## Powiadomienia Pushover
+## Powiadomienia
 
 ### Tytuły — zależne od `subjectType`
+
+Wszystkie kanały otrzymują te same tytuły:
 
 | `subjectType` | Tytuł |
 |---|---|
@@ -365,6 +551,20 @@ Numer KSeF: ...
 | Zatrzymanie | KSeF Monitor Stopped | `-1` |
 | Błąd w pętli | KSeF Monitor Error | `1` |
 | Test na starcie | KSeF Monitor Test | `0` |
+
+### Priority mapping
+
+Każdy kanał mapuje priority (`-2` do `2`) na własny format:
+
+| Priority | Pushover | Discord | Slack | Email | Webhook |
+|---|---|---|---|---|---|
+| `-2` | Cisza | Kolor szary | Kolor szary | X-Priority: 5 | `priority: -2` |
+| `-1` | Cicho | Kolor szary | Emoji `:bell:` | X-Priority: 5 | `priority: -1` |
+| `0` | Normalne | Kolor niebieski | Emoji `:envelope:` | X-Priority: 3 | `priority: 0` |
+| `1` | Wysoka | Kolor pomarańczowy | Emoji `:warning:` + `@channel` | X-Priority: 2 | `priority: 1` |
+| `2` | Pilne (wymaga potwierdzenia) | Kolor czerwony | Emoji `:rotating_light:` + `<!here>` | X-Priority: 1 | `priority: 2` |
+
+Więcej szczegółów: [docs/NOTIFICATIONS.md](docs/NOTIFICATIONS.md)
 
 ---
 
