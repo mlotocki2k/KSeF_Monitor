@@ -50,15 +50,10 @@ class ConfigManager:
         try:
             # Load config with secrets injected from environment/Docker secrets
             config = self.secrets_manager.load_config_with_secrets()
-            
-            # Validate required fields
+
+            # Validate required fields (including secrets)
             self._validate_config(config)
-            
-            # Validate secrets are present
-            if not self.secrets_manager.validate_secrets(config):
-                logger.error("Configuration validation failed - missing secrets")
-                sys.exit(1)
-            
+
             logger.info("Configuration loaded successfully")
             return config
             
@@ -80,8 +75,8 @@ class ConfigManager:
             ValueError: If required fields are missing
         """
         required_fields = {
-            "ksef": ["environment", "nip"],  # token validated separately by secrets_manager
-            "pushover": [],  # credentials validated separately by secrets_manager
+            "ksef": ["environment", "nip", "token"],
+            "pushover": ["user_key", "api_token"],
             "monitoring": []  # check_interval is deprecated, schedule section is now used
         }
 
