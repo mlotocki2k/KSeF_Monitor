@@ -1,0 +1,121 @@
+name: Check KSeF OpenAPI changes (openai.json)
+
+on:
+  schedule:
+    - cron: "0 22 * * *" # codziennie 22:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: check-ksef-openapi
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout test branch
+        uses: actions/checkout@v4
+        with:
+          ref: test
+
+      - name: Fetch remote OpenAPI spec
+        id: fetch
+        shell: bash
+        run: |
+          set -euo pipefail
+          URL="https://api.ksef.mf.gov.pl/docs/v2/openapi.json"
+          curl -fsSL "$URL" -o remote-openapi.json
+          echo "remote_sha=$(sha256sum remote-openapi.json | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+
+      - name: Compute local openai.json hash
+        id: local
+        shell: bash
+        run: |
+          set -euo pipefail
+          FILE="openai.json"
+          if [ ! -f "$FILE" ]; then
+            echo "local_exists=false" >> "$GITHUB_OUTPUT"
+            echo "local_sha=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "local_exists=true" >> "$GITHUB_OUTPUT"
+          echo "local_sha=$(sha256sum "$FILE" | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+
+      - name: Compare
+        id: cmp
+        shell: bash
+        run: |
+          set -euo pipefail
+          REMOTE="${{ steps.fetch.outputs.remote_sha }}"
+          LOCAL_EXISTS="${{ steps.local.outputs.local_exists }}"
+          LOCAL="${{ steps.local.outputs.local_sha }}"
+
+          if [ "$LOCAL_EXISTS" != "true" ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "reason=local_missing" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [ "$REMOTE" != "$LOCAL" ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "reason=hash_differs" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "reason=same" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create or update issue if changed
+        if: steps.cmp.outputs.changed == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const title = "KSeF OpenAPI changed vs openai.json (branch: test)";
+            const remoteSha = "${{ steps.fetch.outputs.remote_sha }}";
+            const localExists = "${{ steps.local.outputs.local_exists }}";
+            const localSha = "${{ steps.local.outputs.local_sha }}";
+            const reason = "${{ steps.cmp.outputs.reason }}";
+
+            const body =
+`Wykryto zmianę w zdalnym specu OpenAPI względem pliku \`openai.json\` na branchu \`test\`.
+
+- URL: https://api.ksef.mf.gov.pl/docs/v2/openapi.json
+- Powód: **${reason}**
+- Local exists: **${localExists}**
+- Local SHA256: \`${localSha || "(brak pliku)"}\`
+- Remote SHA256: \`${remoteSha}\`
+
+Sugestia:
+- pobierz aktualny spec i zaktualizuj \`openai.json\`, jeśli to celowe.`;
+
+            // znajdź otwarte issue o tym tytule
+            const { data: issues } = await github.rest.search.issuesAndPullRequests({
+              q: `repo:${context.repo.owner}/${context.repo.repo} is:issue is:open in:title "${title}"`
+            });
+
+            if (issues.items.length > 0) {
+              // dopisz komentarz
+              const issue_number = issues.items[0].number;
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number,
+                body
+              });
+            } else {
+              // utwórz nowe issue
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title,
+                body
+              });
+            }
+
+      - name: Summary
+        run: |
+          echo "Changed: ${{ steps.cmp.outputs.changed }}" >> $GITHUB_STEP_SUMMARY
+          echo "Reason:  ${{ steps.cmp.outputs.reason }}" >> $GITHUB_STEP_SUMMARY
