@@ -1,14 +1,17 @@
 name: Build and publish Docker image
 
 on:
-  push:
-    branches: ["main"]
-    tags: ["v*.*.*"]
+  schedule:
+    - cron: "0 22 * * *" # 22:00 UTC codziennie
   workflow_dispatch:
 
 permissions:
   contents: read
   packages: write
+
+concurrency:
+  group: build-and-publish-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
@@ -32,10 +35,24 @@ jobs:
           images: ghcr.io/${{ github.repository }}
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
-            type=ref,event=tag
-            type=sha
+            type=sha,format=long
+
+      - name: Check if image for this commit already exists
+        id: check
+        shell: bash
+        run: |
+          IMAGE="ghcr.io/${{ github.repository }}:sha-${{ github.sha }}"
+          echo "Checking $IMAGE"
+          if docker manifest inspect "$IMAGE" > /dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "Image already exists - skipping build."
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "Image does not exist - will build."
+          fi
 
       - name: Build & push
+        if: steps.check.outputs.exists != 'true'
         uses: docker/build-push-action@v6
         with:
           context: .
