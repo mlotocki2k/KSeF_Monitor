@@ -1,8 +1,8 @@
-name: Check Python requirements updates (branch: test)
+name: "Check Python requirements updates (branch: test)"
 
 on:
   schedule:
-    - cron: "5 22 * * *" # codziennie 22:05 UTC
+    - cron: "5 22 * * *"
   workflow_dispatch:
 
 permissions:
@@ -41,34 +41,34 @@ jobs:
           set -euo pipefail
           pip list --outdated --format=json > outdated.json
           COUNT=$(python - << 'PY'
-import json
-data = json.load(open("outdated.json", "r", encoding="utf-8"))
-print(len(data))
-PY
-)
+          import json
+          data = json.load(open("outdated.json", "r", encoding="utf-8"))
+          print(len(data))
+          PY
+          )
           echo "count=$COUNT" >> "$GITHUB_OUTPUT"
 
       - name: Build issue body
         if: steps.outdated.outputs.count != '0'
-        id: body
         shell: bash
         run: |
           set -euo pipefail
           python - << 'PY'
-import json
+          import json
+          data = json.load(open("outdated.json", "r", encoding="utf-8"))
 
-data = json.load(open("outdated.json", "r", encoding="utf-8"))
-
-lines = []
-lines.append("Wykryto dostępne aktualizacje paczek z `requirements.txt` na branchu `test`.\n")
-lines.append("| Package | Current | Latest | Type |")
-lines.append("|---|---:|---:|---|")
-for p in data:
-    lines.append(f"| {p['name']} | {p['version']} | {p['latest_version']} | {p.get('latest_filetype','')} |")
-
-lines.append("\nSugestia:\n- przejrzyj changelogi i zaktualizuj `requirements.txt` (lub użyj narzędzia typu pip-tools/poetry).\n")
-open("issue_body.md", "w", encoding="utf-8").write("\n".join(lines))
-PY
+          lines = []
+          lines.append("Wykryto dostępne aktualizacje paczek z `requirements.txt` na branchu `test`.")
+          lines.append("")
+          lines.append("| Package | Current | Latest |")
+          lines.append("|---|---:|---:|")
+          for p in data:
+              lines.append(f"| {p['name']} | {p['version']} | {p['latest_version']} |")
+          lines.append("")
+          lines.append("Sugestia:")
+          lines.append("- przejrzyj changelogi i zaktualizuj `requirements.txt` (lub użyj narzędzia typu pip-tools/poetry).")
+          open("issue_body.md", "w", encoding="utf-8").write("\\n".join(lines))
+          PY
 
       - name: Create or update issue if updates exist
         if: steps.outdated.outputs.count != '0'
