@@ -71,27 +71,31 @@ jobs:
       - name: Create or update issue if changed
         if: steps.cmp.outputs.changed == 'true'
         uses: actions/github-script@v7
+        env:
+          REMOTE_SHA: ${{ steps.fetch.outputs.remote_sha }}
+          LOCAL_EXISTS: ${{ steps.local.outputs.local_exists }}
+          LOCAL_SHA: ${{ steps.local.outputs.local_sha }}
+          REASON: ${{ steps.cmp.outputs.reason }}
         with:
           script: |
             const title = "KSeF OpenAPI changed vs openai.json (branch: test)";
-            const remoteSha = "${{ steps.fetch.outputs.remote_sha }}";
-            const localExists = "${{ steps.local.outputs.local_exists }}";
-            const localSha = "${{ steps.local.outputs.local_sha }}";
-            const reason = "${{ steps.cmp.outputs.reason }}";
+            const remoteSha = process.env.REMOTE_SHA || "";
+            const localExists = process.env.LOCAL_EXISTS || "";
+            const localSha = process.env.LOCAL_SHA || "";
+            const reason = process.env.REASON || "";
 
-            const lines = [
+            const body = [
               "Wykryto zmianę w zdalnym specu OpenAPI względem pliku `openai.json` na branchu `test`.",
               "",
               "- URL: https://api.ksef.mf.gov.pl/docs/v2/openapi.json",
               `- Powód: **${reason}**`,
               `- Local exists: **${localExists}**`,
-              `- Local SHA256: \\`${localSha || "(brak pliku)"}\\``,
-              `- Remote SHA256: \\`${remoteSha}\\``,
+              `- Local SHA256: \`${localSha || "(brak pliku)"}\``,
+              `- Remote SHA256: \`${remoteSha}\``,
               "",
               "Sugestia:",
               "- pobierz aktualny spec i zaktualizuj `openai.json`, jeśli to celowe."
-            ];
-            const body = lines.join("\n");
+            ].join("\n");
 
             const { data: issues } = await github.rest.search.issuesAndPullRequests({
               q: `repo:${context.repo.owner}/${context.repo.repo} is:issue is:open in:title "${title}"`
