@@ -1,8 +1,8 @@
-name: Check KSeF OpenAPI changes (openai.json)
+name: "Check KSeF OpenAPI changes (openai.json)"
 
 on:
   schedule:
-    - cron: "0 22 * * *" # codziennie 22:00 UTC
+    - cron: "0 22 * * *"
   workflow_dispatch:
 
 permissions:
@@ -79,25 +79,25 @@ jobs:
             const localSha = "${{ steps.local.outputs.local_sha }}";
             const reason = "${{ steps.cmp.outputs.reason }}";
 
-            const body =
-`Wykryto zmianę w zdalnym specu OpenAPI względem pliku \`openai.json\` na branchu \`test\`.
+            const lines = [
+              "Wykryto zmianę w zdalnym specu OpenAPI względem pliku `openai.json` na branchu `test`.",
+              "",
+              "- URL: https://api.ksef.mf.gov.pl/docs/v2/openapi.json",
+              `- Powód: **${reason}**`,
+              `- Local exists: **${localExists}**`,
+              `- Local SHA256: \\`${localSha || "(brak pliku)"}\\``,
+              `- Remote SHA256: \\`${remoteSha}\\``,
+              "",
+              "Sugestia:",
+              "- pobierz aktualny spec i zaktualizuj `openai.json`, jeśli to celowe."
+            ];
+            const body = lines.join("\n");
 
-- URL: https://api.ksef.mf.gov.pl/docs/v2/openapi.json
-- Powód: **${reason}**
-- Local exists: **${localExists}**
-- Local SHA256: \`${localSha || "(brak pliku)"}\`
-- Remote SHA256: \`${remoteSha}\`
-
-Sugestia:
-- pobierz aktualny spec i zaktualizuj \`openai.json\`, jeśli to celowe.`;
-
-            // znajdź otwarte issue o tym tytule
             const { data: issues } = await github.rest.search.issuesAndPullRequests({
               q: `repo:${context.repo.owner}/${context.repo.repo} is:issue is:open in:title "${title}"`
             });
 
             if (issues.items.length > 0) {
-              // dopisz komentarz
               const issue_number = issues.items[0].number;
               await github.rest.issues.createComment({
                 owner: context.repo.owner,
@@ -106,7 +106,6 @@ Sugestia:
                 body
               });
             } else {
-              // utwórz nowe issue
               await github.rest.issues.create({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
