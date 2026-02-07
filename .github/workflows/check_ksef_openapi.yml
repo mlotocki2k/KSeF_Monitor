@@ -36,7 +36,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          FILE="openai.json"
+          FILE="spec/openapi.json"
           if [ ! -f "$FILE" ]; then
             echo "local_exists=false" >> "$GITHUB_OUTPUT"
             echo "local_sha=" >> "$GITHUB_OUTPUT"
