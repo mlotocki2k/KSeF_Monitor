@@ -1,4 +1,4 @@
-name: "Check Python requirements updates (branch: test)"
+name: "Check Python requirements updates (branch test)"
 
 on:
   schedule:
