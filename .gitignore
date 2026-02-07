@@ -41,5 +41,8 @@ invoice_*.xml
 faktura*.pdf
 faktura*.xml
 
+#workflows
+.github/
+
 #TODO
 TODO.md
