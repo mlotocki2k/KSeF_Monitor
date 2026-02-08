@@ -131,12 +131,18 @@ jobs:
           git checkout -B int origin/int
           cp /tmp/requirements_updated.txt requirements.txt
           git add requirements.txt
-          git commit -m "Update requirements.txt packages
+
+          # Only commit and push if there are actual changes
+          if git diff --cached --quiet; then
+            echo "requirements.txt on int branch is already up to date"
+          else
+            git commit -m "Update requirements.txt packages
 
           Automated update triggered by issue #${{ github.event.issue.number }}
 
           Co-Authored-By: github-actions[bot] <github-actions[bot]@users.noreply.github.com>"
-          git push origin int
+            git push origin int
+          fi
 
       - name: Create PR from int to test
         if: steps.upgrade.outputs.has_changes == 'true'
