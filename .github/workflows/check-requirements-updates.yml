@@ -91,12 +91,20 @@ jobs:
                 issue_number,
                 body
               });
+              // Add 'requirements' label to trigger update-requirements workflow
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number,
+                labels: ['requirements']
+              });
             } else {
-              await github.rest.issues.create({
+              const newIssue = await github.rest.issues.create({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 title,
-                body
+                body,
+                labels: ['requirements']
               });
             }
 
