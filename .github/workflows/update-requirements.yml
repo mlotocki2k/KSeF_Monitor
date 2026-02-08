@@ -1,0 +1,179 @@
+name: Update requirements.txt
+
+on:
+  issues:
+    types: [labeled]
+
+permissions:
+  contents: write
+  issues: write
+
+jobs:
+  update-requirements:
+    if: github.event.label.name == 'requirements'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout int branch
+        uses: actions/checkout@v4
+        with:
+          ref: int
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Save current versions
+        run: |
+          cp requirements.txt requirements.old.txt
+
+      - name: Parse and upgrade packages
+        id: upgrade
+        run: |
+          set -euo pipefail
+
+          # Install current packages
+          pip install --quiet --upgrade pip
+
+          # Extract active (non-commented) packages from requirements.txt
+          grep -v '^\s*#' requirements.txt | grep -v '^\s*$' > active_packages.txt || true
+
+          if [ ! -s active_packages.txt ]; then
+            echo "No active packages found in requirements.txt"
+            echo "has_changes=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Install current versions first
+          pip install --quiet -r active_packages.txt
+
+          # Save pre-upgrade state
+          pip freeze > before_freeze.txt
+
+          # Upgrade each package to latest
+          while IFS= read -r line; do
+            pkg_name=$(echo "$line" | sed 's/[>=<].*//' | xargs)
+            if [ -n "$pkg_name" ]; then
+              echo "Upgrading: $pkg_name"
+              pip install --quiet --upgrade "$pkg_name" || echo "WARNING: Failed to upgrade $pkg_name"
+            fi
+          done < active_packages.txt
+
+          # Save post-upgrade state
+          pip freeze > after_freeze.txt
+
+          # Build updated requirements.txt preserving comments and structure
+          cp requirements.txt requirements.new.txt
+
+          while IFS= read -r line; do
+            pkg_name=$(echo "$line" | sed 's/[>=<].*//' | xargs)
+            if [ -n "$pkg_name" ]; then
+              new_version=$(grep -i "^${pkg_name}==" after_freeze.txt | head -1) || true
+              if [ -n "$new_version" ]; then
+                # Escape special chars for sed
+                old_escaped=$(echo "$line" | sed 's/[&/\]/\\&/g')
+                new_escaped=$(echo "$new_version" | sed 's/[&/\]/\\&/g')
+                sed -i "s|${old_escaped}|${new_escaped}|g" requirements.new.txt
+              fi
+            fi
+          done < active_packages.txt
+
+          mv requirements.new.txt requirements.txt
+
+          # Generate changelog
+          echo "## Package Changes" > changelog.md
+          echo "" >> changelog.md
+
+          has_changes=false
+          while IFS= read -r line; do
+            pkg_name=$(echo "$line" | sed 's/[>=<].*//' | xargs)
+            if [ -n "$pkg_name" ]; then
+              old_ver=$(grep -i "^${pkg_name}==" before_freeze.txt | sed 's/.*==//' | head -1) || true
+              new_ver=$(grep -i "^${pkg_name}==" after_freeze.txt | sed 's/.*==//' | head -1) || true
+              if [ -n "$old_ver" ] && [ -n "$new_ver" ] && [ "$old_ver" != "$new_ver" ]; then
+                echo "| \`$pkg_name\` | $old_ver | $new_ver |" >> changelog.md
+                has_changes=true
+              fi
+            fi
+          done < active_packages.txt
+
+          if [ "$has_changes" = true ]; then
+            # Add table header before rows
+            sed -i '2a | Package | Old Version | New Version |\n|---|---|---|' changelog.md
+            echo "has_changes=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "No package updates available." > changelog.md
+            echo "has_changes=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          # Save changelog for next step
+          echo "CHANGELOG<<CHANGELOG_EOF" >> "$GITHUB_ENV"
+          cat changelog.md >> "$GITHUB_ENV"
+          echo "CHANGELOG_EOF" >> "$GITHUB_ENV"
+
+      - name: Commit and push to int
+        if: steps.upgrade.outputs.has_changes == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add requirements.txt
+          git commit -m "$(cat <<'EOF'
+          Update requirements.txt packages
+
+          Automated update triggered by issue #${{ github.event.issue.number }}
+
+          Co-Authored-By: github-actions[bot] <github-actions[bot]@users.noreply.github.com>
+          EOF
+          )"
+          git push origin int
+
+      - name: Comment on issue - changes found
+        if: steps.upgrade.outputs.has_changes == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const changelog = process.env.CHANGELOG;
+            const body = [
+              `### :package: Requirements Update - Pushed to \`int\` branch`,
+              ``,
+              changelog,
+              ``,
+              `---`,
+              ``,
+              `:point_right: Changes have been pushed to the \`int\` branch.`,
+              `Awaiting manual merge to \`main\` by @mlotocki2k.`,
+              ``,
+              `> Triggered by issue #${context.issue.number}`
+            ].join('\n');
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: body
+            });
+
+      - name: Comment on issue - no changes
+        if: steps.upgrade.outputs.has_changes == 'false'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const body = [
+              `### :white_check_mark: Requirements Check - All packages are up to date`,
+              ``,
+              `No updates available for packages in \`requirements.txt\`.`,
+              ``,
+              `cc @mlotocki2k`,
+              ``,
+              `> Triggered by issue #${context.issue.number}`
+            ].join('\n');
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: body
+            });
