@@ -123,8 +123,9 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          # Save updated file
+          # Save updated file and clean working tree
           cp requirements.txt /tmp/requirements_updated.txt
+          git checkout -- requirements.txt
 
           # Push to int branch (no branch protection)
           git checkout -B int origin/int
