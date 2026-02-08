@@ -14,11 +14,14 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout int branch
+      - name: Checkout test branch
         uses: actions/checkout@v4
         with:
-          ref: int
+          ref: test
           fetch-depth: 0
+
+      - name: Fetch int branch
+        run: git fetch origin int
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -113,21 +116,34 @@ jobs:
           cat changelog.md >> "$GITHUB_ENV"
           echo "CHANGELOG_EOF" >> "$GITHUB_ENV"
 
-      - name: Commit and push to int
+      - name: Commit and push to test and int
         if: steps.upgrade.outputs.has_changes == 'true'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
+          # Save updated file
+          cp requirements.txt /tmp/requirements_updated.txt
+
+          # Commit and push to test
           git add requirements.txt
-          git commit -m "$(cat <<'EOF'
-          Update requirements.txt packages
+          git commit -m "Update requirements.txt packages
 
           Automated update triggered by issue #${{ github.event.issue.number }}
 
-          Co-Authored-By: github-actions[bot] <github-actions[bot]@users.noreply.github.com>
-          EOF
-          )"
+          Co-Authored-By: github-actions[bot] <github-actions[bot]@users.noreply.github.com>"
+          git push origin HEAD:test
+
+          # Switch to int branch and apply same update
+          git checkout -B int origin/int
+          cp /tmp/requirements_updated.txt requirements.txt
+          git add requirements.txt
+          git diff --cached --quiet || git commit -m "Update requirements.txt packages
+
+          Automated update triggered by issue #${{ github.event.issue.number }}
+          Synced from test branch.
+
+          Co-Authored-By: github-actions[bot] <github-actions[bot]@users.noreply.github.com>"
           git push origin int
 
       - name: Comment on issue - changes found
@@ -137,13 +153,13 @@ jobs:
           script: |
             const changelog = process.env.CHANGELOG;
             const body = [
-              `### :package: Requirements Update - Pushed to \`int\` branch`,
+              `### :package: Requirements Update - Pushed to \`test\` and \`int\` branches`,
               ``,
               changelog,
               ``,
               `---`,
               ``,
-              `:point_right: Changes have been pushed to the \`int\` branch.`,
+              `:point_right: Changes have been pushed to \`test\` and \`int\` branches.`,
               `Awaiting manual merge to \`main\` by @mlotocki2k.`,
               ``,
               `> Triggered by issue #${context.issue.number}`
