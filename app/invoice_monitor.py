@@ -180,6 +180,7 @@ class InvoiceMonitor:
         ksef_number = invoice.get('ksefNumber', 'N/A')
         invoice_ref = invoice.get('invoiceNumber', 'N/A')
         issue_date = invoice.get('issueDate', 'N/A')
+        gross_value = invoice.get('grossAmount','N/A')
 
         seller_name = invoice.get('seller', {}).get("name", 'N/A')
         seller_nip = invoice.get('seller', {}).get("nip", 'N/A')
@@ -207,6 +208,7 @@ class InvoiceMonitor:
             f"{counterparty}\n"
             f"Nr Faktury: {invoice_ref}\n"
             f"Data: {issue_date}\n"
+            f"Brutto: {gross_value}\n"
             f"Numer KSeF: {ksef_number}"
         )
 
