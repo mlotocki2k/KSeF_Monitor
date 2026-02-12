@@ -50,7 +50,7 @@ def apply_config(config):
         config: ConfigManager instance
     """
     # Apply logging level
-    level_name = config.get("monitoring", "logging_level", "INFO").upper()
+    level_name = (config.get("monitoring", "logging_level", "INFO") or "INFO").upper()
     if level_name not in VALID_LEVELS:
         logger.warning(f"Invalid logging_level '{level_name}', using INFO")
         level_name = "INFO"
