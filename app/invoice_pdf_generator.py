@@ -4,6 +4,9 @@ KSeF Invoice PDF Generator
 Converts KSeF invoice XML (FA_VAT format) to PDF following KSeF visual template.
 Based on FA_VAT schema from KSeF documentation.
 Supports FA(2) schema (http://crd.gov.pl/wzor/2023/06/29/12648/) and older versions.
+
+IMPORTANT: PDF contains ONLY data present in the source XML. No calculations,
+no default values, no invented content.
 """
 
 import logging
@@ -35,7 +38,6 @@ _FONT_NAME = 'Helvetica'
 _FONT_NAME_BOLD = 'Helvetica-Bold'
 
 if REPORTLAB_AVAILABLE:
-    # Try to find DejaVu Sans for Polish character support
     _DEJAVU_PATHS = [
         '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
         '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf',
@@ -109,7 +111,9 @@ class InvoiceXMLParser:
         return default
 
     def _parse_invoice_header(self) -> Dict:
-        """Parse invoice header — handles FA(2) schema"""
+        """Parse invoice header — handles FA(2) schema.
+        FA(2): P_1 = data wystawienia, P_6 = data sprzedazy/dostawy.
+        """
         header = {}
 
         naglowek = self.root.find('.//fa:Naglowek', self.NS)
@@ -118,14 +122,20 @@ class InvoiceXMLParser:
         if naglowek is not None:
             header['invoice_type'] = self._text(naglowek, 'fa:KodFormularza')
             header['invoice_variant'] = self._text(naglowek, 'fa:WariantFormularza')
+            # Try Naglowek for issue date
             header['issue_date'] = self._text(
                 naglowek, 'fa:DataWystawieniaFaktury', 'fa:DataWystawienia')
 
         if fa is not None:
-            # Invoice number is P_2 in FA(2)
+            # Invoice number: P_2
             header['invoice_number'] = self._text(fa, 'fa:P_2')
-            header['sale_date'] = self._text(fa, 'fa:P_1')
-            header['currency'] = self._text(fa, 'fa:KodWaluty', default='PLN')
+            # P_1 = Data wystawienia faktury (issue date in FA(2))
+            if not header.get('issue_date'):
+                header['issue_date'] = self._text(fa, 'fa:P_1')
+            # P_6 = Data dokonania/zakończenia dostawy (sale/delivery date)
+            header['sale_date'] = self._text(fa, 'fa:P_6')
+            # Currency
+            header['currency'] = self._text(fa, 'fa:KodWaluty')
 
         # Fallback: try NrFaktury in header
         if not header.get('invoice_number') and naglowek is not None:
@@ -170,7 +180,7 @@ class InvoiceXMLParser:
         if adres is None:
             return address
 
-        address['country'] = self._text(adres, 'fa:KodKraju', default='PL')
+        address['country'] = self._text(adres, 'fa:KodKraju')
 
         # Try simplified format (AdresL1/AdresL2) — common in FA(2)
         line1 = self._text(adres, 'fa:AdresL1')
@@ -204,7 +214,7 @@ class InvoiceXMLParser:
         return address
 
     def _parse_invoice_items(self) -> List[Dict]:
-        """Parse invoice line items"""
+        """Parse invoice line items — only fields present in XML"""
         items = []
         wiersze = self.root.findall('.//fa:Fa/fa:FaWiersz', self.NS)
 
@@ -213,7 +223,7 @@ class InvoiceXMLParser:
                 'line_number': idx,
                 'name': self._text(wiersz, 'fa:P_7'),
                 'quantity': self._text(wiersz, 'fa:P_8A'),
-                'unit': self._text(wiersz, 'fa:P_8B', default='szt'),
+                'unit': self._text(wiersz, 'fa:P_8B'),
                 'unit_price_net': self._text(wiersz, 'fa:P_9A'),
                 'net_value': self._text(wiersz, 'fa:P_11'),
                 'vat_rate': self._text(wiersz, 'fa:P_12'),
@@ -235,7 +245,9 @@ class InvoiceXMLParser:
         return summary
 
     def _parse_payment_info(self) -> Dict:
-        """Parse payment details — handles FA(2) nested structure"""
+        """Parse payment details — handles FA(2) nested structure.
+        In FA(2), FormaPlatnosci/TerminPlatnosci may be inside ZaplataF sub-element.
+        """
         payment = {}
 
         # Platnosc is inside Fa in FA(2)
@@ -245,20 +257,45 @@ class InvoiceXMLParser:
         if platnosc is None:
             return payment
 
-        # TerminPlatnosci may contain nested Termin element
-        payment['due_date'] = self._text(
-            platnosc, 'fa:TerminPlatnosci/fa:Termin', 'fa:TerminPlatnosci')
+        # Zaplacono flag (1=tak, 2=nie)
+        zaplacono = self._text(platnosc, 'fa:Zaplacono')
+        if zaplacono == '1':
+            payment['paid'] = 'Tak'
+        elif zaplacono == '2':
+            payment['paid'] = 'Nie'
 
-        method_code = self._text(platnosc, 'fa:FormaPlatnosci')
-        payment_methods = {
-            '1': 'Gotówka', '2': 'Karta', '3': 'Bon',
-            '4': 'Czek', '5': 'Kredyt', '6': 'Przelew',
-        }
-        payment['method'] = payment_methods.get(method_code, method_code)
+        # FormaPlatnosci — try direct and inside ZaplataF
+        method_code = self._text(
+            platnosc,
+            'fa:FormaPlatnosci',
+            'fa:ZaplataF/fa:FormaPlatnosci')
+        if method_code:
+            payment_methods = {
+                '1': 'Gotówka', '2': 'Karta', '3': 'Bon',
+                '4': 'Czek', '5': 'Kredyt', '6': 'Przelew',
+            }
+            payment['method'] = payment_methods.get(method_code, method_code)
 
+        # TerminPlatnosci — try direct, nested Termin, and inside ZaplataF
+        due_date = self._text(
+            platnosc,
+            'fa:TerminPlatnosci/fa:Termin',
+            'fa:TerminPlatnosci',
+            'fa:ZaplataF/fa:TerminPlatnosci')
+        if due_date:
+            payment['due_date'] = due_date
+
+        # RachunekBankowy
         rachunek = platnosc.find('fa:RachunekBankowy', self.NS)
+        if rachunek is None:
+            rachunek = platnosc.find('fa:RachunekBankowyFaktury', self.NS)
         if rachunek is not None:
-            payment['account_number'] = self._text(rachunek, 'fa:NrRB')
+            nr_rb = self._text(rachunek, 'fa:NrRB')
+            if nr_rb:
+                payment['account_number'] = nr_rb
+            bank_name = self._text(rachunek, 'fa:NazwaBanku')
+            if bank_name:
+                payment['bank_name'] = bank_name
 
         return payment
 
@@ -280,7 +317,12 @@ class InvoiceXMLParser:
 
 
 class InvoicePDFGenerator:
-    """PDF generator for KSeF invoices following official visual template"""
+    """PDF generator for KSeF invoices following official visual template.
+    Only renders data present in the parsed XML — no calculations or defaults.
+    """
+
+    # Available width: A4 (210mm) - 12mm margins each side = 186mm
+    USABLE_WIDTH = 186 * mm
 
     def __init__(self):
         if not REPORTLAB_AVAILABLE:
@@ -334,6 +376,33 @@ class InvoicePDFGenerator:
             fontSize=12,
             alignment=2,
         ))
+        self.styles.add(ParagraphStyle(
+            name='TableHeader',
+            fontName=self.font_bold,
+            fontSize=7,
+            leading=9,
+            alignment=1,
+        ))
+        self.styles.add(ParagraphStyle(
+            name='TableCell',
+            fontName=self.font,
+            fontSize=7,
+            leading=9,
+        ))
+        self.styles.add(ParagraphStyle(
+            name='TableCellRight',
+            fontName=self.font,
+            fontSize=7,
+            leading=9,
+            alignment=2,
+        ))
+        self.styles.add(ParagraphStyle(
+            name='TableCellCenter',
+            fontName=self.font,
+            fontSize=7,
+            leading=9,
+            alignment=1,
+        ))
 
     def generate(self, invoice_data: Dict, output_path: str = None) -> BytesIO:
         """Generate PDF from parsed invoice data"""
@@ -342,8 +411,8 @@ class InvoicePDFGenerator:
         doc = SimpleDocTemplate(
             buffer if output_path is None else output_path,
             pagesize=A4,
-            rightMargin=15*mm,
-            leftMargin=15*mm,
+            rightMargin=12*mm,
+            leftMargin=12*mm,
             topMargin=15*mm,
             bottomMargin=15*mm
         )
@@ -382,29 +451,32 @@ class InvoicePDFGenerator:
         return buffer
 
     def _build_invoice_header(self, data: Dict) -> List:
-        """Build invoice header section"""
+        """Build invoice header section — only rows with data from XML"""
         elements = []
         header = data.get('invoice_header', {})
 
         elements.append(Paragraph("FAKTURA VAT", self.styles['InvoiceHeader']))
 
-        info_data = [
-            ['Numer faktury:', header.get('invoice_number', 'N/A')],
-            ['Data wystawienia:', header.get('issue_date', 'N/A')],
-            ['Data sprzedazy:', header.get('sale_date', 'N/A')],
-        ]
+        info_data = []
+        if header.get('invoice_number'):
+            info_data.append(['Numer faktury:', header['invoice_number']])
+        if header.get('issue_date'):
+            info_data.append(['Data wystawienia:', header['issue_date']])
+        if header.get('sale_date'):
+            info_data.append(['Data sprzedazy:', header['sale_date']])
 
-        info_table = Table(info_data, colWidths=[50*mm, 80*mm])
-        info_table.setStyle(TableStyle([
-            ('FONTNAME', (0, 0), (0, -1), self.font_bold),
-            ('FONTNAME', (1, 0), (1, -1), self.font),
-            ('FONTSIZE', (0, 0), (-1, -1), 10),
-            ('ALIGN', (0, 0), (0, -1), 'RIGHT'),
-            ('ALIGN', (1, 0), (1, -1), 'LEFT'),
-            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-        ]))
+        if info_data:
+            info_table = Table(info_data, colWidths=[50*mm, 80*mm])
+            info_table.setStyle(TableStyle([
+                ('FONTNAME', (0, 0), (0, -1), self.font_bold),
+                ('FONTNAME', (1, 0), (1, -1), self.font),
+                ('FONTSIZE', (0, 0), (-1, -1), 10),
+                ('ALIGN', (0, 0), (0, -1), 'RIGHT'),
+                ('ALIGN', (1, 0), (1, -1), 'LEFT'),
+                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ]))
+            elements.append(info_table)
 
-        elements.append(info_table)
         return elements
 
     def _build_parties_section(self, data: Dict) -> List:
@@ -418,7 +490,7 @@ class InvoicePDFGenerator:
             self._format_party_info('NABYWCA', buyer)
         ]]
 
-        parties_table = Table(parties_data, colWidths=[90*mm, 90*mm])
+        parties_table = Table(parties_data, colWidths=[93*mm, 93*mm])
         parties_table.setStyle(TableStyle([
             ('VALIGN', (0, 0), (-1, -1), 'TOP'),
             ('BOX', (0, 0), (-1, -1), 0.5, colors.grey),
@@ -433,17 +505,21 @@ class InvoicePDFGenerator:
         return elements
 
     def _format_party_info(self, title: str, party: Dict) -> Paragraph:
-        """Format party (seller/buyer) information"""
+        """Format party (seller/buyer) information — only data from XML"""
         address = party.get('address', {})
 
         html = f"<b>{title}</b><br/>"
-        html += f"{party.get('name', 'N/A')}<br/>"
-        html += f"NIP: {party.get('nip', 'N/A')}<br/>"
 
-        # Support both simplified (line1/line2) and structured address
+        name = party.get('name', '')
+        if name:
+            html += f"{name}<br/>"
+
+        nip = party.get('nip', '')
+        if nip:
+            html += f"NIP: {nip}<br/>"
+
         line1 = address.get('line1', '')
         line2 = address.get('line2', '')
-
         if line1:
             html += f"{line1}<br/>"
         if line2:
@@ -452,48 +528,77 @@ class InvoicePDFGenerator:
         return Paragraph(html, self.styles['PartyInfo'])
 
     def _build_items_table(self, data: Dict) -> List:
-        """Build invoice items table"""
+        """Build invoice items table — only columns that have data in XML"""
         elements = []
         items = data.get('items', [])
 
         if not items:
             return elements
 
-        header_data = [
-            'Lp.', 'Nazwa towaru/uslugi', 'Ilosc', 'J.m.',
-            'Cena netto', 'Wartosc netto', 'VAT %', 'Kwota VAT', 'Wartosc brutto'
-        ]
+        # Determine which optional columns actually have data in XML
+        has_unit = any(item.get('unit') for item in items)
+        has_unit_price = any(item.get('unit_price_net') for item in items)
+        has_vat_rate = any(item.get('vat_rate') for item in items)
+        has_vat_amount = any(item.get('vat_amount') for item in items)
+        has_gross_value = any(item.get('gross_value') for item in items)
 
-        table_data = [header_data]
+        # Build column definitions: (header_label, field_key, fixed_width_mm, align)
+        # width=None means this column fills remaining space
+        columns = [
+            ('Lp.', 'line_number', 8, 'center'),
+            ('Nazwa towaru/uslugi', 'name', None, 'left'),
+            ('Ilosc', 'quantity', 13, 'right'),
+        ]
+        if has_unit:
+            columns.append(('J.m.', 'unit', 11, 'center'))
+        if has_unit_price:
+            columns.append(('Cena netto', 'unit_price_net', 22, 'right'))
+        columns.append(('Wartosc netto', 'net_value', 24, 'right'))
+        if has_vat_rate:
+            columns.append(('VAT %', 'vat_rate', 13, 'center'))
+        if has_vat_amount:
+            columns.append(('Kwota VAT', 'vat_amount', 22, 'right'))
+        if has_gross_value:
+            columns.append(('Wartosc brutto', 'gross_value', 24, 'right'))
+
+        # Calculate name column width = remaining space after fixed columns
+        fixed_total = sum(c[2] for c in columns if c[2] is not None)
+        name_width_mm = (self.USABLE_WIDTH / mm) - fixed_total
+
+        # Build header row using Paragraph for text wrapping
+        header_row = []
+        col_widths = []
+        for label, _, width_mm, _ in columns:
+            header_row.append(Paragraph(label, self.styles['TableHeader']))
+            col_widths.append((width_mm if width_mm is not None else name_width_mm) * mm)
+
+        table_data = [header_row]
+
+        # Amount fields that should be formatted with 2 decimal places
+        amount_fields = {'unit_price_net', 'net_value', 'vat_amount', 'gross_value'}
 
         for item in items:
-            row = [
-                str(item.get('line_number', '')),
-                item.get('name', ''),
-                item.get('quantity', ''),
-                item.get('unit', ''),
-                self._format_amount(item.get('unit_price_net', '')),
-                self._format_amount(item.get('net_value', '')),
-                item.get('vat_rate', ''),
-                self._format_amount(item.get('vat_amount', '')),
-                self._format_amount(item.get('gross_value', ''))
-            ]
+            row = []
+            for _, field, _, align in columns:
+                value = str(item.get(field, ''))
+                if field in amount_fields and value:
+                    value = self._format_amount(value)
+
+                if field == 'name':
+                    row.append(Paragraph(value, self.styles['TableCell']))
+                elif align == 'right':
+                    row.append(Paragraph(value, self.styles['TableCellRight']))
+                elif align == 'center':
+                    row.append(Paragraph(value, self.styles['TableCellCenter']))
+                else:
+                    row.append(Paragraph(value, self.styles['TableCell']))
             table_data.append(row)
 
-        col_widths = [10*mm, 50*mm, 15*mm, 10*mm, 20*mm, 20*mm, 15*mm, 20*mm, 20*mm]
         items_table = Table(table_data, colWidths=col_widths)
 
         items_table.setStyle(TableStyle([
             ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#e0e0e0')),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.black),
-            ('FONTNAME', (0, 0), (-1, 0), self.font_bold),
-            ('FONTSIZE', (0, 0), (-1, 0), 8),
-            ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
-            ('FONTNAME', (0, 1), (-1, -1), self.font),
-            ('FONTSIZE', (0, 1), (-1, -1), 8),
-            ('ALIGN', (0, 1), (0, -1), 'CENTER'),
-            ('ALIGN', (1, 1), (1, -1), 'LEFT'),
-            ('ALIGN', (2, 1), (-1, -1), 'RIGHT'),
             ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
             ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
             ('LEFTPADDING', (0, 0), (-1, -1), 3),
@@ -506,67 +611,83 @@ class InvoicePDFGenerator:
         return elements
 
     def _build_summary_section(self, data: Dict) -> List:
-        """Build invoice summary with totals"""
+        """Build invoice summary with totals — only values present in XML"""
         elements = []
         summary = data.get('summary', {})
         header = data.get('invoice_header', {})
-        currency = header.get('currency', 'PLN')
+        currency = header.get('currency', '')
+        currency_suffix = f' {currency}' if currency else ''
 
-        net = self._format_amount(summary.get('net_total', '0.00'))
-        vat = self._format_amount(summary.get('vat_total', '0.00'))
-        gross = self._format_amount(summary.get('gross_total', '0.00'))
+        summary_data = []
 
-        summary_data = [
-            [Paragraph(f'Wartosc netto:', self.styles['SummaryNormal']),
-             Paragraph(f'{net} {currency}', self.styles['SummaryNormal'])],
-            [Paragraph(f'VAT:', self.styles['SummaryNormal']),
-             Paragraph(f'{vat} {currency}', self.styles['SummaryNormal'])],
-            [Paragraph(f'RAZEM DO ZAPLATY:', self.styles['SummaryBold']),
-             Paragraph(f'{gross} {currency}', self.styles['SummaryBold'])],
-        ]
+        net = summary.get('net_total', '')
+        if net:
+            summary_data.append([
+                Paragraph('Wartosc netto:', self.styles['SummaryNormal']),
+                Paragraph(f'{self._format_amount(net)}{currency_suffix}', self.styles['SummaryNormal'])
+            ])
 
-        summary_table = Table(summary_data, colWidths=[120*mm, 60*mm])
-        summary_table.setStyle(TableStyle([
-            ('ALIGN', (0, 0), (-1, -1), 'RIGHT'),
-            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-            ('LINEABOVE', (0, -1), (-1, -1), 1, colors.black),
-            ('TOPPADDING', (0, -1), (-1, -1), 8),
-        ]))
+        vat = summary.get('vat_total', '')
+        if vat:
+            summary_data.append([
+                Paragraph('VAT:', self.styles['SummaryNormal']),
+                Paragraph(f'{self._format_amount(vat)}{currency_suffix}', self.styles['SummaryNormal'])
+            ])
 
-        elements.append(summary_table)
+        gross = summary.get('gross_total', '')
+        if gross:
+            summary_data.append([
+                Paragraph('RAZEM DO ZAPLATY:', self.styles['SummaryBold']),
+                Paragraph(f'{self._format_amount(gross)}{currency_suffix}', self.styles['SummaryBold'])
+            ])
+
+        if summary_data:
+            summary_table = Table(summary_data, colWidths=[120*mm, 66*mm])
+            summary_table.setStyle(TableStyle([
+                ('ALIGN', (0, 0), (-1, -1), 'RIGHT'),
+                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                ('LINEABOVE', (0, -1), (-1, -1), 1, colors.black),
+                ('TOPPADDING', (0, -1), (-1, -1), 8),
+            ]))
+            elements.append(summary_table)
+
         return elements
 
     def _build_payment_section(self, data: Dict) -> List:
-        """Build payment information section"""
+        """Build payment information section — only data present in XML"""
         elements = []
         payment = data.get('payment', {})
 
-        if not payment:
+        # Build rows only from data actually present
+        payment_info = []
+
+        if payment.get('method'):
+            payment_info.append(['Forma platnosci:', payment['method']])
+        if payment.get('due_date'):
+            payment_info.append(['Termin platnosci:', payment['due_date']])
+        if payment.get('paid'):
+            payment_info.append(['Zaplacono:', payment['paid']])
+        if payment.get('account_number'):
+            account = payment['account_number']
+            if payment.get('bank_name'):
+                account = f"{payment['bank_name']}: {account}"
+            payment_info.append(['Numer konta:', account])
+
+        # Don't show section header if there's no useful payment data
+        if not payment_info:
             return elements
 
         elements.append(Paragraph("PLATNOSC", self.styles['SectionHeader']))
 
-        payment_info = []
-
-        if payment.get('due_date'):
-            payment_info.append(['Termin platnosci:', payment['due_date']])
-
-        if payment.get('method'):
-            payment_info.append(['Forma platnosci:', payment['method']])
-
-        if payment.get('account_number'):
-            payment_info.append(['Numer konta:', payment['account_number']])
-
-        if payment_info:
-            payment_table = Table(payment_info, colWidths=[50*mm, 130*mm])
-            payment_table.setStyle(TableStyle([
-                ('FONTNAME', (0, 0), (0, -1), self.font_bold),
-                ('FONTNAME', (1, 0), (1, -1), self.font),
-                ('FONTSIZE', (0, 0), (-1, -1), 9),
-                ('ALIGN', (0, 0), (0, -1), 'LEFT'),
-                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-            ]))
-            elements.append(payment_table)
+        payment_table = Table(payment_info, colWidths=[50*mm, 136*mm])
+        payment_table.setStyle(TableStyle([
+            ('FONTNAME', (0, 0), (0, -1), self.font_bold),
+            ('FONTNAME', (1, 0), (1, -1), self.font),
+            ('FONTSIZE', (0, 0), (-1, -1), 9),
+            ('ALIGN', (0, 0), (0, -1), 'LEFT'),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ]))
+        elements.append(payment_table)
 
         return elements
 
@@ -584,11 +705,15 @@ class InvoicePDFGenerator:
         return elements
 
     def _format_amount(self, amount: str) -> str:
-        """Format monetary amount with 2 decimal places"""
+        """Format monetary amount with 2 decimal places.
+        Returns empty string if no data.
+        """
+        if not amount:
+            return ''
         try:
             return f"{float(amount):.2f}"
         except (ValueError, TypeError):
-            return amount or '0.00'
+            return amount
 
 
 def generate_invoice_pdf(xml_content: str, ksef_number: str = '', output_path: str = None) -> BytesIO:
