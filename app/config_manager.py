@@ -340,26 +340,42 @@ class ConfigManager:
             logger.warning("Install pytz for timezone support: pip install pytz")
             logger.info(f"Using configured timezone without validation: {timezone}")
 
-    def get(self, *keys: str) -> Optional[Any]:
+    _SENTINEL = object()
+
+    def get(self, *keys, default=_SENTINEL) -> Optional[Any]:
         """
         Get configuration value using dot notation
-        
+
         Args:
             *keys: Keys to traverse in configuration dictionary
-            
+            default: Value to return if key is not found (default: None)
+
         Returns:
-            Configuration value or None if not found
-            
+            Configuration value, or default if not found
+
         Example:
             config.get("ksef", "environment")  # Returns "test"
+            config.get("prometheus", "enabled", default=True)
         """
+        # Filter out non-string args passed as positional (backwards compat)
+        str_keys = []
+        fallback = self._SENTINEL
+        for k in keys:
+            if isinstance(k, str):
+                str_keys.append(k)
+            else:
+                fallback = k
+
+        if default is not self._SENTINEL:
+            fallback = default
+
         value = self.config
-        for key in keys:
+        for key in str_keys:
             if not isinstance(value, dict):
-                return None
+                return fallback if fallback is not self._SENTINEL else None
             value = value.get(key)
             if value is None:
-                return None
+                return fallback if fallback is not self._SENTINEL else None
         return value
     
     def get_timezone(self) -> str:

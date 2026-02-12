@@ -63,7 +63,7 @@ class InvoiceMonitor:
         notifications_config = config.get("notifications") or {}
         message_priority = notifications_config.get("message_priority")
         if message_priority is None:
-            message_priority = config.get("monitoring", "message_priority", 0)
+            message_priority = config.get("monitoring", "message_priority", default=0)
 
         if not isinstance(message_priority, int) or message_priority not in range(-2, 3):
             logger.warning(f"Invalid message_priority '{message_priority}', falling back to 0")

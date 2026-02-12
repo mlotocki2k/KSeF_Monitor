@@ -82,7 +82,7 @@ def main():
         notifications_config = config.get("notifications") or {}
         test_notification = notifications_config.get("test_notification")
         if test_notification is None:
-            test_notification = config.get("monitoring", "test_notification", False)
+            test_notification = config.get("monitoring", "test_notification", default=False)
 
         if test_notification is True:
             logger.info("Testing notification channels...")
@@ -93,8 +93,8 @@ def main():
 
         # Initialize Prometheus metrics
         logger.info("Initializing Prometheus metrics...")
-        prometheus_port = config.get("prometheus", "port", 8000)
-        prometheus_enabled = config.get("prometheus", "enabled", True)
+        prometheus_port = config.get("prometheus", "port", default=8000)
+        prometheus_enabled = config.get("prometheus", "enabled", default=True)
 
         prometheus_metrics = None
         if prometheus_enabled:

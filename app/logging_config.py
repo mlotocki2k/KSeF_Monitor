@@ -50,7 +50,7 @@ def apply_config(config):
         config: ConfigManager instance
     """
     # Apply logging level
-    level_name = (config.get("monitoring", "logging_level", "INFO") or "INFO").upper()
+    level_name = (config.get("monitoring", "logging_level", default="INFO") or "INFO").upper()
     if level_name not in VALID_LEVELS:
         logger.warning(f"Invalid logging_level '{level_name}', using INFO")
         level_name = "INFO"
@@ -63,7 +63,7 @@ def apply_config(config):
         return
 
     try:
-        tz_name = config.get("monitoring", "timezone", "Europe/Warsaw")
+        tz_name = config.get("monitoring", "timezone", default="Europe/Warsaw")
         tz = pytz.timezone(tz_name)
         formatter = TzFormatter(
             '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
