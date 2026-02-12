@@ -44,7 +44,8 @@
     "subject_types": ["Subject1", "Subject2"],
     "date_type": "Invoicing",
     "timezone": "Europe/Warsaw",
-    "description": "Monitoring settings. subject_types: Subject1 (sprzedażowe), Subject2 (zakupowe). date_type: Issue | Invoicing | PermanentStorage. timezone: IANA timezone name (default: Europe/Warsaw)"
+    "logging_level": "INFO",
+    "description": "Monitoring settings. subject_types: Subject1 (sprzedażowe), Subject2 (zakupowe). date_type: Issue | Invoicing | PermanentStorage. timezone: IANA timezone name (default: Europe/Warsaw). logging_level: DEBUG | INFO | WARNING | ERROR | CRITICAL (default: INFO)"
   },
   "schedule": {
     "mode": "minutes",

@@ -13,6 +13,7 @@ from typing import Dict, List
 
 from .scheduler import Scheduler
 from .notifiers import NotificationManager
+from .invoice_pdf_generator import generate_invoice_pdf, REPORTLAB_AVAILABLE
 
 # Optional timezone support
 try:
@@ -48,6 +49,7 @@ class InvoiceMonitor:
         self.notifier = notification_manager
         self.metrics = prometheus_metrics
         self.state_file = Path("/data/last_check.json")
+        self.pdf_dir = self.state_file.parent / "pdf"
         self.subject_types = config.get("monitoring", "subject_types") or ["Subject1"]
 
         # Get timezone from config
@@ -227,6 +229,9 @@ class InvoiceMonitor:
                 else:
                     logger.warning(f"Failed to send notification [{subject_type}] invoice: {invoice.get('ksefNumber')}")
 
+                # Save invoice artifacts (PDF, XML, UPO)
+                self._save_invoice_artifacts(invoice, subject_type)
+
             # Store count for this subject type
             if new_count > 0:
                 new_invoices_count[subject_type] = new_count
@@ -256,11 +261,13 @@ class InvoiceMonitor:
         ksef_number = invoice.get('ksefNumber', 'N/A')
         invoice_ref = invoice.get('invoiceNumber', 'N/A')
         issue_date = invoice.get('issueDate', 'N/A')
+        gross_value = invoice.get('grossAmount','N/A')
 
         seller_name = invoice.get('seller', {}).get("name", 'N/A')
         seller_nip = invoice.get('seller', {}).get("nip", 'N/A')
         buyer_name = invoice.get('buyer', {}).get("name", 'N/A')
         buyer_nip = invoice.get('buyer', {}).get("nip", 'N/A')
+
 
         try:
             if issue_date != 'N/A':
@@ -283,11 +290,96 @@ class InvoiceMonitor:
             f"{counterparty}\n"
             f"Nr Faktury: {invoice_ref}\n"
             f"Data: {issue_date}\n"
+            f"Brutto: {gross_value}\n"
             f"Numer KSeF: {ksef_number}"
         )
 
         return message
     
+    def _format_date_for_filename(self, date_string: str) -> str:
+        """Format date string to YYYYMMDD for filename"""
+        try:
+            dt = datetime.fromisoformat(date_string.replace('Z', '+00:00'))
+            return dt.strftime('%Y%m%d')
+        except (ValueError, TypeError):
+            # Fallback: strip separators
+            return date_string.replace('-', '').replace(':', '').replace('T', '')[:8]
+
+    def _save_invoice_artifacts(self, invoice: Dict, subject_type: str):
+        """
+        Save PDF, XML and UPO for a new invoice.
+
+        Files are saved to /data/pdf/ with naming:
+            <type>_<ksef_number>_<date>.pdf
+            <type>_<ksef_number>_<date>.xml
+            UPO_<type>_<ksef_number>_<date>.xml  (only for Subject1)
+
+        Args:
+            invoice: Invoice metadata from KSeF API
+            subject_type: Subject type (Subject1=sprzedażowa, Subject2=zakupowa)
+        """
+        ksef_number = invoice.get('ksefNumber', '')
+        issue_date = invoice.get('issueDate', '')
+
+        if not ksef_number:
+            logger.warning("No KSeF number - skipping artifact saving")
+            return
+
+        # Determine type prefix
+        prefix = 'sprz' if subject_type == 'Subject1' else 'zak'
+
+        # Format date and sanitize KSeF number for filename
+        date_str = self._format_date_for_filename(issue_date)
+        safe_ksef = ksef_number.replace('/', '_').replace('\\', '_')
+
+        # Build base filename
+        base_name = f"{prefix}_{safe_ksef}_{date_str}"
+
+        # Ensure output directory exists
+        self.pdf_dir.mkdir(parents=True, exist_ok=True)
+
+        # Fetch invoice XML
+        xml_result = self.ksef.get_invoice_xml(ksef_number)
+        if not xml_result:
+            logger.warning(f"Failed to fetch XML for {ksef_number} - skipping artifact saving")
+            return
+
+        xml_content = xml_result['xml_content']
+
+        # Save XML
+        xml_path = self.pdf_dir / f"{base_name}.xml"
+        try:
+            with open(xml_path, 'w', encoding='utf-8') as f:
+                f.write(xml_content)
+            logger.info(f"Invoice XML saved: {xml_path}")
+        except Exception as e:
+            logger.error(f"Failed to save XML for {ksef_number}: {e}")
+
+        # Generate and save PDF
+        if REPORTLAB_AVAILABLE:
+            try:
+                pdf_path = str(self.pdf_dir / f"{base_name}.pdf")
+                generate_invoice_pdf(xml_content, ksef_number=ksef_number, output_path=pdf_path)
+                logger.info(f"Invoice PDF saved: {pdf_path}")
+            except Exception as e:
+                logger.error(f"Failed to generate PDF for {ksef_number}: {e}")
+        else:
+            logger.warning("reportlab not available - skipping PDF generation")
+
+        # For sales invoices (Subject1), fetch and save all UPOs
+        if subject_type == 'Subject1':
+            try:
+                upo_result = self.ksef.get_invoice_upo(ksef_number)
+                if upo_result:
+                    upo_path = self.pdf_dir / f"UPO_{base_name}.xml"
+                    with open(upo_path, 'w', encoding='utf-8') as f:
+                        f.write(upo_result['xml_content'])
+                    logger.info(f"UPO saved: {upo_path}")
+                else:
+                    logger.info(f"No UPO available yet for {ksef_number}")
+            except Exception as e:
+                logger.error(f"Failed to fetch/save UPO for {ksef_number}: {e}")
+
     def run(self):
         """
         Main monitoring loop
@@ -298,6 +390,7 @@ class InvoiceMonitor:
         logger.info("=" * 60)
         logger.info(f"Environment: {self.ksef.environment}")
         logger.info(f"NIP: {self.ksef.nip}")
+        logger.info(f"PDF/XML output: {self.pdf_dir}")
         self.scheduler._log_schedule_info()
         logger.info("=" * 60)
 

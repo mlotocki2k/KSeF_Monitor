@@ -52,7 +52,8 @@
     "subject_types": ["Subject1", "Subject2"],
     "date_type": "Invoicing",
     "timezone": "Europe/Warsaw",
-    "description": "Monitoring settings. subject_types: Subject1 (sprzedażowe - you are seller), Subject2 (zakupowe - you are buyer). date_type: Issue | Invoicing | PermanentStorage. timezone: IANA timezone name (default: Europe/Warsaw). See https://en.wikipedia.org/wiki/List_of_tz_database_time_zones for valid values."
+    "logging_level": "INFO",
+    "description": "Monitoring settings. subject_types: Subject1 (sprzedażowe - you are seller), Subject2 (zakupowe - you are buyer). date_type: Issue | Invoicing | PermanentStorage. timezone: IANA timezone name (default: Europe/Warsaw). logging_level: DEBUG | INFO | WARNING | ERROR | CRITICAL (default: INFO). See https://en.wikipedia.org/wiki/List_of_tz_database_time_zones for valid timezone values."
   },
   "schedule": {
     "mode": "minutes",

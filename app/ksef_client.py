@@ -483,8 +483,6 @@ class KSeFClient:
         Get invoice XML by KSeF number
         Endpoint: GET /v2/invoices/ksef/{ksefNumber}
 
-        **IN DEVELOPMENT** - Not yet integrated with main application
-
         Args:
             ksef_number: KSeF invoice number (e.g., "1234567890-20240101-ABCDEF123456-AB")
 
@@ -544,4 +542,68 @@ class KSeFClient:
             return None
         except Exception as e:
             logger.error(f"Unexpected error while getting invoice XML: {e}")
+            return None
+
+    def get_invoice_upo(self, ksef_number: str) -> Optional[Dict]:
+        """
+        Get UPO (Urzędowe Poświadczenie Odbioru) for an invoice
+        Endpoint: GET /v2/invoices/upo/ksef/{ksefReferenceNumber}
+
+        Args:
+            ksef_number: KSeF invoice number
+
+        Returns:
+            Dict with 'xml_content' and 'ksef_number', or None if failed
+        """
+        try:
+            if not self.access_token:
+                if not self.authenticate():
+                    logger.error("Cannot get UPO: authentication failed")
+                    return None
+
+            url = f"{self.base_url}/{self.API_VERSION}/invoices/upo/ksef/{ksef_number}"
+
+            headers = {
+                "Authorization": f"Bearer {self.access_token}",
+                "Accept": "application/xml"
+            }
+
+            logger.info(f"Fetching UPO for KSeF number: {ksef_number}")
+
+            response = requests.get(url, headers=headers, timeout=30)
+
+            # Handle token expiration
+            if response.status_code == 401:
+                logger.warning("Access token expired, refreshing...")
+                if self.refresh_access_token():
+                    headers["Authorization"] = f"Bearer {self.access_token}"
+                    response = requests.get(url, headers=headers, timeout=30)
+                elif self.authenticate():
+                    headers["Authorization"] = f"Bearer {self.access_token}"
+                    response = requests.get(url, headers=headers, timeout=30)
+                else:
+                    logger.error("Re-authentication failed")
+                    return None
+
+            if response.status_code == 404:
+                logger.info(f"No UPO available for {ksef_number}")
+                return None
+
+            response.raise_for_status()
+
+            xml_content = response.text
+            logger.info(f"UPO fetched successfully for {ksef_number} ({len(xml_content)} bytes)")
+
+            return {
+                'xml_content': xml_content,
+                'ksef_number': ksef_number
+            }
+
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Failed to get UPO: {e}")
+            if hasattr(e, 'response') and e.response is not None:
+                logger.error(f"Response: {e.response.text}")
+            return None
+        except Exception as e:
+            logger.error(f"Unexpected error while getting UPO: {e}")
             return None

@@ -4,5 +4,5 @@ cryptography==46.0.4
 prometheus-client==0.19.0
 pytz==2025.2
 
-# Optional: PDF generation (IN DEVELOPMENT - not yet integrated)
-# reportlab==4.0.7
+# PDF generation
+reportlab==4.0.7

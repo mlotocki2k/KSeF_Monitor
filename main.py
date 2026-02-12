@@ -17,15 +17,10 @@ from app.ksef_client import KSeFClient
 from app.notifiers import NotificationManager
 from app.invoice_monitor import InvoiceMonitor
 from app.prometheus_metrics import PrometheusMetrics
+from app.logging_config import setup_logging, apply_config
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.StreamHandler(sys.stdout)
-    ]
-)
+# Configure logging (system timezone until config is loaded)
+setup_logging()
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +58,9 @@ def main():
         config_path = "/data/config.json" if os.path.exists("/data/config.json") else "config.json"
         config = ConfigManager(config_path)
         logger.info("✓ Configuration loaded")
+
+        # Reconfigure logging (level + timezone) from config
+        apply_config(config)
         
         # Initialize KSeF client
         logger.info("Initializing KSeF client...")

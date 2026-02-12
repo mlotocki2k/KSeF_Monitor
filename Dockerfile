@@ -11,8 +11,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY main.py .
 COPY app/ ./app/
 
-# Create data directory for persistent storage
-RUN mkdir -p /data
+# Create data directories for persistent storage
+RUN mkdir -p /data/pdf
 
 # Make main script executable
 RUN chmod +x main.py
