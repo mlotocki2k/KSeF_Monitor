@@ -147,6 +147,9 @@ class ConfigManager:
         # Validate timezone (optional, defaults to Europe/Warsaw)
         self._validate_timezone(config)
 
+        # Set storage defaults
+        self._apply_storage_defaults(config)
+
     def _validate_schedule(self, schedule: Dict[str, Any]):
         """
         Validate schedule configuration based on mode
@@ -339,6 +342,18 @@ class ConfigManager:
             logger.warning("pytz not installed - timezone validation disabled")
             logger.warning("Install pytz for timezone support: pip install pytz")
             logger.info(f"Using configured timezone without validation: {timezone}")
+
+    def _apply_storage_defaults(self, config: Dict[str, Any]):
+        """Apply defaults for storage section (save_xml, save_pdf, output_dir)."""
+        storage = config.setdefault("storage", {})
+        if "save_xml" not in storage:
+            storage["save_xml"] = False
+        if "save_pdf" not in storage:
+            storage["save_pdf"] = False
+        if "output_dir" not in storage:
+            storage["output_dir"] = "/data/invoices"
+
+        logger.info(f"Storage: save_xml={storage['save_xml']}, save_pdf={storage['save_pdf']}, output_dir={storage['output_dir']}")
 
     _SENTINEL = object()
 

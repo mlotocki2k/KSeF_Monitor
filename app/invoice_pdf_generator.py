@@ -516,9 +516,9 @@ class InvoicePDFGenerator:
         story.extend(self._payment(data))
         story.extend(self._annotations(data))
         story.extend(self._footer(data))
-        story.extend(self._generation_stamp(timezone))
 
-        doc.build(story)
+        page_footer = self._make_page_footer(timezone)
+        doc.build(story, onFirstPage=page_footer, onLaterPages=page_footer)
         buffer.seek(0)
         logger.info(f"PDF generated ({len(buffer.getvalue())} bytes)")
         return buffer
@@ -941,8 +941,8 @@ class InvoicePDFGenerator:
 
         return elements
 
-    def _generation_stamp(self, timezone: str = '') -> List:
-        """Small-font line at the very bottom: app name+version, generation timestamp."""
+    def _make_page_footer(self, timezone: str = ''):
+        """Return a callback that draws generation stamp at the bottom of every page."""
         tz_name = timezone or 'Europe/Warsaw'
         now = datetime.now()
         tz_label = ''
@@ -959,18 +959,17 @@ class InvoicePDFGenerator:
 
         stamp = now.strftime('%y.%m.%d %H:%M:%S')
         text = f'Wygenerowane przez KSeF Monitor v0.2 | {stamp} {tz_label}'
+        font = self.font
 
-        return [
-            Spacer(1, 6*mm),
-            Paragraph(text, ParagraphStyle(
-                'GenerationStamp',
-                fontName=self.font,
-                fontSize=6,
-                leading=8,
-                textColor=colors.grey,
-                alignment=1,  # CENTER
-            )),
-        ]
+        def _draw(canvas_obj, doc):
+            canvas_obj.saveState()
+            canvas_obj.setFont(font, 6)
+            canvas_obj.setFillColor(colors.grey)
+            page_width = A4[0]
+            canvas_obj.drawCentredString(page_width / 2, 5 * mm, text)
+            canvas_obj.restoreState()
+
+        return _draw
 
     # --- QR Code (Type I: Invoice Verification) ---
 

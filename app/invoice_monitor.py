@@ -49,8 +49,13 @@ class InvoiceMonitor:
         self.notifier = notification_manager
         self.metrics = prometheus_metrics
         self.state_file = Path("/data/last_check.json")
-        self.pdf_dir = self.state_file.parent / "pdf"
         self.subject_types = config.get("monitoring", "subject_types") or ["Subject1"]
+
+        # Storage settings
+        self.save_xml = config.get("storage", "save_xml", default=False)
+        self.save_pdf = config.get("storage", "save_pdf", default=False)
+        output_dir = config.get("storage", "output_dir", default="/data/invoices")
+        self.output_dir = Path(output_dir)
 
         # Get timezone from config
         if PYTZ_AVAILABLE:
@@ -307,17 +312,20 @@ class InvoiceMonitor:
 
     def _save_invoice_artifacts(self, invoice: Dict, subject_type: str):
         """
-        Save PDF, XML and UPO for a new invoice.
+        Save PDF, XML and UPO for a new invoice (if enabled in config).
 
-        Files are saved to /data/pdf/ with naming:
-            <type>_<ksef_number>_<date>.pdf
-            <type>_<ksef_number>_<date>.xml
-            UPO_<type>_<ksef_number>_<date>.xml  (only for Subject1)
+        Controlled by storage config:
+            save_xml: save XML source files
+            save_pdf: generate and save PDF files
+            output_dir: directory for saved files (auto-created)
 
         Args:
             invoice: Invoice metadata from KSeF API
             subject_type: Subject type (Subject1=sprzedażowa, Subject2=zakupowa)
         """
+        if not self.save_xml and not self.save_pdf:
+            return
+
         ksef_number = invoice.get('ksefNumber', '')
         issue_date = invoice.get('issueDate', '')
 
@@ -336,9 +344,9 @@ class InvoiceMonitor:
         base_name = f"{prefix}_{safe_ksef}_{date_str}"
 
         # Ensure output directory exists
-        self.pdf_dir.mkdir(parents=True, exist_ok=True)
+        self.output_dir.mkdir(parents=True, exist_ok=True)
 
-        # Fetch invoice XML
+        # Fetch invoice XML (needed for both XML saving and PDF generation)
         xml_result = self.ksef.get_invoice_xml(ksef_number)
         if not xml_result:
             logger.warning(f"Failed to fetch XML for {ksef_number} - skipping artifact saving")
@@ -347,34 +355,36 @@ class InvoiceMonitor:
         xml_content = xml_result['xml_content']
 
         # Save XML
-        xml_path = self.pdf_dir / f"{base_name}.xml"
-        try:
-            with open(xml_path, 'w', encoding='utf-8') as f:
-                f.write(xml_content)
-            logger.info(f"Invoice XML saved: {xml_path}")
-        except Exception as e:
-            logger.error(f"Failed to save XML for {ksef_number}: {e}")
+        if self.save_xml:
+            xml_path = self.output_dir / f"{base_name}.xml"
+            try:
+                with open(xml_path, 'w', encoding='utf-8') as f:
+                    f.write(xml_content)
+                logger.info(f"Invoice XML saved: {xml_path}")
+            except Exception as e:
+                logger.error(f"Failed to save XML for {ksef_number}: {e}")
 
         # Generate and save PDF
-        if REPORTLAB_AVAILABLE:
-            try:
-                pdf_path = str(self.pdf_dir / f"{base_name}.pdf")
-                tz_name = self.config.get_timezone() if hasattr(self.config, 'get_timezone') else ''
-                generate_invoice_pdf(xml_content, ksef_number=ksef_number,
-                                     output_path=pdf_path, environment=self.ksef.environment,
-                                     timezone=tz_name)
-                logger.info(f"Invoice PDF saved: {pdf_path}")
-            except Exception as e:
-                logger.error(f"Failed to generate PDF for {ksef_number}: {e}")
-        else:
-            logger.warning("reportlab not available - skipping PDF generation")
+        if self.save_pdf:
+            if REPORTLAB_AVAILABLE:
+                try:
+                    pdf_path = str(self.output_dir / f"{base_name}.pdf")
+                    tz_name = self.config.get_timezone() if hasattr(self.config, 'get_timezone') else ''
+                    generate_invoice_pdf(xml_content, ksef_number=ksef_number,
+                                         output_path=pdf_path, environment=self.ksef.environment,
+                                         timezone=tz_name)
+                    logger.info(f"Invoice PDF saved: {pdf_path}")
+                except Exception as e:
+                    logger.error(f"Failed to generate PDF for {ksef_number}: {e}")
+            else:
+                logger.warning("reportlab not available - skipping PDF generation")
 
-        # For sales invoices (Subject1), fetch and save all UPOs
-        if subject_type == 'Subject1':
+        # For sales invoices (Subject1), fetch and save UPO (XML-based, follows save_xml flag)
+        if self.save_xml and subject_type == 'Subject1':
             try:
                 upo_result = self.ksef.get_invoice_upo(ksef_number)
                 if upo_result:
-                    upo_path = self.pdf_dir / f"UPO_{base_name}.xml"
+                    upo_path = self.output_dir / f"UPO_{base_name}.xml"
                     with open(upo_path, 'w', encoding='utf-8') as f:
                         f.write(upo_result['xml_content'])
                     logger.info(f"UPO saved: {upo_path}")
@@ -393,7 +403,9 @@ class InvoiceMonitor:
         logger.info("=" * 60)
         logger.info(f"Environment: {self.ksef.environment}")
         logger.info(f"NIP: {self.ksef.nip}")
-        logger.info(f"PDF/XML output: {self.pdf_dir}")
+        logger.info(f"Save XML: {self.save_xml}, Save PDF: {self.save_pdf}")
+        if self.save_xml or self.save_pdf:
+            logger.info(f"Output directory: {self.output_dir}")
         self.scheduler._log_schedule_info()
         logger.info("=" * 60)
 

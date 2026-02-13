@@ -68,6 +68,12 @@
       "weekly_multi_times": {"mode": "weekly", "days": ["monday", "wednesday", "friday"], "time": ["08:00", "16:00"]}
     }
   },
+  "storage": {
+    "save_xml": false,
+    "save_pdf": false,
+    "output_dir": "/data/invoices",
+    "description": "File storage settings. save_xml: save invoice XML files. save_pdf: generate and save PDF files. output_dir: directory for saved files (auto-created if missing). Both default to false."
+  },
   "prometheus": {
     "enabled": true,
     "port": 8000,

@@ -52,6 +52,12 @@
     "interval": 5,
     "description": "Schedule configuration. See config.example.json for all scheduling options and examples."
   },
+  "storage": {
+    "save_xml": false,
+    "save_pdf": false,
+    "output_dir": "/data/invoices",
+    "description": "File storage settings. Set save_xml/save_pdf to true to save invoice files. output_dir is auto-created."
+  },
   "prometheus": {
     "enabled": true,
     "port": 8000,
