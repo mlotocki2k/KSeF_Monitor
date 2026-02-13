@@ -551,7 +551,7 @@ class InvoicePDFGenerator:
         buyer = data.get('buyer', {})
         party_data = [[
             self._party_html('<b>SPRZEDAWCA</b>', seller),
-            self._party_html('<b>NABYWCA</>', buyer)
+            self._party_html('<b>NABYWCA</b>', buyer)
         ]]
         t = Table(party_data, colWidths=[93*mm, 93*mm])
         t.setStyle(TableStyle([
