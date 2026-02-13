@@ -5,7 +5,11 @@ services:
     image: ghcr.io/mlotocki2k/ksef_monitor:latest
     container_name: ksef-invoice-monitor
     restart: unless-stopped
-    
+
+    ports:
+      # Prometheus metrics endpoint
+      - "8000:8000"
+
     volumes:
       
       # Configuration file - REQUIRED

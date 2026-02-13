@@ -1,6 +1,14 @@
 # Security Guide - Protecting Sensitive Credentials
 
-This guide explains multiple methods to secure your API tokens and credentials for the KSeF Invoice Monitor.
+This guide explains multiple methods to secure your API tokens and credentials for the KSeF Invoice Monitor v0.2.
+
+**Protected Credentials:**
+- KSeF API token
+- Pushover User Key & API Token
+- Discord Webhook URL
+- Slack Webhook URL
+- Email SMTP password
+- Webhook authentication token
 
 ## 🔐 Security Methods Overview
 
@@ -26,10 +34,29 @@ Sensitive credentials are stored in a `.env` file and loaded as environment vari
 
 2. **Edit .env with your credentials:**
    ```bash
+   # Required
    KSEF_TOKEN=your-actual-ksef-token-here
+
+   # Notification channels (add only channels you're using)
+
+   # Pushover
    PUSHOVER_USER_KEY=your-pushover-user-key
    PUSHOVER_API_TOKEN=your-pushover-api-token
+
+   # Discord
+   DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...
+
+   # Slack
+   SLACK_WEBHOOK_URL=https://hooks.slack.com/services/...
+
+   # Email
+   EMAIL_PASSWORD=your-smtp-password-or-app-password
+
+   # Webhook
+   WEBHOOK_TOKEN=your-auth-token
    ```
+
+   **Note:** Only include secrets for notification channels you've enabled in `config.json`
 
 3. **Use secure config file:**
    ```bash
@@ -71,14 +98,26 @@ Docker Secrets is a secure way to manage sensitive data in Docker Swarm. Secrets
    docker swarm init
    ```
 
-2. **Create secrets:**
+2. **Create secrets** (only for channels you're using):
    ```bash
-   # KSeF token
+   # KSeF token (required)
    echo "your-ksef-token" | docker secret create ksef_token -
-   
-   # Pushover credentials
+
+   # Pushover credentials (optional)
    echo "your-pushover-user-key" | docker secret create pushover_user_key -
    echo "your-pushover-api-token" | docker secret create pushover_api_token -
+
+   # Discord webhook (optional)
+   echo "https://discord.com/api/webhooks/..." | docker secret create discord_webhook_url -
+
+   # Slack webhook (optional)
+   echo "https://hooks.slack.com/services/..." | docker secret create slack_webhook_url -
+
+   # Email SMTP password (optional)
+   echo "your-smtp-password" | docker secret create email_password -
+
+   # Webhook auth token (optional)
+   echo "your-auth-token" | docker secret create webhook_token -
    ```
 
 3. **Verify secrets created:**
@@ -106,12 +145,19 @@ For local development without Swarm:
    chmod 700 secrets
    ```
 
-2. **Create secret files:**
+2. **Create secret files** (only for channels you're using):
    ```bash
+   # Required
    echo "your-ksef-token" > secrets/ksef_token
+
+   # Optional notification channels
    echo "your-pushover-user-key" > secrets/pushover_user_key
    echo "your-pushover-api-token" > secrets/pushover_api_token
-   
+   echo "https://discord.com/api/webhooks/..." > secrets/discord_webhook_url
+   echo "https://hooks.slack.com/services/..." > secrets/slack_webhook_url
+   echo "your-smtp-password" > secrets/email_password
+   echo "your-auth-token" > secrets/webhook_token
+
    chmod 600 secrets/*
    ```
 
@@ -120,10 +166,19 @@ For local development without Swarm:
    secrets:
      ksef_token:
        file: ./secrets/ksef_token
+     # Add only secrets for channels you're using
      pushover_user_key:
        file: ./secrets/pushover_user_key
      pushover_api_token:
        file: ./secrets/pushover_api_token
+     discord_webhook_url:
+       file: ./secrets/discord_webhook_url
+     slack_webhook_url:
+       file: ./secrets/slack_webhook_url
+     email_password:
+       file: ./secrets/email_password
+     webhook_token:
+       file: ./secrets/webhook_token
    ```
 
 ### Advantages
@@ -137,14 +192,15 @@ For local development without Swarm:
 
 **Update a secret:**
 ```bash
-# Remove old secret
+# Example: Rotating KSeF token
 docker secret rm ksef_token
-
-# Create new secret
 echo "new-token" | docker secret create ksef_token -
-
-# Redeploy service
 docker service update --secret-rm ksef_token --secret-add ksef_token ksef_ksef-monitor
+
+# Example: Updating Discord webhook
+docker secret rm discord_webhook_url
+echo "https://discord.com/api/webhooks/new-url" | docker secret create discord_webhook_url -
+docker service update --secret-rm discord_webhook_url --secret-add discord_webhook_url ksef_ksef-monitor
 ```
 
 **List secrets:**
@@ -223,6 +279,20 @@ client = SecretClient(vault_url="https://myvault.vault.azure.net",
 token = client.get_secret("ksef-token").value
 ```
 
+## All Available Secrets
+
+| Secret | Environment Variable | Docker Secret | Required For | Notes |
+|--------|---------------------|---------------|--------------|-------|
+| KSeF Token | `KSEF_TOKEN` | `ksef_token` | Always | API authorization |
+| Pushover User Key | `PUSHOVER_USER_KEY` | `pushover_user_key` | Pushover | Mobile notifications |
+| Pushover API Token | `PUSHOVER_API_TOKEN` | `pushover_api_token` | Pushover | Mobile notifications |
+| Discord Webhook | `DISCORD_WEBHOOK_URL` | `discord_webhook_url` | Discord | Webhook URL |
+| Slack Webhook | `SLACK_WEBHOOK_URL` | `slack_webhook_url` | Slack | Webhook URL |
+| Email Password | `EMAIL_PASSWORD` | `email_password` | Email | SMTP password |
+| Webhook Token | `WEBHOOK_TOKEN` | `webhook_token` | Webhook | Optional auth token |
+
+**Important:** Only configure secrets for notification channels you've enabled in `config.json` → `notifications.channels`.
+
 ## Priority Order
 
 The application loads secrets in this order (first found wins):
@@ -245,6 +315,26 @@ This allows you to:
 ✅ Use different credentials for test/production
 ✅ Monitor access logs
 ✅ Use principle of least privilege
+
+### Notification Channel Security
+
+**Webhook URLs (Discord, Slack, Custom):**
+⚠️ Treat webhook URLs as secrets - anyone with the URL can post messages
+✅ Store in environment variables or Docker secrets, not in config files
+✅ Use different webhooks for test/production environments
+✅ Regenerate webhooks if exposed (e.g., in logs, screenshots, commits)
+✅ For custom webhooks, implement rate limiting and authentication
+
+**Email:**
+✅ Use App Passwords instead of account passwords (Gmail, Outlook)
+✅ Enable 2FA on email accounts
+✅ Use dedicated email accounts for automated notifications
+✅ Restrict SMTP access to required IP ranges if possible
+
+**Pushover:**
+✅ Use application-specific API tokens
+✅ Separate applications for different environments (dev/prod)
+✅ Monitor usage in Pushover dashboard for suspicious activity
 
 ### File Permissions
 ```bash
@@ -283,10 +373,22 @@ export DOCKER_CONTENT_TRUST=1
 # View logs (secrets are masked)
 docker-compose logs | grep "loaded from"
 
-# Should see:
-# KSeF token loaded from secure source
-# Pushover user key loaded from secure source
-# Pushover API token loaded from secure source
+# Should see (depending on enabled channels):
+# KSeF token loaded from environment variable
+# Pushover user key loaded from Docker secret
+# Discord webhook URL loaded from environment variable
+# Email password loaded from Docker secret
+# etc.
+```
+
+### Check Which Channels Are Active
+
+```bash
+# View enabled notification channels
+docker-compose logs | grep "Enabled channels"
+
+# Example output:
+# Enabled channels: discord, email, pushover
 ```
 
 ### Test Secret Loading
@@ -306,12 +408,16 @@ print('Secrets loaded:', 'token' in str(config.get('ksef', 'token')))
 ### If Credentials Are Compromised
 
 1. **Immediately revoke the compromised credentials:**
-   - KSeF: Revoke token in KSeF portal
-   - Pushover: Regenerate API token
+   - **KSeF**: Revoke token in KSeF portal
+   - **Pushover**: Regenerate API token in Pushover app settings
+   - **Discord**: Delete and recreate webhook in Server Settings
+   - **Slack**: Regenerate webhook URL in Slack app settings
+   - **Email**: Change SMTP password (for Gmail: revoke App Password)
+   - **Webhook**: Rotate authentication token on your endpoint
 
 2. **Generate new credentials:**
-   - Create new tokens
-   - Update secrets
+   - Create new tokens/URLs for compromised channels
+   - Update secrets using the appropriate method
 
 3. **Rotate secrets:**
    ```bash
@@ -398,12 +504,23 @@ docker-compose up -d
 cp config.secure.json config.json
 cp docker-compose.secrets.yml docker-compose.yml
 
-# 2. Create secrets
-echo "prod-token" | docker secret create ksef_token -
-echo "prod-user" | docker secret create pushover_user_key -
-echo "prod-api" | docker secret create pushover_api_token -
+# 2. Create secrets (only for channels you're using)
+echo "prod-ksef-token" | docker secret create ksef_token -
 
-# 3. Deploy
+# Example: Discord + Email channels
+echo "https://discord.com/api/webhooks/..." | docker secret create discord_webhook_url -
+echo "smtp-app-password" | docker secret create email_password -
+
+# Or all channels:
+# echo "..." | docker secret create pushover_user_key -
+# echo "..." | docker secret create pushover_api_token -
+# echo "..." | docker secret create slack_webhook_url -
+# echo "..." | docker secret create webhook_token -
+
+# 3. Update config.json with enabled channels
+nano config.json  # Set notifications.channels
+
+# 4. Deploy
 docker stack deploy -c docker-compose.yml ksef
 ```
 

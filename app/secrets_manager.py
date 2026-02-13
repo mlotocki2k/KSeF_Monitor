@@ -105,10 +105,10 @@ class SecretsManager:
     def _inject_secrets(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """
         Inject secrets into configuration
-        
+
         Args:
             config: Configuration dictionary
-            
+
         Returns:
             Configuration with secrets injected
         """
@@ -117,18 +117,50 @@ class SecretsManager:
         if ksef_token:
             config.setdefault("ksef", {})["token"] = ksef_token
             logger.info("KSeF token loaded from secure source")
-        
-        # Pushover credentials
+
+        # Pushover credentials (support both old and new structure)
         pushover_user = self.get_secret("PUSHOVER_USER_KEY")
         if pushover_user:
+            # Inject into new notifications structure
+            config.setdefault("notifications", {}).setdefault("pushover", {})["user_key"] = pushover_user
+            # Also inject into old structure for backwards compatibility
             config.setdefault("pushover", {})["user_key"] = pushover_user
             logger.info("Pushover user key loaded from secure source")
-        
+
         pushover_token = self.get_secret("PUSHOVER_API_TOKEN")
         if pushover_token:
+            # Inject into new notifications structure
+            config.setdefault("notifications", {}).setdefault("pushover", {})["api_token"] = pushover_token
+            # Also inject into old structure for backwards compatibility
             config.setdefault("pushover", {})["api_token"] = pushover_token
             logger.info("Pushover API token loaded from secure source")
-        
+
+        # Discord credentials
+        discord_webhook = self.get_secret("DISCORD_WEBHOOK_URL")
+        if discord_webhook:
+            config.setdefault("notifications", {}).setdefault("discord", {})["webhook_url"] = discord_webhook
+            logger.info("Discord webhook URL loaded from secure source")
+
+        # Slack credentials
+        slack_webhook = self.get_secret("SLACK_WEBHOOK_URL")
+        if slack_webhook:
+            config.setdefault("notifications", {}).setdefault("slack", {})["webhook_url"] = slack_webhook
+            logger.info("Slack webhook URL loaded from secure source")
+
+        # Email credentials
+        email_password = self.get_secret("EMAIL_PASSWORD")
+        if email_password:
+            config.setdefault("notifications", {}).setdefault("email", {})["password"] = email_password
+            logger.info("Email password loaded from secure source")
+
+        # Webhook credentials (optional - for Authorization header)
+        webhook_token = self.get_secret("WEBHOOK_TOKEN")
+        if webhook_token:
+            webhook_config = config.setdefault("notifications", {}).setdefault("webhook", {})
+            headers = webhook_config.setdefault("headers", {})
+            headers["Authorization"] = f"Bearer {webhook_token}"
+            logger.info("Webhook token loaded from secure source")
+
         return config
     
     def validate_secrets(self, config: Dict[str, Any]) -> bool:

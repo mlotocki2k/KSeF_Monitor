@@ -10,13 +10,13 @@ __author__ = "KSeF Monitor"
 from .secrets_manager import SecretsManager
 from .config_manager import ConfigManager
 from .ksef_client import KSeFClient
-from .pushover_notifier import PushoverNotifier
+from .notifiers import NotificationManager
 from .invoice_monitor import InvoiceMonitor
 
 __all__ = [
     'SecretsManager',
     'ConfigManager',
     'KSeFClient',
-    'PushoverNotifier',
+    'NotificationManager',
     'InvoiceMonitor'
 ]

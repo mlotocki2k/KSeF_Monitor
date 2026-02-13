@@ -12,6 +12,15 @@ from pathlib import Path
 from typing import Dict, List
 
 from .scheduler import Scheduler
+from .notifiers import NotificationManager
+from .invoice_pdf_generator import generate_invoice_pdf, REPORTLAB_AVAILABLE
+
+# Optional timezone support
+try:
+    import pytz
+    PYTZ_AVAILABLE = True
+except ImportError:
+    PYTZ_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
@@ -25,22 +34,42 @@ class InvoiceMonitor:
     }
     DEFAULT_TITLE = "Nowa faktura w KSeF"
 
-    def __init__(self, config, ksef_client, pushover_notifier):
+    def __init__(self, config, ksef_client, notification_manager, prometheus_metrics=None):
         """
         Initialize invoice monitor
 
         Args:
             config: ConfigManager instance
             ksef_client: KSeFClient instance
-            pushover_notifier: PushoverNotifier instance
+            notification_manager: NotificationManager instance
+            prometheus_metrics: PrometheusMetrics instance (optional)
         """
         self.config = config
         self.ksef = ksef_client
-        self.pushover = pushover_notifier
+        self.notifier = notification_manager
+        self.metrics = prometheus_metrics
         self.state_file = Path("/data/last_check.json")
         self.subject_types = config.get("monitoring", "subject_types") or ["Subject1"]
 
-        message_priority = config.get("monitoring", "message_priority")
+        # Storage settings
+        self.save_xml = config.get("storage", "save_xml", default=False)
+        self.save_pdf = config.get("storage", "save_pdf", default=False)
+        output_dir = config.get("storage", "output_dir", default="/data/invoices")
+        self.output_dir = Path(output_dir)
+
+        # Get timezone from config
+        if PYTZ_AVAILABLE:
+            self.timezone = config.get_timezone_object()
+        else:
+            logger.warning("pytz not available - timezone support disabled, using system timezone")
+            self.timezone = None
+
+        # Get message priority from notifications section (with fallback to monitoring for backwards compatibility)
+        notifications_config = config.get("notifications") or {}
+        message_priority = notifications_config.get("message_priority")
+        if message_priority is None:
+            message_priority = config.get("monitoring", "message_priority", default=0)
+
         if not isinstance(message_priority, int) or message_priority not in range(-2, 3):
             logger.warning(f"Invalid message_priority '{message_priority}', falling back to 0")
             message_priority = 0
@@ -61,7 +90,44 @@ class InvoiceMonitor:
         self.scheduler = Scheduler(schedule_config)
 
         logger.info(f"Invoice Monitor initialized, subject_types: {self.subject_types}, message_priority: {self.message_priority}")
-    
+
+    def _get_now(self) -> datetime:
+        """
+        Get current datetime in configured timezone
+
+        Returns:
+            Timezone-aware datetime object, or naive datetime if pytz not available
+        """
+        if self.timezone:
+            return datetime.now(self.timezone)
+        else:
+            return datetime.now()
+
+    def _parse_datetime(self, date_string: str) -> datetime:
+        """
+        Parse datetime string and convert to configured timezone
+
+        Args:
+            date_string: ISO format datetime string
+
+        Returns:
+            Timezone-aware datetime object in configured timezone
+        """
+        try:
+            dt = datetime.fromisoformat(date_string)
+
+            # If datetime is naive, assume it's in configured timezone
+            if dt.tzinfo is None and self.timezone:
+                dt = self.timezone.localize(dt)
+            # If datetime has timezone info and we have a configured timezone, convert to it
+            elif dt.tzinfo is not None and self.timezone:
+                dt = dt.astimezone(self.timezone)
+
+            return dt
+        except (ValueError, TypeError) as e:
+            logger.warning(f"Failed to parse datetime '{date_string}': {e}")
+            raise
+
     def load_state(self) -> Dict:
         """
         Load last check state from file
@@ -120,13 +186,14 @@ class InvoiceMonitor:
         """
         Check for new invoices and send notifications.
         Sends one query per subject_type (API accepts only one at a time).
+        All dates use configured timezone (default: Europe/Warsaw).
         """
         state = self.load_state()
 
-        now = datetime.now()
+        now = self._get_now()
         if state.get("last_check"):
             try:
-                date_from = datetime.fromisoformat(state["last_check"])
+                date_from = self._parse_datetime(state["last_check"])
             except (ValueError, TypeError):
                 logger.warning("Invalid last_check date, using 24h ago")
                 date_from = now - timedelta(hours=24)
@@ -138,9 +205,13 @@ class InvoiceMonitor:
         seen_invoices = set(state.get("seen_invoices", []))
         found_any = False
 
+        # Track new invoices per subject type for Prometheus
+        new_invoices_count = {}
+
         for subject_type in self.subject_types:
             invoices = self.ksef.get_invoices_metadata(date_from, date_to, subject_type)
             title = self.SUBJECT_TYPE_TITLES.get(subject_type, self.DEFAULT_TITLE)
+            new_count = 0
 
             for invoice in invoices:
                 invoice_hash = self.get_invoice_hash(invoice)
@@ -149,9 +220,10 @@ class InvoiceMonitor:
 
                 seen_invoices.add(invoice_hash)
                 found_any = True
+                new_count += 1
 
                 message = self.format_invoice_message(invoice, subject_type)
-                success = self.pushover.send_notification(
+                success = self.notifier.send_notification(
                     title=title,
                     message=message,
                     priority=self.message_priority
@@ -162,12 +234,26 @@ class InvoiceMonitor:
                 else:
                     logger.warning(f"Failed to send notification [{subject_type}] invoice: {invoice.get('ksefNumber')}")
 
+                # Save invoice artifacts (PDF, XML, UPO)
+                self._save_invoice_artifacts(invoice, subject_type)
+
+            # Store count for this subject type
+            if new_count > 0:
+                new_invoices_count[subject_type] = new_count
+
         if not found_any:
             logger.info("No new invoices found")
 
+        # Save timestamp in ISO format (includes timezone if available)
         state["last_check"] = now.isoformat()
         state["seen_invoices"] = list(seen_invoices)[-1000:]
         self.save_state(state)
+
+        # Update Prometheus metrics
+        if self.metrics:
+            self.metrics.update_last_check(now)
+            for subject_type, count in new_invoices_count.items():
+                self.metrics.increment_new_invoices(subject_type, count)
     
     def format_invoice_message(self, invoice: Dict, subject_type: str) -> str:
         """
@@ -186,6 +272,7 @@ class InvoiceMonitor:
         seller_nip = invoice.get('seller', {}).get("nip", 'N/A')
         buyer_name = invoice.get('buyer', {}).get("name", 'N/A')
         buyer_nip = invoice.get('buyer', {}).get("nip", 'N/A')
+
 
         try:
             if issue_date != 'N/A':
@@ -214,6 +301,98 @@ class InvoiceMonitor:
 
         return message
     
+    def _format_date_for_filename(self, date_string: str) -> str:
+        """Format date string to YYYYMMDD for filename"""
+        try:
+            dt = datetime.fromisoformat(date_string.replace('Z', '+00:00'))
+            return dt.strftime('%Y%m%d')
+        except (ValueError, TypeError):
+            # Fallback: strip separators
+            return date_string.replace('-', '').replace(':', '').replace('T', '')[:8]
+
+    def _save_invoice_artifacts(self, invoice: Dict, subject_type: str):
+        """
+        Save PDF, XML and UPO for a new invoice (if enabled in config).
+
+        Controlled by storage config:
+            save_xml: save XML source files
+            save_pdf: generate and save PDF files
+            output_dir: directory for saved files (auto-created)
+
+        Args:
+            invoice: Invoice metadata from KSeF API
+            subject_type: Subject type (Subject1=sprzedażowa, Subject2=zakupowa)
+        """
+        if not self.save_xml and not self.save_pdf:
+            return
+
+        ksef_number = invoice.get('ksefNumber', '')
+        issue_date = invoice.get('issueDate', '')
+
+        if not ksef_number:
+            logger.warning("No KSeF number - skipping artifact saving")
+            return
+
+        # Determine type prefix
+        prefix = 'sprz' if subject_type == 'Subject1' else 'zak'
+
+        # Format date and sanitize KSeF number for filename
+        date_str = self._format_date_for_filename(issue_date)
+        safe_ksef = ksef_number.replace('/', '_').replace('\\', '_')
+
+        # Build base filename
+        base_name = f"{prefix}_{safe_ksef}_{date_str}"
+
+        # Ensure output directory exists
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+
+        # Fetch invoice XML (needed for both XML saving and PDF generation)
+        xml_result = self.ksef.get_invoice_xml(ksef_number)
+        if not xml_result:
+            logger.warning(f"Failed to fetch XML for {ksef_number} - skipping artifact saving")
+            return
+
+        xml_content = xml_result['xml_content']
+
+        # Save XML
+        if self.save_xml:
+            xml_path = self.output_dir / f"{base_name}.xml"
+            try:
+                with open(xml_path, 'w', encoding='utf-8') as f:
+                    f.write(xml_content)
+                logger.info(f"Invoice XML saved: {xml_path}")
+            except Exception as e:
+                logger.error(f"Failed to save XML for {ksef_number}: {e}")
+
+        # Generate and save PDF
+        if self.save_pdf:
+            if REPORTLAB_AVAILABLE:
+                try:
+                    pdf_path = str(self.output_dir / f"{base_name}.pdf")
+                    tz_name = self.config.get_timezone() if hasattr(self.config, 'get_timezone') else ''
+                    generate_invoice_pdf(xml_content, ksef_number=ksef_number,
+                                         output_path=pdf_path, environment=self.ksef.environment,
+                                         timezone=tz_name)
+                    logger.info(f"Invoice PDF saved: {pdf_path}")
+                except Exception as e:
+                    logger.error(f"Failed to generate PDF for {ksef_number}: {e}")
+            else:
+                logger.warning("reportlab not available - skipping PDF generation")
+
+        # For sales invoices (Subject1), fetch and save UPO (XML-based, follows save_xml flag)
+        if self.save_xml and subject_type == 'Subject1':
+            try:
+                upo_result = self.ksef.get_invoice_upo(ksef_number)
+                if upo_result:
+                    upo_path = self.output_dir / f"UPO_{base_name}.xml"
+                    with open(upo_path, 'w', encoding='utf-8') as f:
+                        f.write(upo_result['xml_content'])
+                    logger.info(f"UPO saved: {upo_path}")
+                else:
+                    logger.info(f"No UPO available yet for {ksef_number}")
+            except Exception as e:
+                logger.error(f"Failed to fetch/save UPO for {ksef_number}: {e}")
+
     def run(self):
         """
         Main monitoring loop
@@ -224,11 +403,14 @@ class InvoiceMonitor:
         logger.info("=" * 60)
         logger.info(f"Environment: {self.ksef.environment}")
         logger.info(f"NIP: {self.ksef.nip}")
+        logger.info(f"Save XML: {self.save_xml}, Save PDF: {self.save_pdf}")
+        if self.save_xml or self.save_pdf:
+            logger.info(f"Output directory: {self.output_dir}")
         self.scheduler._log_schedule_info()
         logger.info("=" * 60)
 
         # Send startup notification
-        self.pushover.send_notification(
+        self.notifier.send_notification(
             title="KSeF Monitor Started",
             message=f"Monitoring invoices for NIP: {self.ksef.nip}",
             priority=-1  # Quiet notification
@@ -247,7 +429,7 @@ class InvoiceMonitor:
 
                 # Send error notification
                 error_msg = f"Error occurred: {str(e)[:200]}"
-                self.pushover.send_error_notification(error_msg)
+                self.notifier.send_error_notification(error_msg)
 
             # Wait until next scheduled run
             self.scheduler.wait_until_next_run()
@@ -258,12 +440,16 @@ class InvoiceMonitor:
         Revokes KSeF session and sends shutdown notification
         """
         logger.info("Shutting down...")
-        
+
+        # Mark metrics as stopped
+        if self.metrics:
+            self.metrics.shutdown()
+
         # Revoke session
         self.ksef.revoke_current_session()
-        
+
         # Send shutdown notification
-        self.pushover.send_notification(
+        self.notifier.send_notification(
             title="KSeF Monitor Stopped",
             message="Invoice monitoring has been stopped",
             priority=-1  # Quiet notification

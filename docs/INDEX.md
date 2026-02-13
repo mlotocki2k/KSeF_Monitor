@@ -24,6 +24,18 @@ This project includes comprehensive documentation. Start here to find what you n
 chmod +x setup.sh && ./setup.sh
 ```
 
+### 🔑 KSeF Token & Authentication
+
+| Document | Description | Read When |
+|----------|-------------|-----------|
+| **[KSEF_TOKEN.md](KSEF_TOKEN.md)** | KSeF token creation (step-by-step) | Setting up KSeF access |
+
+### 🔔 Notifications
+
+| Document | Description | Read When |
+|----------|-------------|-----------|
+| **[NOTIFICATIONS.md](NOTIFICATIONS.md)** | All 5 notification channels guide | Configuring notifications |
+
 ### 🔐 Security
 
 | Document | Description | Read When |
@@ -47,6 +59,19 @@ chmod +x setup.sh && ./setup.sh
 - Modular design with separate files per component
 - Hot reload support (no rebuild needed)
 - Comprehensive inline documentation
+
+### 📄 PDF & XML Storage
+
+| Document | Description | Read When |
+|----------|-------------|-----------|
+| **[PDF_GENERATION.md](PDF_GENERATION.md)** | PDF generation from KSeF invoices | Configuring file storage |
+
+**Features:**
+- ✅ Fetch invoice XML by KSeF number
+- ✅ Parse FA_VAT format
+- ✅ Generate PDF with QR code, Polish characters
+- ✅ Integrated with main app (config: `storage.save_pdf`)
+- ✅ Configurable output directory
 
 ### 🧪 Testing & Quality
 
@@ -92,6 +117,7 @@ chmod +x setup.sh && ./setup.sh
 | **Start Monitor** | `docker-compose up -d` | [QUICKSTART.md](QUICKSTART.md) |
 | **View Logs** | `docker-compose logs -f` | [README.md](README.md) |
 | **Stop Monitor** | `docker-compose down` | [README.md](README.md) |
+| **Generate Invoice PDF** | `python test_invoice_pdf.py <ksef-number>` | [PDF_GENERATION.md](PDF_GENERATION.md) |
 | **Test Setup** | See [TESTING.md](TESTING.md) | [TESTING.md](TESTING.md) |
 | **Fix IDE Errors** | See [IDE_TROUBLESHOOTING.md](IDE_TROUBLESHOOTING.md) | [IDE_TROUBLESHOOTING.md](IDE_TROUBLESHOOTING.md) |
 | **Secure Secrets** | See [SECURITY.md](SECURITY.md) | [SECURITY.md](SECURITY.md) |
@@ -103,7 +129,10 @@ ksef-invoice-monitor/
 ├── 📄 Documentation
 │   ├── README.md                    # Main documentation
 │   ├── QUICKSTART.md               # Quick setup guide
+│   ├── KSEF_TOKEN.md               # KSeF token creation guide
+│   ├── NOTIFICATIONS.md            # Notification channels guide
 │   ├── SECURITY.md                 # Security practices
+│   ├── PDF_GENERATION.md           # PDF generation guide
 │   ├── PROJECT_STRUCTURE.md        # Architecture
 │   ├── IDE_TROUBLESHOOTING.md      # IDE fixes
 │   ├── TESTING.md                  # Test guide
@@ -111,13 +140,22 @@ ksef-invoice-monitor/
 │
 ├── 🚀 Application
 │   ├── main.py                     # Entry point
+│   ├── test_invoice_pdf.py         # [IN DEV] PDF test script
 │   └── app/                        # Application package
 │       ├── __init__.py
 │       ├── secrets_manager.py      # Secrets handling
 │       ├── config_manager.py       # Configuration
 │       ├── ksef_client.py          # KSeF API client
-│       ├── pushover_notifier.py    # Notifications
-│       └── invoice_monitor.py      # Monitoring logic
+│       ├── invoice_pdf_generator.py # [IN DEV] PDF generator
+│       ├── prometheus_metrics.py   # Prometheus metrics
+│       ├── scheduler.py            # Flexible scheduling
+│       └── notifiers/              # Multi-channel notifications
+│           ├── notification_manager.py
+│           ├── pushover_notifier.py
+│           ├── discord_notifier.py
+│           ├── slack_notifier.py
+│           ├── email_notifier.py
+│           └── webhook_notifier.py
 │
 ├── ⚙️ Configuration
 │   ├── config.example.json         # Config template (with secrets)
@@ -230,6 +268,9 @@ Before running in production:
 
 **Features:**
 - ✅ Full KSeF API v2.0 support
+- ✅ Multi-channel notifications (5 channels)
+- ✅ Prometheus metrics endpoint
+- ✅ Flexible scheduling system
 - ✅ Token-based authentication
 - ✅ Multiple security options
 - ✅ Modular architecture
@@ -237,10 +278,12 @@ Before running in production:
 - ✅ Comprehensive documentation
 - ✅ Docker deployment
 - ✅ Production ready
+- ✅ PDF invoice generation (with QR code, Polish characters)
+- ✅ Configurable XML/PDF file storage
 
 **Requirements:**
 - Docker & Docker Compose
-- Pushover account
+- At least one notification channel (Pushover, Discord, Slack, Email, or Webhook)
 - KSeF authorization token
 
 ---

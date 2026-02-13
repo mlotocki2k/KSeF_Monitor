@@ -33,3 +33,16 @@ ENV/
 # OS
 .DS_Store
 Thumbs.db
+
+# PDF Generation (IN DEVELOPMENT)
+# Generated invoices during testing
+invoice_*.pdf
+invoice_*.xml
+faktura*.pdf
+faktura*.xml
+
+#workflows
+.github/
+
+#TODO
+TODO.md

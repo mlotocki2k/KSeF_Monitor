@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 KSeF Invoice Monitor - Main Entry Point
-Monitors KSeF API for new invoices and sends Pushover notifications
+Monitors KSeF API for new invoices and sends multi-channel notifications
 
 Based on KSeF API v2.0 specification:
 https://github.com/CIRFMF/ksef-docs
@@ -14,17 +14,13 @@ import logging
 
 from app.config_manager import ConfigManager
 from app.ksef_client import KSeFClient
-from app.pushover_notifier import PushoverNotifier
+from app.notifiers import NotificationManager
 from app.invoice_monitor import InvoiceMonitor
+from app.prometheus_metrics import PrometheusMetrics
+from app.logging_config import setup_logging, apply_config
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.StreamHandler(sys.stdout)
-    ]
-)
+# Configure logging (system timezone until config is loaded)
+setup_logging()
 
 logger = logging.getLogger(__name__)
 
@@ -51,8 +47,9 @@ def main():
     global monitor
     
     logger.info("=" * 70)
-    logger.info("KSeF Invoice Monitor v2.0")
+    logger.info("KSeF Invoice Monitor v0.2")
     logger.info("Based on KSeF API v2.0 (github.com/CIRFMF/ksef-docs)")
+    logger.info("Multi-channel notifications: Pushover, Discord, Slack, Email, Webhook")
     logger.info("=" * 70)
     
     try:
@@ -61,28 +58,58 @@ def main():
         config_path = "/data/config.json" if os.path.exists("/data/config.json") else "config.json"
         config = ConfigManager(config_path)
         logger.info("✓ Configuration loaded")
+
+        # Reconfigure logging (level + timezone) from config
+        apply_config(config)
         
         # Initialize KSeF client
         logger.info("Initializing KSeF client...")
         ksef_client = KSeFClient(config)
         logger.info("✓ KSeF client initialized")
-        
-        # Initialize Pushover notifier
-        logger.info("Initializing Pushover notifier...")
-        pushover_notifier = PushoverNotifier(config)
-        logger.info("✓ Pushover notifier initialized")
-        
-        # Test Pushover connection (optional)
-        if config.get("monitoring", "test_notification") is True:
-            logger.info("Sending test notification...")
-            if pushover_notifier.test_connection():
-                logger.info("✓ Test notification sent successfully")
+
+        # Initialize notification manager
+        logger.info("Initializing notification channels...")
+        notification_manager = NotificationManager(config)
+        logger.info("✓ Notification system initialized")
+
+        # Display enabled channels
+        if notification_manager.enabled_channels:
+            logger.info(f"  Enabled channels: {', '.join(notification_manager.enabled_channels)}")
+        else:
+            logger.warning("  No notification channels enabled - notifications disabled")
+
+        # Test notification connections (optional)
+        notifications_config = config.get("notifications") or {}
+        test_notification = notifications_config.get("test_notification")
+        if test_notification is None:
+            test_notification = config.get("monitoring", "test_notification", default=False)
+
+        if test_notification is True:
+            logger.info("Testing notification channels...")
+            if notification_manager.test_connection():
+                logger.info("✓ Notification test completed successfully")
             else:
-                logger.warning("⚠ Test notification failed")
-        
+                logger.warning("⚠ Notification test failed for all channels")
+
+        # Initialize Prometheus metrics
+        logger.info("Initializing Prometheus metrics...")
+        prometheus_port = config.get("prometheus", "port", default=8000)
+        prometheus_enabled = config.get("prometheus", "enabled", default=True)
+
+        prometheus_metrics = None
+        if prometheus_enabled:
+            try:
+                prometheus_metrics = PrometheusMetrics(port=prometheus_port)
+                prometheus_metrics.start_server()
+            except Exception as e:
+                logger.warning(f"Failed to initialize Prometheus metrics: {e}")
+                logger.info("Continuing without Prometheus monitoring")
+        else:
+            logger.info("Prometheus metrics disabled in configuration")
+
         # Initialize and run monitor
         logger.info("Initializing invoice monitor...")
-        monitor = InvoiceMonitor(config, ksef_client, pushover_notifier)
+        monitor = InvoiceMonitor(config, ksef_client, notification_manager, prometheus_metrics)
         logger.info("✓ Invoice monitor initialized")
         
         # Register signal handlers for graceful shutdown

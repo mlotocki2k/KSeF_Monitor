@@ -15,6 +15,13 @@ try:
 except ImportError:
     from app.secrets_manager import SecretsManager
 
+# Optional timezone support
+try:
+    import pytz
+    PYTZ_AVAILABLE = True
+except ImportError:
+    PYTZ_AVAILABLE = False
+
 logger = logging.getLogger(__name__)
 
 
@@ -51,6 +58,9 @@ class ConfigManager:
             # Load config with secrets injected from environment/Docker secrets
             config = self.secrets_manager.load_config_with_secrets()
 
+            # Migrate legacy config format if needed
+            config = self._migrate_legacy_config(config)
+
             # Validate required fields (including secrets)
             self._validate_config(config)
 
@@ -63,7 +73,41 @@ class ConfigManager:
         except Exception as e:
             logger.error(f"Failed to load config: {e}")
             sys.exit(1)
-    
+
+    def _migrate_legacy_config(self, config: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Migrate legacy configuration format to new multi-channel notifications format
+
+        Args:
+            config: Configuration dictionary
+
+        Returns:
+            Migrated configuration dictionary
+        """
+        # Check if we have old-style pushover config at root level without notifications section
+        if "pushover" in config and "notifications" not in config:
+            logger.warning("=" * 70)
+            logger.warning("Detected legacy Pushover-only configuration format")
+            logger.warning("Automatically migrating to new multi-channel notifications format")
+            logger.warning("Please update your config.json to use the 'notifications' section")
+            logger.warning("See examples/config.example.json for the new format")
+            logger.warning("=" * 70)
+
+            # Migrate to new format
+            config["notifications"] = {
+                "channels": ["pushover"],
+                "message_priority": config.get("monitoring", {}).get("message_priority", 0),
+                "test_notification": config.get("monitoring", {}).get("test_notification", False),
+                "pushover": config["pushover"]
+            }
+
+            # Remove message_priority and test_notification from monitoring (now in notifications)
+            if "monitoring" in config:
+                config["monitoring"].pop("message_priority", None)
+                config["monitoring"].pop("test_notification", None)
+
+        return config
+
     def _validate_config(self, config: Dict[str, Any]):
         """
         Validate configuration has required fields
@@ -76,7 +120,6 @@ class ConfigManager:
         """
         required_fields = {
             "ksef": ["environment", "nip", "token"],
-            "pushover": ["user_key", "api_token"],
             "monitoring": []  # check_interval is deprecated, schedule section is now used
         }
 
@@ -94,6 +137,18 @@ class ConfigManager:
             self._validate_schedule(config["schedule"])
         elif "check_interval" not in config.get("monitoring", {}):
             raise ValueError("Missing schedule configuration. Either 'schedule' section or deprecated 'monitoring.check_interval' is required.")
+
+        # Validate notifications section (optional but recommended)
+        if "notifications" in config:
+            self._validate_notifications(config["notifications"])
+        else:
+            logger.warning("No 'notifications' section found - notifications disabled")
+
+        # Validate timezone (optional, defaults to Europe/Warsaw)
+        self._validate_timezone(config)
+
+        # Set storage defaults
+        self._apply_storage_defaults(config)
 
     def _validate_schedule(self, schedule: Dict[str, Any]):
         """
@@ -174,29 +229,195 @@ class ConfigManager:
             if "invalid literal" in str(e):
                 raise ValueError(f"Invalid time format '{time_str}'. Expected HH:MM with numeric values")
             raise
-    
-    def get(self, *keys: str) -> Optional[Any]:
+
+    def _validate_notifications(self, notifications: Dict[str, Any]):
+        """
+        Validate notifications configuration
+
+        Args:
+            notifications: Notifications configuration dictionary
+
+        Raises:
+            ValueError: If notifications configuration is invalid
+        """
+        channels = notifications.get("channels", [])
+
+        if not isinstance(channels, list):
+            raise ValueError("Field 'notifications.channels' must be a list")
+
+        if not channels:
+            logger.warning("No notification channels enabled in config - notifications disabled")
+            return
+
+        # Validate each enabled channel
+        valid_channels = ["pushover", "discord", "slack", "email", "webhook"]
+        for channel in channels:
+            if channel not in valid_channels:
+                logger.warning(f"Unknown notification channel: '{channel}' - skipping")
+                continue
+
+            # Validate channel-specific configuration
+            if channel == "pushover" and channel in notifications:
+                self._validate_pushover(notifications[channel])
+            elif channel == "discord" and channel in notifications:
+                self._validate_discord(notifications[channel])
+            elif channel == "slack" and channel in notifications:
+                self._validate_slack(notifications[channel])
+            elif channel == "email" and channel in notifications:
+                self._validate_email(notifications[channel])
+            elif channel == "webhook" and channel in notifications:
+                self._validate_webhook(notifications[channel])
+
+    def _validate_pushover(self, pushover: Dict[str, Any]):
+        """Validate Pushover configuration"""
+        if not pushover.get("user_key"):
+            logger.warning("Pushover enabled but 'user_key' not configured")
+        if not pushover.get("api_token"):
+            logger.warning("Pushover enabled but 'api_token' not configured")
+
+    def _validate_discord(self, discord: Dict[str, Any]):
+        """Validate Discord configuration"""
+        if not discord.get("webhook_url"):
+            logger.warning("Discord enabled but 'webhook_url' not configured")
+
+    def _validate_slack(self, slack: Dict[str, Any]):
+        """Validate Slack configuration"""
+        if not slack.get("webhook_url"):
+            logger.warning("Slack enabled but 'webhook_url' not configured")
+
+    def _validate_email(self, email: Dict[str, Any]):
+        """Validate Email configuration"""
+        required = ["smtp_server", "username", "password", "from_address", "to_addresses"]
+        missing = [field for field in required if not email.get(field)]
+        if missing:
+            logger.warning(f"Email enabled but missing fields: {', '.join(missing)}")
+
+        # Validate to_addresses is a list
+        to_addresses = email.get("to_addresses")
+        if to_addresses and not isinstance(to_addresses, list):
+            raise ValueError("Field 'email.to_addresses' must be a list")
+
+    def _validate_webhook(self, webhook: Dict[str, Any]):
+        """Validate Webhook configuration"""
+        if not webhook.get("url"):
+            logger.warning("Webhook enabled but 'url' not configured")
+
+        method = webhook.get("method", "POST").upper()
+        if method not in ["GET", "POST", "PUT"]:
+            raise ValueError(f"Invalid webhook method: '{method}'. Valid methods: GET, POST, PUT")
+
+    def _validate_timezone(self, config: Dict[str, Any]):
+        """
+        Validate timezone configuration and set default if not provided
+
+        Args:
+            config: Configuration dictionary
+
+        Raises:
+            ValueError: If timezone is invalid
+        """
+        # Get timezone from monitoring section or root level
+        timezone = config.get("monitoring", {}).get("timezone") or config.get("timezone")
+
+        if not timezone:
+            # Set default timezone
+            default_tz = "Europe/Warsaw"
+            if "monitoring" not in config:
+                config["monitoring"] = {}
+            config["monitoring"]["timezone"] = default_tz
+            logger.info(f"No timezone configured, using default: {default_tz}")
+            return
+
+        # Validate timezone if pytz is available
+        if PYTZ_AVAILABLE:
+            try:
+                pytz.timezone(timezone)
+                logger.info(f"Timezone configured: {timezone}")
+            except pytz.exceptions.UnknownTimeZoneError:
+                logger.warning(f"Invalid timezone '{timezone}', falling back to 'Europe/Warsaw'")
+                logger.warning(f"Valid timezones: https://en.wikipedia.org/wiki/List_of_tz_database_time_zones")
+                config["monitoring"]["timezone"] = "Europe/Warsaw"
+        else:
+            # pytz not available, accept timezone but warn
+            logger.warning("pytz not installed - timezone validation disabled")
+            logger.warning("Install pytz for timezone support: pip install pytz")
+            logger.info(f"Using configured timezone without validation: {timezone}")
+
+    def _apply_storage_defaults(self, config: Dict[str, Any]):
+        """Apply defaults for storage section (save_xml, save_pdf, output_dir)."""
+        storage = config.setdefault("storage", {})
+        if "save_xml" not in storage:
+            storage["save_xml"] = False
+        if "save_pdf" not in storage:
+            storage["save_pdf"] = False
+        if "output_dir" not in storage:
+            storage["output_dir"] = "/data/invoices"
+
+        logger.info(f"Storage: save_xml={storage['save_xml']}, save_pdf={storage['save_pdf']}, output_dir={storage['output_dir']}")
+
+    _SENTINEL = object()
+
+    def get(self, *keys, default=_SENTINEL) -> Optional[Any]:
         """
         Get configuration value using dot notation
-        
+
         Args:
             *keys: Keys to traverse in configuration dictionary
-            
+            default: Value to return if key is not found (default: None)
+
         Returns:
-            Configuration value or None if not found
-            
+            Configuration value, or default if not found
+
         Example:
             config.get("ksef", "environment")  # Returns "test"
+            config.get("prometheus", "enabled", default=True)
         """
+        # Filter out non-string args passed as positional (backwards compat)
+        str_keys = []
+        fallback = self._SENTINEL
+        for k in keys:
+            if isinstance(k, str):
+                str_keys.append(k)
+            else:
+                fallback = k
+
+        if default is not self._SENTINEL:
+            fallback = default
+
         value = self.config
-        for key in keys:
+        for key in str_keys:
             if not isinstance(value, dict):
-                return None
+                return fallback if fallback is not self._SENTINEL else None
             value = value.get(key)
             if value is None:
-                return None
+                return fallback if fallback is not self._SENTINEL else None
         return value
     
+    def get_timezone(self) -> str:
+        """
+        Get configured timezone
+
+        Returns:
+            Timezone string (e.g., "Europe/Warsaw")
+        """
+        return self.get("monitoring", "timezone") or "Europe/Warsaw"
+
+    def get_timezone_object(self):
+        """
+        Get timezone as pytz timezone object
+
+        Returns:
+            pytz timezone object or None if pytz not available
+
+        Raises:
+            ImportError: If pytz is not installed
+        """
+        if not PYTZ_AVAILABLE:
+            raise ImportError("pytz is required for timezone support. Install with: pip install pytz")
+
+        tz_name = self.get_timezone()
+        return pytz.timezone(tz_name)
+
     def reload(self):
         """Reload configuration from file"""
         self.config = self.load_config()
