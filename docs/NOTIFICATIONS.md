@@ -84,13 +84,42 @@ echo "your-api-token" | docker secret create pushover_api_token -
 
 Great for team channels and development servers.
 
-### Setup
+### Setup — krok po kroku
 
-1. Open Discord server settings
-2. Go to **Integrations** → **Webhooks**
-3. Click **New Webhook**
-4. Customize name/icon, select channel
-5. Copy **Webhook URL**
+**Wymagania:** Musisz mieć uprawnienia **Manage Webhooks** na serwerze Discord (administrator lub odpowiednia rola).
+
+1. **Otwórz ustawienia serwera**
+   - Kliknij nazwę serwera w lewym górnym rogu
+   - Wybierz **Server Settings** (Ustawienia serwera)
+
+2. **Przejdź do Integrations**
+   - W menu po lewej kliknij **Integrations** (Integracje)
+   - Kliknij **Webhooks** (lub **View Webhooks** jeśli już istnieją)
+
+3. **Utwórz nowy webhook**
+   - Kliknij **New Webhook** (Nowy Webhook)
+   - Discord automatycznie utworzy webhook o losowej nazwie
+
+4. **Skonfiguruj webhook**
+   - **Nazwa:** Zmień na `KSeF Monitor` (lub inna dowolna)
+   - **Avatar:** Możesz dodać własną ikonę (opcjonalnie)
+   - **Channel:** Wybierz kanał docelowy dla powiadomień
+     - Zalecenie: utwórz dedykowany kanał np. `#ksef-faktury`
+
+5. **Skopiuj Webhook URL**
+   - Kliknij przycisk **Copy Webhook URL**
+   - URL ma format: `https://discord.com/api/webhooks/XXXXXXXXX/YYYYYYYYYYYY`
+   - **Traktuj ten URL jak hasło** — każdy kto go posiada może pisać na kanale
+
+6. **Zapisz zmiany** — kliknij **Save Changes**
+
+**Weryfikacja — wyślij testową wiadomość:**
+```bash
+curl -H "Content-Type: application/json" \
+  -d '{"content": "Test KSeF Monitor"}' \
+  "https://discord.com/api/webhooks/TWOJ_WEBHOOK_URL"
+```
+Jeśli na kanale pojawi się wiadomość — webhook działa poprawnie.
 
 ### Configuration
 
@@ -130,13 +159,53 @@ echo "https://discord.com/api/webhooks/..." | docker secret create discord_webho
 
 Ideal for business teams using Slack.
 
-### Setup
+### Setup — krok po kroku
 
-1. Go to [Slack App Directory](https://slack.com/apps)
-2. Search for **Incoming Webhooks**
-3. Click **Add to Slack**
-4. Select channel and click **Add Incoming WebHooks integration**
-5. Copy **Webhook URL**
+**Wymagania:** Musisz mieć uprawnienia do instalowania aplikacji w workspace Slack (administrator lub odpowiednia rola).
+
+#### Metoda 1: Slack App z Incoming Webhooks (zalecana)
+
+1. **Utwórz aplikację Slack**
+   - Przejdź do [api.slack.com/apps](https://api.slack.com/apps)
+   - Kliknij **Create New App**
+   - Wybierz **From scratch**
+   - Podaj nazwę: `KSeF Monitor`
+   - Wybierz workspace, w którym chcesz otrzymywać powiadomienia
+   - Kliknij **Create App**
+
+2. **Włącz Incoming Webhooks**
+   - W menu po lewej kliknij **Incoming Webhooks**
+   - Przełącz **Activate Incoming Webhooks** na **On**
+
+3. **Dodaj webhook do kanału**
+   - Na dole strony kliknij **Add New Webhook to Workspace**
+   - Wybierz kanał docelowy (np. `#ksef-faktury`)
+   - Kliknij **Allow** (Zezwól)
+   - Zalecenie: utwórz dedykowany kanał dla powiadomień KSeF
+
+4. **Skopiuj Webhook URL**
+   - Po autoryzacji pojawi się nowy webhook na liście
+   - Kliknij **Copy** obok Webhook URL
+   - URL ma format: `https://hooks.slack.com/services/TXXXXX/BXXXXX/XXXXXXXX`
+   - **Traktuj ten URL jak hasło** — każdy kto go posiada może pisać na kanale
+
+#### Metoda 2: Legacy Incoming Webhooks (prostsza, ale deprecated)
+
+1. Przejdź do [slack.com/apps](https://slack.com/apps) i wyszukaj **Incoming WebHooks**
+2. Kliknij **Add to Slack**
+3. Wybierz kanał i kliknij **Add Incoming WebHooks Integration**
+4. Skopiuj **Webhook URL**
+
+> **Uwaga:** Metoda 2 jest deprecated przez Slack. Zalecana jest Metoda 1.
+
+**Weryfikacja — wyślij testową wiadomość:**
+```bash
+curl -X POST \
+  -H "Content-Type: application/json" \
+  -d '{"text": "Test KSeF Monitor"}' \
+  "https://hooks.slack.com/services/TWOJ_WEBHOOK_URL"
+```
+Odpowiedź `ok` i wiadomość na kanale oznacza, że webhook działa poprawnie.
 
 ### Configuration
 

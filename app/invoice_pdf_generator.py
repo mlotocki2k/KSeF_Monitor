@@ -14,8 +14,15 @@ import logging
 import os
 import re
 import xml.etree.ElementTree as ET
+from datetime import datetime
 from typing import Dict, Optional, List
 from io import BytesIO
+
+try:
+    import pytz
+    PYTZ_AVAILABLE = True
+except ImportError:
+    PYTZ_AVAILABLE = False
 
 try:
     from reportlab.lib import colors
@@ -39,27 +46,47 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
-# Font registration
+# Font registration — search for a TTF font that supports Polish diacritical marks.
+# Priority: DejaVu Sans (Linux/Docker) → Arial Unicode MS (macOS) → Arial (macOS) → Helvetica (fallback, no PL chars)
 _FONT_NAME = 'Helvetica'
 _FONT_NAME_BOLD = 'Helvetica-Bold'
 
 if REPORTLAB_AVAILABLE:
-    _DEJAVU_PATHS = [
-        '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
-        '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf',
+    # (name, regular_path, bold_path_or_None)
+    _FONT_CANDIDATES = [
+        ('DejaVuSans', '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
+                        '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf'),
+        ('DejaVuSans', '/usr/share/fonts/dejavu/DejaVuSans.ttf',
+                        '/usr/share/fonts/dejavu/DejaVuSans-Bold.ttf'),
+        ('DejaVuSans', '/usr/share/fonts/TTF/DejaVuSans.ttf',
+                        '/usr/share/fonts/TTF/DejaVuSans-Bold.ttf'),
+        ('ArialUnicode', '/Library/Fonts/Arial Unicode.ttf', None),
+        ('ArialUnicode', '/System/Library/Fonts/Supplemental/Arial Unicode.ttf', None),
+        ('Arial', '/System/Library/Fonts/Supplemental/Arial.ttf',
+                  '/System/Library/Fonts/Supplemental/Arial Bold.ttf'),
+        ('Arial', '/Library/Fonts/Arial.ttf', '/Library/Fonts/Arial Bold.ttf'),
     ]
-    if os.path.exists(_DEJAVU_PATHS[0]):
+
+    _font_registered = False
+    for _fname, _fpath, _fbold in _FONT_CANDIDATES:
+        if not os.path.exists(_fpath):
+            continue
         try:
-            pdfmetrics.registerFont(TTFont('DejaVuSans', _DEJAVU_PATHS[0]))
-            if os.path.exists(_DEJAVU_PATHS[1]):
-                pdfmetrics.registerFont(TTFont('DejaVuSans-Bold', _DEJAVU_PATHS[1]))
-            _FONT_NAME = 'DejaVuSans'
-            _FONT_NAME_BOLD = 'DejaVuSans-Bold' if os.path.exists(_DEJAVU_PATHS[1]) else 'DejaVuSans'
-            logger.info("DejaVu Sans font registered for Polish character support")
+            pdfmetrics.registerFont(TTFont(_fname, _fpath))
+            _FONT_NAME = _fname
+            _FONT_NAME_BOLD = _fname
+            if _fbold and os.path.exists(_fbold):
+                bold_name = _fname + '-Bold'
+                pdfmetrics.registerFont(TTFont(bold_name, _fbold))
+                _FONT_NAME_BOLD = bold_name
+            logger.info(f"Font '{_fname}' registered for Polish character support")
+            _font_registered = True
+            break
         except Exception as e:
-            logger.warning(f"Failed to register DejaVu Sans: {e}")
-    else:
-        logger.warning("DejaVu Sans not found - Polish characters may not render correctly")
+            logger.warning(f"Failed to register font '{_fname}': {e}")
+
+    if not _font_registered:
+        logger.warning("No TTF font with Polish support found - diacritical marks may not render")
 
 # VAT rate display mapping (from XSL styl.xsl)
 VAT_RATE_LABELS = {
@@ -420,7 +447,8 @@ class InvoicePDFGenerator:
         add(ParagraphStyle('SmallBold', fontName=self.font_bold, fontSize=8, leading=10))
 
     def generate(self, data: Dict, output_path: str = None,
-                 xml_content: str = '', environment: str = '') -> BytesIO:
+                 xml_content: str = '', environment: str = '',
+                 timezone: str = '') -> BytesIO:
         buffer = BytesIO()
         doc = SimpleDocTemplate(
             buffer if output_path is None else output_path,
@@ -428,9 +456,54 @@ class InvoicePDFGenerator:
             topMargin=12*mm, bottomMargin=12*mm)
 
         story = []
-        story.extend(self._ksef_branding(data, xml_content, environment))
-        story.extend(self._invoice_title(data))
-        story.extend(self._invoice_info(data))
+        story.extend(self._ksef_branding(data))
+
+        # Build title + info block, with QR code on the right if available
+        title_info = self._invoice_title(data) + self._invoice_info(data)
+        qr_img = self._build_qr_image(data, xml_content, environment)
+
+        if qr_img and title_info:
+            qr_size = 30 * mm
+            # Pack title+info elements into inner table (one row per element)
+            left_rows = [[el] for el in title_info]
+            left_tbl = Table(left_rows,
+                             colWidths=[self.USABLE_WIDTH - qr_size - 4*mm])
+            left_tbl.setStyle(TableStyle([
+                ('LEFTPADDING', (0, 0), (-1, -1), 0),
+                ('RIGHTPADDING', (0, 0), (-1, -1), 0),
+                ('TOPPADDING', (0, 0), (-1, -1), 1),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 1),
+            ]))
+            # QR with label underneath
+            ksef_num = data.get('ksef_metadata', {}).get('ksef_number', '')
+            label_para = Paragraph(ksef_num or '', self.styles['Small'])
+            qr_inner = Table(
+                [[qr_img], [label_para]],
+                colWidths=[qr_size],
+            )
+            qr_inner.setStyle(TableStyle([
+                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                ('TOPPADDING', (0, 0), (-1, -1), 0),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 1),
+                ('LEFTPADDING', (0, 0), (-1, -1), 0),
+                ('RIGHTPADDING', (0, 0), (-1, -1), 0),
+            ]))
+            t = Table(
+                [[left_tbl, qr_inner]],
+                colWidths=[self.USABLE_WIDTH - qr_size - 2*mm, qr_size + 2*mm],
+            )
+            t.setStyle(TableStyle([
+                ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+                ('ALIGN', (1, 0), (1, 0), 'RIGHT'),
+                ('LEFTPADDING', (0, 0), (-1, -1), 0),
+                ('RIGHTPADDING', (0, 0), (-1, -1), 0),
+                ('TOPPADDING', (0, 0), (-1, -1), 0),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
+            ]))
+            story.append(t)
+        else:
+            story.extend(title_info)
+
         story.append(Spacer(1, 6*mm))
         story.extend(self._parties(data))
         story.append(Spacer(1, 6*mm))
@@ -443,6 +516,7 @@ class InvoicePDFGenerator:
         story.extend(self._payment(data))
         story.extend(self._annotations(data))
         story.extend(self._footer(data))
+        story.extend(self._generation_stamp(timezone))
 
         doc.build(story)
         buffer.seek(0)
@@ -451,8 +525,7 @@ class InvoicePDFGenerator:
 
     # --- Section builders ---
 
-    def _ksef_branding(self, data: Dict, xml_content: str = '',
-                       environment: str = '') -> List:
+    def _ksef_branding(self, data: Dict) -> List:
         ksef_num = data.get('ksef_metadata', {}).get('ksef_number', '')
         if ksef_num:
             branding_para = Paragraph(
@@ -464,42 +537,7 @@ class InvoicePDFGenerator:
                 'Krajowy System <font color="red">e</font>-Faktur '
                 '(KS<font color="red">e</font>F)',
                 self.styles['KSeFMark'])
-
-        # Build QR code image for top-right placement
-        qr_cell = self._build_qr_image(data, xml_content, environment)
-
-        if qr_cell:
-            # Table: branding text left, QR code right
-            qr_size = 30 * mm
-            label_text = ksef_num if ksef_num else 'OFFLINE'
-            label_para = Paragraph(label_text, self.styles['Small'])
-            qr_inner = Table(
-                [[qr_cell], [label_para]],
-                colWidths=[qr_size],
-            )
-            qr_inner.setStyle(TableStyle([
-                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-                ('TOPPADDING', (0, 0), (-1, -1), 0),
-                ('BOTTOMPADDING', (0, 0), (-1, -1), 1),
-                ('LEFTPADDING', (0, 0), (-1, -1), 0),
-                ('RIGHTPADDING', (0, 0), (-1, -1), 0),
-            ]))
-
-            t = Table(
-                [[branding_para, qr_inner]],
-                colWidths=[self.USABLE_WIDTH - qr_size - 2*mm, qr_size + 2*mm],
-            )
-            t.setStyle(TableStyle([
-                ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-                ('ALIGN', (1, 0), (1, 0), 'RIGHT'),
-                ('LEFTPADDING', (0, 0), (-1, -1), 0),
-                ('RIGHTPADDING', (0, 0), (-1, -1), 0),
-                ('TOPPADDING', (0, 0), (-1, -1), 0),
-                ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
-            ]))
-            return [t, Spacer(1, 3*mm)]
-        else:
-            return [branding_para, Spacer(1, 3*mm)]
+        return [branding_para, Spacer(1, 3*mm)]
 
     def _invoice_title(self, data: Dict) -> List:
         h = data.get('header', {})
@@ -903,6 +941,37 @@ class InvoicePDFGenerator:
 
         return elements
 
+    def _generation_stamp(self, timezone: str = '') -> List:
+        """Small-font line at the very bottom: app name+version, generation timestamp."""
+        tz_name = timezone or 'Europe/Warsaw'
+        now = datetime.now()
+        tz_label = ''
+
+        if PYTZ_AVAILABLE:
+            try:
+                tz = pytz.timezone(tz_name)
+                now = datetime.now(tz)
+                tz_label = now.strftime('%Z')
+            except Exception:
+                tz_label = tz_name
+        else:
+            tz_label = tz_name
+
+        stamp = now.strftime('%y.%m.%d %H:%M:%S')
+        text = f'Wygenerowane przez KSeF Monitor v0.2 | {stamp} {tz_label}'
+
+        return [
+            Spacer(1, 6*mm),
+            Paragraph(text, ParagraphStyle(
+                'GenerationStamp',
+                fontName=self.font,
+                fontSize=6,
+                leading=8,
+                textColor=colors.grey,
+                alignment=1,  # CENTER
+            )),
+        ]
+
     # --- QR Code (Type I: Invoice Verification) ---
 
     @staticmethod
@@ -988,7 +1057,8 @@ class InvoicePDFGenerator:
 
 
 def generate_invoice_pdf(xml_content: str, ksef_number: str = '',
-                         output_path: str = None, environment: str = '') -> BytesIO:
+                         output_path: str = None, environment: str = '',
+                         timezone: str = '') -> BytesIO:
     """Generate PDF from KSeF invoice XML.
 
     Args:
@@ -996,6 +1066,7 @@ def generate_invoice_pdf(xml_content: str, ksef_number: str = '',
         ksef_number: KSeF reference number (shown in header + QR label)
         output_path: File path to write PDF (if None, returns BytesIO)
         environment: KSeF environment ('test', 'demo', 'prod') for QR code URL
+        timezone: IANA timezone name for generation timestamp (default: Europe/Warsaw)
     """
     parser = InvoiceXMLParser(xml_content)
     invoice_data = parser.parse()
@@ -1004,4 +1075,5 @@ def generate_invoice_pdf(xml_content: str, ksef_number: str = '',
 
     generator = InvoicePDFGenerator()
     return generator.generate(invoice_data, output_path,
-                              xml_content=xml_content, environment=environment)
+                              xml_content=xml_content, environment=environment,
+                              timezone=timezone)

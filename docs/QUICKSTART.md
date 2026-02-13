@@ -77,9 +77,11 @@ Choose one or more from:
 </details>
 
 **Step 2: Get KSeF Token**
-- Log in to [ksef-test.mf.gov.pl](https://ksef-test.mf.gov.pl/web/login) (or production)
+- Log in to [ksef-test.mf.gov.pl](https://ksef-test.mf.gov.pl/web/login) (or production: [ksef.mf.gov.pl](https://ksef.mf.gov.pl/web/login))
 - Navigate to "Tokens" section
-- Generate a new token and copy it immediately
+- Generate a new token — **ustaw uprawnienia tylko do przeglądania/pobierania faktur** (read-only)
+- Copy it immediately (may be shown only once)
+- Szczegółowy przewodnik: [KSEF_TOKEN.md](./KSEF_TOKEN.md)
 
 **Step 3: Configure**
 ```bash

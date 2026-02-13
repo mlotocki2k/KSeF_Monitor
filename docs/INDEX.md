@@ -24,6 +24,18 @@ This project includes comprehensive documentation. Start here to find what you n
 chmod +x setup.sh && ./setup.sh
 ```
 
+### 🔑 KSeF Token & Authentication
+
+| Document | Description | Read When |
+|----------|-------------|-----------|
+| **[KSEF_TOKEN.md](KSEF_TOKEN.md)** | KSeF token creation (step-by-step) | Setting up KSeF access |
+
+### 🔔 Notifications
+
+| Document | Description | Read When |
+|----------|-------------|-----------|
+| **[NOTIFICATIONS.md](NOTIFICATIONS.md)** | All 5 notification channels guide | Configuring notifications |
+
 ### 🔐 Security
 
 | Document | Description | Read When |
@@ -116,6 +128,8 @@ ksef-invoice-monitor/
 ├── 📄 Documentation
 │   ├── README.md                    # Main documentation
 │   ├── QUICKSTART.md               # Quick setup guide
+│   ├── KSEF_TOKEN.md               # KSeF token creation guide
+│   ├── NOTIFICATIONS.md            # Notification channels guide
 │   ├── SECURITY.md                 # Security practices
 │   ├── PDF_GENERATION.md           # [IN DEV] PDF generation guide
 │   ├── PROJECT_STRUCTURE.md        # Architecture

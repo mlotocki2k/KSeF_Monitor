@@ -42,8 +42,11 @@ ksef_monitor_v0_1/
 │       └── webhook_notifier.py      # Generyczny HTTP endpoint
 ├── docs/                        # Documentation
 │   ├── QUICKSTART.md            # Quick start guide
+│   ├── KSEF_TOKEN.md            # Tworzenie tokena KSeF (read-only)
+│   ├── NOTIFICATIONS.md         # Konfiguracja powiadomień (5 kanałów)
 │   ├── SECURITY.md              # Security best practices
 │   ├── TESTING.md               # Testing guide
+│   ├── PDF_GENERATION.md        # Generowanie PDF faktur
 │   ├── PROJECT_STRUCTURE.md     # Project architecture
 │   ├── IDE_TROUBLESHOOTING.md   # IDE setup help
 │   └── INDEX.md                 # Documentation index
@@ -67,7 +70,8 @@ Katalog `data/` powstaje w runtime i zawiera plik stanu `last_check.json`.
 ## Dokumentacja
 
 - 📖 [QUICKSTART.md](docs/QUICKSTART.md) — Szybki start w 5 minut
-- 🔔 [NOTIFICATIONS.md](docs/NOTIFICATIONS.md) — Konfiguracja powiadomień (5 kanałów)
+- 🔑 [KSEF_TOKEN.md](docs/KSEF_TOKEN.md) — Tworzenie tokena KSeF (krok po kroku, uprawnienia read-only)
+- 🔔 [NOTIFICATIONS.md](docs/NOTIFICATIONS.md) — Konfiguracja powiadomień (5 kanałów, tworzenie webhooków)
 - 🔒 [SECURITY.md](docs/SECURITY.md) — Najlepsze praktyki bezpieczeństwa
 - 🧪 [TESTING.md](docs/TESTING.md) — Przewodnik testowania
 - 🏗️ [PROJECT_STRUCTURE.md](docs/PROJECT_STRUCTURE.md) — Architektura projektu
@@ -110,7 +114,7 @@ Skopiuj `examples/config.example.json` do `config.json` i uzupełnij wartości.
 |---|---|
 | `environment` | `test` \| `demo` \| `prod` — wyznacza base URL API (patrz tabelka poniżej). |
 | `nip` | 10-cyfrowy NIP podmiotu. |
-| `token` | Token autoryzacyjny z portalu KSeF. Może być podany tu lub przez env variable / Docker secret (patrz [Sekretne wartości](#sekretne-wartości)). |
+| `token` | Token autoryzacyjny z portalu KSeF — **wyłącznie z uprawnieniami do przeglądania faktur** (read-only). Może być podany tu lub przez env variable / Docker secret (patrz [Sekretne wartości](#sekretne-wartości)). Przewodnik tworzenia: [KSEF_TOKEN.md](docs/KSEF_TOKEN.md) |
 
 Base URLs przypisane automatycznie:
 
