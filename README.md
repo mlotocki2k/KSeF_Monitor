@@ -95,12 +95,13 @@ Katalog `data/` powstaje w runtime i zawiera plik stanu `last_check.json`.
 
 | Pakiet | Wersja | Przeznaczenie |
 |---|---|---|
-| `requests` | 2.31.0 | HTTP calls do KSeF API i webhook notifiers |
-| `python-dateutil` | 2.8.2 | Parsing dat w odpowiedziach API |
-| `cryptography` | >=41.0.0 | RSA-OAEP encryption tokena w auth flow |
-| `pytz` | 2024.1 | Obsługa stref czasowych (timezone support) |
-| `prometheus-client` | 0.19.0 | Eksport metryk Prometheus |
-| `reportlab` | 4.0.7 | Generowanie PDF faktur (włączane w sekcji `storage`) |
+| `requests` | 2.32.5 | HTTP calls do KSeF API i webhook notifiers |
+| `python-dateutil` | 2.9.0 | Parsing dat w odpowiedziach API |
+| `cryptography` | 46.0.5 | RSA-OAEP encryption tokena w auth flow |
+| `pytz` | 2025.2 | Obsługa stref czasowych (timezone support) |
+| `prometheus-client` | 0.23.1 | Eksport metryk Prometheus |
+| `reportlab` | 4.4.10 | Generowanie PDF faktur (włączane w sekcji `storage`) |
+| `qrcode` | 8.2 | Generowanie QR Code Type I na fakturach PDF |
 
 ---
 
