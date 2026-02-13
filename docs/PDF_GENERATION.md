@@ -1,8 +1,22 @@
 # Generowanie PDF Faktur z KSeF
 
-**⚠️ Status: IN DEVELOPMENT - Nie zintegrowane z główną aplikacją**
+Moduł generowania PDF faktur z KSeF. Włączany w konfiguracji sekcją `storage`.
 
-Ten dokument opisuje funkcjonalność pobierania XML faktur z KSeF API i konwersji do PDF według oficjalnego wzoru KSeF.
+## Włączenie
+
+Aby automatycznie generować PDF dla nowych faktur, ustaw w `config.json`:
+
+```json
+{
+  "storage": {
+    "save_pdf": true,
+    "save_xml": true,
+    "output_dir": "/data/invoices"
+  }
+}
+```
+
+Pliki będą zapisywane automatycznie w katalogu `output_dir` (tworzony automatycznie).
 
 ---
 

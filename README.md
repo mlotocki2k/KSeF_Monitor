@@ -21,14 +21,14 @@ Bazuje na oficjalnej specyfikacji API: https://github.com/CIRFMF/ksef-docs
 ```
 ksef_monitor_v0_1/
 ├── main.py                      # Entry point — logging, signal handling, bootstrap
-├── test_invoice_pdf.py          # [IN DEV] Test script for PDF generation
+├── test_invoice_pdf.py          # Test script for PDF generation
 ├── app/                         # Application modules
 │   ├── __init__.py
 │   ├── config_manager.py        # Wczytanie i walidacja config.json
 │   ├── secrets_manager.py       # Sekretne wartości z env / Docker secrets / config
 │   ├── ksef_client.py           # Klient API KSeF v2 (autentykacja + zapytania)
 │   ├── invoice_monitor.py       # Główna pętla monitorowania + formatowanie
-│   ├── invoice_pdf_generator.py # [IN DEV] XML parser + PDF generator
+│   ├── invoice_pdf_generator.py # XML parser + PDF generator
 │   ├── prometheus_metrics.py    # Prometheus metrics endpoint
 │   ├── scheduler.py             # Elastyczny system schedulowania (5 trybów)
 │   └── notifiers/               # Multi-channel notification system
@@ -100,7 +100,7 @@ Katalog `data/` powstaje w runtime i zawiera plik stanu `last_check.json`.
 | `cryptography` | >=41.0.0 | RSA-OAEP encryption tokena w auth flow |
 | `pytz` | 2024.1 | Obsługa stref czasowych (timezone support) |
 | `prometheus-client` | 0.19.0 | Eksport metryk Prometheus |
-| `reportlab` | 4.0.7 | **[Opcjonalny]** Generowanie PDF faktur (IN DEV) |
+| `reportlab` | 4.0.7 | Generowanie PDF faktur (włączane w sekcji `storage`) |
 
 ---
 
@@ -341,6 +341,43 @@ Aplikacja automatycznie waliduje konfigurację przy starcie:
 ❌ Field 'schedule.time' cannot be an empty list
 ❌ Invalid weekday: mondayy
 ```
+
+### Sekcja `storage`
+
+Konfiguracja zapisywania plików faktur (XML, PDF). Domyślnie wyłączone.
+
+| Pole | Default | Opis |
+|---|---|---|
+| `save_xml` | `false` | Zapisuj pliki XML faktur (źródłowe dane z KSeF) oraz UPO (dla faktur sprzedażowych). |
+| `save_pdf` | `false` | Generuj i zapisuj pliki PDF faktur (wymaga `reportlab`). |
+| `output_dir` | `"/data/invoices"` | Katalog docelowy dla zapisanych plików. Tworzony automatycznie jeśli nie istnieje. |
+
+**Przykład konfiguracji:**
+
+```json
+{
+  "storage": {
+    "save_xml": true,
+    "save_pdf": true,
+    "output_dir": "/data/invoices"
+  }
+}
+```
+
+**Nazewnictwo plików:**
+```
+sprz_<numer_ksef>_<data>.xml    — XML faktury sprzedażowej
+sprz_<numer_ksef>_<data>.pdf    — PDF faktury sprzedażowej
+zak_<numer_ksef>_<data>.xml     — XML faktury zakupowej
+zak_<numer_ksef>_<data>.pdf     — PDF faktury zakupowej
+UPO_sprz_<numer_ksef>_<data>.xml — UPO (tylko faktury sprzedażowe)
+```
+
+**Uwagi:**
+- Jeśli oba flagi `save_xml` i `save_pdf` są `false`, żadne pliki nie są pobierane/generowane
+- Generowanie PDF wymaga biblioteki `reportlab` (w `requirements.txt`)
+- Katalog `output_dir` jest tworzony automatycznie przy pierwszym zapisie
+- UPO (Urzędowe Poświadczenie Odbioru) zapisywane jest razem z XML (zależne od `save_xml`)
 
 ### Sekcja `prometheus`
 
@@ -685,40 +722,31 @@ Plik `data/last_check.json` przechowuje stan między restartami:
 | `/v2/auth/sessions` | GET | Lista aktywnych sesji |
 | `/v2/auth/sessions/current` | DELETE | Revoke sesji |
 | `/v2/invoices/query/metadata` | POST | Zapytanie o metadata faktur |
-| `/v2/invoices/ksef/{ksefNumber}` | GET | **[IN DEV]** Pobranie XML faktury |
+| `/v2/invoices/ksef/{ksefNumber}` | GET | Pobranie XML faktury |
 
 Dokumentacja API: https://api.ksef.mf.gov.pl/docs/v2/
 
 ---
 
-## 🧪 Generowanie PDF faktur (IN DEVELOPMENT)
+## Generowanie PDF faktur
 
-**Status:** W fazie rozwoju, nie zintegrowane z główną aplikacją
+Moduł do pobierania XML faktur z KSeF i konwersji do PDF według oficjalnego wzoru KSeF.
 
-Moduł do pobierania XML faktur z KSeF i konwersji do PDF według wzoru KSeF.
+**Włączenie** — ustaw w `config.json`:
+```json
+{"storage": {"save_pdf": true, "save_xml": true}}
+```
 
 ### Funkcjonalność
 
-**Co jest zaimplementowane:**
 - ✅ Pobieranie XML faktury po numerze KSeF (endpoint `GET /v2/invoices/ksef/{ksefNumber}`)
 - ✅ Parser XML faktury FA_VAT (wszystkie główne sekcje)
-- ✅ Generator PDF według oficjalnego wzoru KSeF
+- ✅ Generator PDF według oficjalnego wzoru KSeF (XSD/XSL)
+- ✅ QR Code Type I (weryfikacja faktury)
+- ✅ Polskie znaki diakrytyczne (DejaVu Sans / Arial)
+- ✅ Stopka z datą generowania i strefą czasową
+- ✅ Automatyczny zapis PDF/XML dla nowych faktur (sekcja `storage`)
 - ✅ Skrypt testowy do manualnego generowania PDF
-- ✅ Obsługa autoryzacji Bearer token
-- ✅ Walidacja numeru KSeF
-
-**Czego brakuje:**
-- ❌ Integracja z główną pętlą monitorowania
-- ❌ UI/CLI do wyboru faktury z listy
-- ❌ Auto-download PDF dla nowych faktur
-- ❌ Wysyłanie PDF w powiadomieniach
-
-### Wymagania
-
-```bash
-# Odkomentuj w requirements.txt
-pip install reportlab==4.0.7
-```
 
 ### Użycie - Skrypt testowy
 

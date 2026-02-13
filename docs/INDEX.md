@@ -60,17 +60,18 @@ chmod +x setup.sh && ./setup.sh
 - Hot reload support (no rebuild needed)
 - Comprehensive inline documentation
 
-### 🧪 In Development Features
+### 📄 PDF & XML Storage
 
-| Document | Description | Status |
-|----------|-------------|--------|
-| **[PDF_GENERATION.md](PDF_GENERATION.md)** | Generate PDF from KSeF invoices | ⚠️ **IN DEVELOPMENT** |
+| Document | Description | Read When |
+|----------|-------------|-----------|
+| **[PDF_GENERATION.md](PDF_GENERATION.md)** | PDF generation from KSeF invoices | Configuring file storage |
 
-**PDF Generation:**
+**Features:**
 - ✅ Fetch invoice XML by KSeF number
 - ✅ Parse FA_VAT format
-- ✅ Generate PDF according to KSeF template
-- ❌ Not yet integrated with main app
+- ✅ Generate PDF with QR code, Polish characters
+- ✅ Integrated with main app (config: `storage.save_pdf`)
+- ✅ Configurable output directory
 
 ### 🧪 Testing & Quality
 
@@ -131,7 +132,7 @@ ksef-invoice-monitor/
 │   ├── KSEF_TOKEN.md               # KSeF token creation guide
 │   ├── NOTIFICATIONS.md            # Notification channels guide
 │   ├── SECURITY.md                 # Security practices
-│   ├── PDF_GENERATION.md           # [IN DEV] PDF generation guide
+│   ├── PDF_GENERATION.md           # PDF generation guide
 │   ├── PROJECT_STRUCTURE.md        # Architecture
 │   ├── IDE_TROUBLESHOOTING.md      # IDE fixes
 │   ├── TESTING.md                  # Test guide
@@ -277,13 +278,13 @@ Before running in production:
 - ✅ Comprehensive documentation
 - ✅ Docker deployment
 - ✅ Production ready
-- 🧪 PDF invoice generation (IN DEVELOPMENT)
+- ✅ PDF invoice generation (with QR code, Polish characters)
+- ✅ Configurable XML/PDF file storage
 
 **Requirements:**
 - Docker & Docker Compose
 - At least one notification channel (Pushover, Discord, Slack, Email, or Webhook)
 - KSeF authorization token
-- Optional: reportlab for PDF generation (IN DEV)
 
 ---
 

@@ -297,6 +297,11 @@ Edit `config.json` to customize:
     "subject_types": ["Subject1", "Subject2"],  // Invoice types to monitor
     "timezone": "Europe/Warsaw"                // IANA timezone (default)
   },
+  "storage": {
+    "save_xml": false,            // Save invoice XML files
+    "save_pdf": false,            // Generate and save PDF files
+    "output_dir": "/data/invoices" // Output directory (auto-created)
+  },
   "schedule": {
     "mode": "minutes",          // Scheduling mode
     "interval": 5               // Check every 5 minutes
