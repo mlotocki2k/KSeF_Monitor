@@ -8,6 +8,8 @@ Generates PDF from KSeF invoice XML based on official schema and XSL visualizati
 PDF contains ONLY data present in the source XML. No calculations, no defaults.
 """
 
+import base64
+import hashlib
 import logging
 import os
 import re
@@ -21,13 +23,19 @@ try:
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
     from reportlab.lib.units import mm
     from reportlab.platypus import (
-        SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+        SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image
     )
     from reportlab.pdfbase import pdfmetrics
     from reportlab.pdfbase.ttfonts import TTFont
     REPORTLAB_AVAILABLE = True
 except ImportError:
     REPORTLAB_AVAILABLE = False
+
+try:
+    import qrcode
+    QRCODE_AVAILABLE = True
+except ImportError:
+    QRCODE_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
@@ -78,6 +86,13 @@ INVOICE_TYPE_TITLES = {
     'UPR': 'Faktura uproszczona',
     'KOR_ZAL': 'Faktura korygująca zaliczkowa',
     'KOR_ROZ': 'Faktura korygująca rozliczeniowa',
+}
+
+# QR code base URLs per environment (from kody-qr.md)
+QR_BASE_URLS = {
+    'test': 'https://qr-test.ksef.mf.gov.pl',
+    'demo': 'https://qr-demo.ksef.mf.gov.pl',
+    'prod': 'https://qr.ksef.mf.gov.pl',
 }
 
 # VAT summary row definitions: (label, P_13 field, P_14 field)
@@ -404,7 +419,8 @@ class InvoicePDFGenerator:
         add(ParagraphStyle('Small', fontName=self.font, fontSize=8, leading=10))
         add(ParagraphStyle('SmallBold', fontName=self.font_bold, fontSize=8, leading=10))
 
-    def generate(self, data: Dict, output_path: str = None) -> BytesIO:
+    def generate(self, data: Dict, output_path: str = None,
+                 xml_content: str = '', environment: str = '') -> BytesIO:
         buffer = BytesIO()
         doc = SimpleDocTemplate(
             buffer if output_path is None else output_path,
@@ -427,6 +443,7 @@ class InvoicePDFGenerator:
         story.extend(self._payment(data))
         story.extend(self._annotations(data))
         story.extend(self._footer(data))
+        story.extend(self._qr_code(data, xml_content, environment))
 
         doc.build(story)
         buffer.seek(0)
@@ -851,6 +868,107 @@ class InvoicePDFGenerator:
 
         return elements
 
+    # --- QR Code (Type I: Invoice Verification) ---
+
+    @staticmethod
+    def _sha256_base64url(data: bytes) -> str:
+        """Compute SHA-256 of data, return as Base64URL (no padding)."""
+        digest = hashlib.sha256(data).digest()
+        return base64.urlsafe_b64encode(digest).rstrip(b'=').decode('ascii')
+
+    @staticmethod
+    def _format_date_ddmmyyyy(iso_date: str) -> str:
+        """Convert YYYY-MM-DD to DD-MM-YYYY for QR URL."""
+        if not iso_date or len(iso_date) < 10:
+            return ''
+        parts = iso_date[:10].split('-')
+        if len(parts) == 3:
+            return f'{parts[2]}-{parts[1]}-{parts[0]}'
+        return ''
+
+    def _qr_code(self, data: Dict, xml_content: str, environment: str) -> List:
+        """
+        Generate QR Code Type I (Invoice Verification & Download).
+
+        URL format: {BaseURL}/invoice/{NIP}/{IssueDate DD-MM-YYYY}/{FileHash Base64URL}
+        Label: KSeF number if assigned, otherwise 'OFFLINE'.
+        Per: https://github.com/CIRFMF/ksef-docs/blob/main/kody-qr.md
+        """
+        if not QRCODE_AVAILABLE:
+            logger.warning("qrcode library not available - skipping QR code generation")
+            return []
+
+        if not xml_content:
+            return []
+
+        seller_nip = data.get('seller', {}).get('nip', '')
+        issue_date = data.get('header', {}).get('p1', '')
+        ksef_num = data.get('ksef_metadata', {}).get('ksef_number', '')
+
+        if not seller_nip or not issue_date:
+            logger.warning("Missing seller NIP or issue date - skipping QR code")
+            return []
+
+        # Determine QR base URL
+        env_key = environment.lower() if environment else 'prod'
+        base_url = QR_BASE_URLS.get(env_key, QR_BASE_URLS['prod'])
+
+        # Compute file hash (SHA-256 of XML content, Base64URL encoded)
+        file_hash = self._sha256_base64url(xml_content.encode('utf-8'))
+
+        # Format date as DD-MM-YYYY
+        date_str = self._format_date_ddmmyyyy(issue_date)
+        if not date_str:
+            logger.warning(f"Cannot format issue date '{issue_date}' for QR code")
+            return []
+
+        # Build QR URL
+        qr_url = f'{base_url}/invoice/{seller_nip}/{date_str}/{file_hash}'
+        logger.debug(f"QR code URL: {qr_url}")
+
+        # Generate QR code image
+        try:
+            qr = qrcode.QRCode(
+                version=None,
+                error_correction=qrcode.constants.ERROR_CORRECT_M,
+                box_size=3,
+                border=1,
+            )
+            qr.add_data(qr_url)
+            qr.make(fit=True)
+            qr_img = qr.make_image(fill_color='black', back_color='white')
+
+            # Save to bytes buffer
+            img_buffer = BytesIO()
+            qr_img.save(img_buffer, format='PNG')
+            img_buffer.seek(0)
+
+            # Create reportlab Image
+            qr_size = 35 * mm
+            rl_image = Image(img_buffer, width=qr_size, height=qr_size)
+        except Exception as e:
+            logger.error(f"Failed to generate QR code: {e}")
+            return []
+
+        # Label below QR
+        label_text = ksef_num if ksef_num else 'OFFLINE'
+
+        # Build table: QR image + label, left-aligned
+        label_para = Paragraph(label_text, self.styles['Small'])
+        qr_table = Table(
+            [[rl_image], [label_para]],
+            colWidths=[qr_size],
+        )
+        qr_table.setStyle(TableStyle([
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('TOPPADDING', (0, 0), (-1, -1), 0),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 2),
+        ]))
+        qr_table.hAlign = 'LEFT'
+
+        return [Spacer(1, 6 * mm), qr_table]
+
     def _fmt_amt(self, val: str) -> str:
         if not val:
             return ''
@@ -860,12 +978,21 @@ class InvoicePDFGenerator:
             return val
 
 
-def generate_invoice_pdf(xml_content: str, ksef_number: str = '', output_path: str = None) -> BytesIO:
-    """Generate PDF from KSeF invoice XML."""
+def generate_invoice_pdf(xml_content: str, ksef_number: str = '',
+                         output_path: str = None, environment: str = '') -> BytesIO:
+    """Generate PDF from KSeF invoice XML.
+
+    Args:
+        xml_content: Raw XML string of the KSeF invoice
+        ksef_number: KSeF reference number (shown in header + QR label)
+        output_path: File path to write PDF (if None, returns BytesIO)
+        environment: KSeF environment ('test', 'demo', 'prod') for QR code URL
+    """
     parser = InvoiceXMLParser(xml_content)
     invoice_data = parser.parse()
     if ksef_number:
         invoice_data['ksef_metadata']['ksef_number'] = ksef_number
 
     generator = InvoicePDFGenerator()
-    return generator.generate(invoice_data, output_path)
+    return generator.generate(invoice_data, output_path,
+                              xml_content=xml_content, environment=environment)

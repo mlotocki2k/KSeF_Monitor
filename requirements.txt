@@ -6,3 +6,4 @@ pytz==2025.2
 
 # PDF generation
 reportlab==4.0.7
+qrcode==8.0
