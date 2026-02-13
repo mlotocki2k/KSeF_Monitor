@@ -428,7 +428,7 @@ class InvoicePDFGenerator:
             topMargin=12*mm, bottomMargin=12*mm)
 
         story = []
-        story.extend(self._ksef_branding(data))
+        story.extend(self._ksef_branding(data, xml_content, environment))
         story.extend(self._invoice_title(data))
         story.extend(self._invoice_info(data))
         story.append(Spacer(1, 6*mm))
@@ -443,7 +443,6 @@ class InvoicePDFGenerator:
         story.extend(self._payment(data))
         story.extend(self._annotations(data))
         story.extend(self._footer(data))
-        story.extend(self._qr_code(data, xml_content, environment))
 
         doc.build(story)
         buffer.seek(0)
@@ -452,19 +451,55 @@ class InvoicePDFGenerator:
 
     # --- Section builders ---
 
-    def _ksef_branding(self, data: Dict) -> List:
+    def _ksef_branding(self, data: Dict, xml_content: str = '',
+                       environment: str = '') -> List:
         ksef_num = data.get('ksef_metadata', {}).get('ksef_number', '')
-        elements = []
         if ksef_num:
-            elements.append(Paragraph(
-                f'Krajowy System <font color="red">e</font>-Faktur (KS<font color="red">e</font>F): {ksef_num}',
-                self.styles['KSeFMark']))
+            branding_para = Paragraph(
+                f'Krajowy System <font color="red">e</font>-Faktur '
+                f'(KS<font color="red">e</font>F): {ksef_num}',
+                self.styles['KSeFMark'])
         else:
-            elements.append(Paragraph(
-                'Krajowy System <font color="red">e</font>-Faktur (KS<font color="red">e</font>F)',
-                self.styles['KSeFMark']))
-        elements.append(Spacer(1, 3*mm))
-        return elements
+            branding_para = Paragraph(
+                'Krajowy System <font color="red">e</font>-Faktur '
+                '(KS<font color="red">e</font>F)',
+                self.styles['KSeFMark'])
+
+        # Build QR code image for top-right placement
+        qr_cell = self._build_qr_image(data, xml_content, environment)
+
+        if qr_cell:
+            # Table: branding text left, QR code right
+            qr_size = 30 * mm
+            label_text = ksef_num if ksef_num else 'OFFLINE'
+            label_para = Paragraph(label_text, self.styles['Small'])
+            qr_inner = Table(
+                [[qr_cell], [label_para]],
+                colWidths=[qr_size],
+            )
+            qr_inner.setStyle(TableStyle([
+                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                ('TOPPADDING', (0, 0), (-1, -1), 0),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 1),
+                ('LEFTPADDING', (0, 0), (-1, -1), 0),
+                ('RIGHTPADDING', (0, 0), (-1, -1), 0),
+            ]))
+
+            t = Table(
+                [[branding_para, qr_inner]],
+                colWidths=[self.USABLE_WIDTH - qr_size - 2*mm, qr_size + 2*mm],
+            )
+            t.setStyle(TableStyle([
+                ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+                ('ALIGN', (1, 0), (1, 0), 'RIGHT'),
+                ('LEFTPADDING', (0, 0), (-1, -1), 0),
+                ('RIGHTPADDING', (0, 0), (-1, -1), 0),
+                ('TOPPADDING', (0, 0), (-1, -1), 0),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
+            ]))
+            return [t, Spacer(1, 3*mm)]
+        else:
+            return [branding_para, Spacer(1, 3*mm)]
 
     def _invoice_title(self, data: Dict) -> List:
         h = data.get('header', {})
@@ -496,7 +531,7 @@ class InvoicePDFGenerator:
         add_row('Data wystawienia:', h.get('p1'))
         add_row('Miejsce wystawienia:', h.get('p1m'))
         if h.get('p6'):
-            add_row('Data dokonania dostawy / wykonania uslugi:', h.get('p6'))
+            add_row('Data dokonania dostawy / wykonania us\u0142ugi:', h.get('p6'))
         if h.get('p6_od') or h.get('p6_do'):
             add_row('Okres faktury od:', h.get('p6_od'))
             add_row('Okres faktury do:', h.get('p6_do'))
@@ -515,8 +550,8 @@ class InvoicePDFGenerator:
         seller = data.get('seller', {})
         buyer = data.get('buyer', {})
         party_data = [[
-            self._party_html('SPRZEDAWCA', seller),
-            self._party_html('NABYWCA', buyer)
+            self._party_html('<b>SPRZEDAWCA</b>', seller),
+            self._party_html('<b>NABYWCA</>', buyer)
         ]]
         t = Table(party_data, colWidths=[93*mm, 93*mm])
         t.setStyle(TableStyle([
@@ -565,29 +600,29 @@ class InvoicePDFGenerator:
 
         # Column definitions: (header, field, width_mm, align, is_amount)
         cols = [('Lp.', 'nr', 7, 'c', False)]
-        cols.append(('Nazwa (rodzaj) towaru lub uslugi', 'p7', None, 'l', False))
+        cols.append(('Nazwa (rodzaj) towaru lub us\u0142ugi', 'p7', None, 'l', False))
         if has('indeks'):
             cols.append(('Indeks', 'indeks', 15, 'l', False))
         if has('p8a'):
             cols.append(('J.m.', 'p8a', 10, 'c', False))
         if has('p8b'):
-            cols.append(('Ilosc', 'p8b', 13, 'r', True))
+            cols.append(('Ilo\u015b\u0107', 'p8b', 13, 'r', True))
         if has('p9a'):
-            cols.append(('Cena jedn. netto', 'p9a', 22, 'r', True))
+            cols.append(('Cena jedn.\nnetto', 'p9a', 22, 'r', True))
         if has('p9b'):
-            cols.append(('Cena jedn. brutto', 'p9b', 22, 'r', True))
+            cols.append(('Cena jedn.\nbrutto', 'p9b', 22, 'r', True))
         if has('p10'):
-            cols.append(('Opusty', 'p10', 16, 'r', True))
+            cols.append(('Rabaty/\nopusty', 'p10', 16, 'r', True))
         if has('p11'):
-            cols.append(('Wart. netto', 'p11', 22, 'r', True))
+            cols.append(('Wart.\nnetto', 'p11', 22, 'r', True))
         if has('p11a'):
-            cols.append(('Wart. brutto', 'p11a', 22, 'r', True))
+            cols.append(('Wart.\nbrutto', 'p11a', 22, 'r', True))
         if has('p11vat'):
             cols.append(('Kwota VAT', 'p11vat', 20, 'r', True))
         if has('p12'):
-            cols.append(('Stawka VAT', 'p12', 16, 'c', False))
+            cols.append(('Stawka\nVAT', 'p12', 16, 'c', False))
         if has('p6a'):
-            cols.append(('Data dost.', 'p6a', 18, 'c', False))
+            cols.append(('Data\ndost.', 'p6a', 18, 'c', False))
 
         # Calculate name column width
         fixed = sum(c[2] for c in cols if c[2] is not None)
@@ -634,7 +669,7 @@ class InvoicePDFGenerator:
 
         header = [
             Paragraph('Stawka VAT', self.styles['TH']),
-            Paragraph('Wartosc netto', self.styles['TH']),
+            Paragraph('Warto\u015b\u0107 netto', self.styles['TH']),
             Paragraph('Kwota VAT', self.styles['TH']),
         ]
         tdata = [header]
@@ -677,11 +712,11 @@ class InvoicePDFGenerator:
 
         rodzaj = h.get('rodzaj', 'VAT')
         if rodzaj in ('ZAL', 'KOR_ZAL'):
-            label = 'Otrzymana kwota zaplaty:'
+            label = 'Otrzymana kwota zap\u0142aty:'
         elif rodzaj in ('ROZ', 'KOR_ROZ'):
-            label = 'Kwota pozostala do zaplaty:'
+            label = 'Kwota pozosta\u0142a do zap\u0142aty:'
         else:
-            label = 'Kwota naleznosci ogolem:'
+            label = 'Kwota nale\u017cno\u015bci og\u00f3\u0142em:'
 
         tdata = [[
             Paragraph(f'<b>{label}</b>', self.styles['SumBold']),
@@ -709,7 +744,7 @@ class InvoicePDFGenerator:
         if not pay:
             return []
 
-        elements = [Paragraph('Platnosc', self.styles['Section'])]
+        elements = [Paragraph('P\u0142atno\u015b\u0107', self.styles['Section'])]
         rows = []
 
         def add(label, value):
@@ -721,19 +756,19 @@ class InvoicePDFGenerator:
 
         # Paid flag
         if pay.get('zaplacono') == '1':
-            add('Zaplacono:', 'Tak')
-            add('Data zaplaty:', pay.get('data_zaplaty', ''))
+            add('Zap\u0142acono:', 'Tak')
+            add('Data zap\u0142aty:', pay.get('data_zaplaty', ''))
 
         # Payment form
         forma = pay.get('forma')
         if forma:
-            add('Forma platnosci:', PAYMENT_METHODS.get(forma, forma))
+            add('Forma p\u0142atno\u015bci:', PAYMENT_METHODS.get(forma, forma))
         if pay.get('platnosc_inna') == '1':
-            add('Inna forma platnosci:', pay.get('opis_platnosci', ''))
+            add('Inna forma p\u0142atno\u015bci:', pay.get('opis_platnosci', ''))
 
         # Payment terms
         for termin in pay.get('terminy', []):
-            add('Termin platnosci:', termin.get('termin', ''))
+            add('Termin p\u0142atno\u015bci:', termin.get('termin', ''))
 
         # Bank accounts
         for r in pay.get('rachunki', []):
@@ -757,7 +792,7 @@ class InvoicePDFGenerator:
 
         # Partial payments
         if pay.get('zaplaty_czesciowe'):
-            elements.append(Paragraph('Zaplaty czesciowe', self.styles['SmallBold']))
+            elements.append(Paragraph('Zap\u0142aty cz\u0119\u015bciowe', self.styles['SmallBold']))
             for zc in pay['zaplaty_czesciowe']:
                 forma_txt = PAYMENT_METHODS.get(zc.get('forma', ''), zc.get('forma', ''))
                 add('Kwota:', self._fmt_amt(zc.get('kwota', '')))
@@ -768,7 +803,7 @@ class InvoicePDFGenerator:
         # Skonto
         if pay.get('skonto_warunki'):
             add('Warunki skonta:', pay['skonto_warunki'])
-            add('Wysokosc skonta:', pay.get('skonto_wysokosc', ''))
+            add('Wysoko\u015b\u0107 skonta:', pay.get('skonto_wysokosc', ''))
 
         if not rows:
             return []
@@ -793,8 +828,8 @@ class InvoicePDFGenerator:
         labels = [
             ('p16', 'Metoda kasowa'),
             ('p17', 'Samofakturowanie'),
-            ('p18', 'Odwrotne obciazenie'),
-            ('p18a', 'Mechanizm podzielonej platnosci'),
+            ('p18', 'Odwrotne obci\u0105\u017cenie'),
+            ('p18a', 'Mechanizm podzielonej p\u0142atno\u015bci'),
         ]
         for key, label in labels:
             val = ann.get(key)
@@ -886,47 +921,42 @@ class InvoicePDFGenerator:
             return f'{parts[2]}-{parts[1]}-{parts[0]}'
         return ''
 
-    def _qr_code(self, data: Dict, xml_content: str, environment: str) -> List:
+    def _build_qr_image(self, data: Dict, xml_content: str,
+                        environment: str) -> 'Optional[Image]':
         """
-        Generate QR Code Type I (Invoice Verification & Download).
+        Build QR Code Type I image (Invoice Verification & Download).
 
         URL format: {BaseURL}/invoice/{NIP}/{IssueDate DD-MM-YYYY}/{FileHash Base64URL}
-        Label: KSeF number if assigned, otherwise 'OFFLINE'.
         Per: https://github.com/CIRFMF/ksef-docs/blob/main/kody-qr.md
+
+        Returns reportlab Image or None if QR cannot be generated.
         """
         if not QRCODE_AVAILABLE:
-            logger.warning("qrcode library not available - skipping QR code generation")
-            return []
+            logger.warning("qrcode library not available - skipping QR code")
+            return None
 
         if not xml_content:
-            return []
+            return None
 
         seller_nip = data.get('seller', {}).get('nip', '')
         issue_date = data.get('header', {}).get('p1', '')
-        ksef_num = data.get('ksef_metadata', {}).get('ksef_number', '')
 
         if not seller_nip or not issue_date:
             logger.warning("Missing seller NIP or issue date - skipping QR code")
-            return []
+            return None
 
-        # Determine QR base URL
         env_key = environment.lower() if environment else 'prod'
         base_url = QR_BASE_URLS.get(env_key, QR_BASE_URLS['prod'])
 
-        # Compute file hash (SHA-256 of XML content, Base64URL encoded)
         file_hash = self._sha256_base64url(xml_content.encode('utf-8'))
-
-        # Format date as DD-MM-YYYY
         date_str = self._format_date_ddmmyyyy(issue_date)
         if not date_str:
             logger.warning(f"Cannot format issue date '{issue_date}' for QR code")
-            return []
+            return None
 
-        # Build QR URL
         qr_url = f'{base_url}/invoice/{seller_nip}/{date_str}/{file_hash}'
         logger.debug(f"QR code URL: {qr_url}")
 
-        # Generate QR code image
         try:
             qr = qrcode.QRCode(
                 version=None,
@@ -938,36 +968,15 @@ class InvoicePDFGenerator:
             qr.make(fit=True)
             qr_img = qr.make_image(fill_color='black', back_color='white')
 
-            # Save to bytes buffer
             img_buffer = BytesIO()
             qr_img.save(img_buffer, format='PNG')
             img_buffer.seek(0)
 
-            # Create reportlab Image
-            qr_size = 35 * mm
-            rl_image = Image(img_buffer, width=qr_size, height=qr_size)
+            qr_size = 30 * mm
+            return Image(img_buffer, width=qr_size, height=qr_size)
         except Exception as e:
             logger.error(f"Failed to generate QR code: {e}")
-            return []
-
-        # Label below QR
-        label_text = ksef_num if ksef_num else 'OFFLINE'
-
-        # Build table: QR image + label, left-aligned
-        label_para = Paragraph(label_text, self.styles['Small'])
-        qr_table = Table(
-            [[rl_image], [label_para]],
-            colWidths=[qr_size],
-        )
-        qr_table.setStyle(TableStyle([
-            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-            ('TOPPADDING', (0, 0), (-1, -1), 0),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 2),
-        ]))
-        qr_table.hAlign = 'LEFT'
-
-        return [Spacer(1, 6 * mm), qr_table]
+            return None
 
     def _fmt_amt(self, val: str) -> str:
         if not val:
