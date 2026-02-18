@@ -2,7 +2,7 @@
   "openapi": "3.0.4",
   "info": {
     "title": "KSeF API PR",
-    "description": "**Wersja API:** 2.0.1 (build 2.0.1-pr-20260201.2+346bbd20a78a0747a6f370c7696879ddb380cbe2)<br>\n**Klucze publiczne** Ministerstwa Finansów (dla danego środowiska): [Pobierz klucze](#tag/Certyfikaty-klucza-publicznego)<br>\n**Historia zmian:** [Changelog](https://github.com/CIRFMF/ksef-docs/blob/main/api-changelog.md)<br>\n**Rozszerzona dokumentacja API:** [ksef-docs](https://github.com/CIRFMF/ksef-docs/tree/main)\n\n**Adres serwera API:**\n- Środowisko PRODUKCYJNE: `https://api.ksef.mf.gov.pl/v2`\n",
+    "description": "**Wersja API:** 2.1.1 (build 2.1.1-pr-20260213.1+e997352e3eeadca42252ffce12dfb2aa434407b4)<br>\n**Klucze publiczne** Ministerstwa Finansów (dla danego środowiska): [Pobierz klucze](#tag/Certyfikaty-klucza-publicznego)<br>\n**Historia zmian:** [Changelog](https://github.com/CIRFMF/ksef-docs/blob/main/api-changelog.md)<br>\n**Rozszerzona dokumentacja API:** [ksef-docs](https://github.com/CIRFMF/ksef-docs/tree/main)\n\n**Adres serwera API:**\n- Środowisko PRODUKCYJNE: `https://api.ksef.mf.gov.pl/v2`\n",
     "version": "v2"
   },
   "servers": [
@@ -57,6 +57,11 @@
                       "isCurrent": false,
                       "startDate": "2025-10-11T12:23:56.0154302+00:00",
                       "authenticationMethod": "QualifiedSeal",
+                      "authenticationMethodInfo": {
+                        "category": "XadesSignature",
+                        "code": "xades.qualified-seal",
+                        "displayName": "Pieczęć kwalifikowana"
+                      },
                       "status": {
                         "code": 200,
                         "description": "Uwierzytelnianie zakończone sukcesem"
@@ -6515,6 +6520,7 @@
       "AuthenticationListItem": {
         "required": [
           "authenticationMethod",
+          "authenticationMethodInfo",
           "referenceNumber",
           "startDate",
           "status"
@@ -6532,7 +6538,22 @@
                 "$ref": "#/components/schemas/AuthenticationMethod"
               }
             ],
-            "description": "Metoda uwierzytelnienia.\n| Wartość | Opis |\n| --- | --- |\n| Token | Token KSeF. |\n| TrustedProfile | Profil Zaufany. |\n| InternalCertificate | Certyfikat KSeF. |\n| QualifiedSignature | Podpis kwalifikowany. |\n| QualifiedSeal | Pieczęć kwalifikowana. |\n| PersonalSignature | Podpis osobisty. |\n| PeppolSignature | Podpis dostawcy usług Peppol. |\n"
+            "description": "Metoda uwierzytelnienia.\n| Wartość | Opis |\n| --- | --- |\n| Token | Token KSeF. |\n| TrustedProfile | Profil Zaufany. |\n| InternalCertificate | Certyfikat KSeF. |\n| QualifiedSignature | Podpis kwalifikowany. |\n| QualifiedSeal | Pieczęć kwalifikowana. |\n| PersonalSignature | Podpis osobisty. |\n| PeppolSignature | Podpis dostawcy usług Peppol. |\n",
+            "deprecated": true,
+            "x-removal-date": "2026-11-16"
+          },
+          "authenticationMethodInfo": {
+            "required": [
+              "category",
+              "code",
+              "displayName"
+            ],
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AuthenticationMethodInfo"
+              }
+            ],
+            "description": "Użyta metoda uwierzytelnienia."
           },
           "status": {
             "allOf": [
@@ -6540,7 +6561,7 @@
                 "$ref": "#/components/schemas/StatusInfo"
               }
             ],
-            "description": "Informacje o aktualnym statusie.\n| Code | Description | Details |\n| --- | --- | --- |\n| 100 | Uwierzytelnianie w toku | - |\n| 200 | Uwierzytelnianie zakończone sukcesem | - |\n| 415 | Uwierzytelnianie zakończone niepowodzeniem | Brak przypisanych uprawnień |\n| 425 | Uwierzytelnienie unieważnione  | Uwierzytelnienie i powiązane refresh tokeny zostały unieważnione przez użytkownika |\n| 450 | Uwierzytelnianie zakończone niepowodzeniem z powodu błędnego tokenu | Nieprawidłowe wyzwanie autoryzacyjne |\n| 450 | Uwierzytelnianie zakończone niepowodzeniem z powodu błędnego tokenu | Nieprawidłowy token |\n| 450 | Uwierzytelnianie zakończone niepowodzeniem z powodu błędnego tokenu | Nieprawidłowy czas tokena |\n| 450 | Uwierzytelnianie zakończone niepowodzeniem z powodu błędnego tokenu | Token unieważniony |\n| 450 | Uwierzytelnianie zakończone niepowodzeniem z powodu błędnego tokenu | Token nieaktywny |\n| 460 | Uwierzytelnianie zakończone niepowodzeniem z powodu błędu certyfikatu | Nieważny certyfikat |\n| 460 | Uwierzytelnianie zakończone niepowodzeniem z powodu błędu certyfikatu | Błąd weryfikacji łańcucha certyfikatów |\n| 460 | Uwierzytelnianie zakończone niepowodzeniem z powodu błędu certyfikatu | Niezaufany łańcuch certyfikatów |\n| 460 | Uwierzytelnianie zakończone niepowodzeniem z powodu błędu certyfikatu | Certyfikat odwołany |\n| 460 | Uwierzytelnianie zakończone niepowodzeniem z powodu błędu certyfikatu | Niepoprawny certyfikat |\n| 470 | Uwierzytelnianie zakończone niepowodzeniem | Próba wykorzystania metod autoryzacyjnych osoby zmarłej |\n| 480 | Uwierzytelnienie zablokowane | Podejrzenie incydentu bezpieczeństwa. Skontaktuj się z Ministerstwem Finansów przez formularz zgłoszeniowy. |\n| 500 | Nieznany błąd | - |\n| 550 | Operacja została anulowana przez system | Przetwarzanie zostało przerwane z przyczyn wewnętrznych systemu. Spróbuj ponownie |"
+            "description": "Informacje o aktualnym statusie.\n| Code | Description | Details |\n| --- | --- | --- |\n| 100 | Uwierzytelnianie w toku | - |\n| 200 | Uwierzytelnianie zakończone sukcesem | - |\n| 415 | Uwierzytelnianie zakończone niepowodzeniem | Brak przypisanych uprawnień |\n| 425 | Uwierzytelnienie unieważnione  | Uwierzytelnienie i powiązane refresh tokeny zostały unieważnione przez użytkownika |\n| 450 | Uwierzytelnianie zakończone niepowodzeniem z powodu błędnego tokenu | Nieprawidłowe wyzwanie autoryzacyjne |\n| 450 | Uwierzytelnianie zakończone niepowodzeniem z powodu błędnego tokenu | Nieprawidłowy token |\n| 450 | Uwierzytelnianie zakończone niepowodzeniem z powodu błędnego tokenu | Nieprawidłowy czas tokena |\n| 450 | Uwierzytelnianie zakończone niepowodzeniem z powodu błędnego tokenu | Token unieważniony |\n| 450 | Uwierzytelnianie zakończone niepowodzeniem z powodu błędnego tokenu | Token nieaktywny |\n| 460 | Uwierzytelnianie zakończone niepowodzeniem z powodu błędu certyfikatu | Nieważny certyfikat |\n| 460 | Uwierzytelnianie zakończone niepowodzeniem z powodu błędu certyfikatu | Błąd weryfikacji łańcucha certyfikatów |\n| 460 | Uwierzytelnianie zakończone niepowodzeniem z powodu błędu certyfikatu | Niezaufany łańcuch certyfikatów |\n| 460 | Uwierzytelnianie zakończone niepowodzeniem z powodu błędu certyfikatu | Certyfikat odwołany |\n| 460 | Uwierzytelnianie zakończone niepowodzeniem z powodu błędu certyfikatu | Certyfikat zawieszony |\n| 460 | Uwierzytelnianie zakończone niepowodzeniem z powodu błędu certyfikatu | Niepoprawny certyfikat |\n| 470 | Uwierzytelnianie zakończone niepowodzeniem | Próba wykorzystania metod autoryzacyjnych osoby zmarłej |\n| 480 | Uwierzytelnienie zablokowane | Podejrzenie incydentu bezpieczeństwa. Skontaktuj się z Ministerstwem Finansów przez formularz zgłoszeniowy. |\n| 500 | Nieznany błąd | - |\n| 550 | Operacja została anulowana przez system | Przetwarzanie zostało przerwane z przyczyn wewnętrznych systemu. Spróbuj ponownie |"
           },
           "isTokenRedeemed": {
             "type": "boolean",
@@ -6609,9 +6630,48 @@
         "type": "string",
         "description": "Metoda uwierzytelnienia.\n| Wartość | Opis |\n| --- | --- |\n| Token | Token KSeF. |\n| TrustedProfile | Profil Zaufany. |\n| InternalCertificate | Certyfikat KSeF. |\n| QualifiedSignature | Podpis kwalifikowany. |\n| QualifiedSeal | Pieczęć kwalifikowana. |\n| PersonalSignature | Podpis osobisty. |\n| PeppolSignature | Podpis dostawcy usług Peppol. |\n"
       },
+      "AuthenticationMethodCategory": {
+        "enum": [
+          "XadesSignature",
+          "NationalNode",
+          "Token",
+          "Other"
+        ],
+        "type": "string",
+        "description": "| Wartość | Opis |\n| --- | --- |\n| XadesSignature | Uwierzytelnienie podpisem Xades. |\n| NationalNode | Uwierzytelnienie za pomocą Węzła Krajowego (login.gov.pl). |\n| Token | Uwierzytelnienie tokenem. |\n| Other | Uwierzytelnienie inną metodą. |\n"
+      },
+      "AuthenticationMethodInfo": {
+        "required": [
+          "category",
+          "code",
+          "displayName"
+        ],
+        "type": "object",
+        "properties": {
+          "category": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AuthenticationMethodCategory"
+              }
+            ],
+            "description": "Kategoria metody uwierzytelnienia.\n| Wartość | Opis |\n| --- | --- |\n| XadesSignature | Uwierzytelnienie podpisem Xades. |\n| NationalNode | Uwierzytelnienie za pomocą Węzła Krajowego (login.gov.pl). |\n| Token | Uwierzytelnienie tokenem. |\n| Other | Uwierzytelnienie inną metodą. |\n"
+          },
+          "code": {
+            "type": "string",
+            "description": "Kod metody uwierzytelnienia."
+          },
+          "displayName": {
+            "type": "string",
+            "description": "Nazwa metody uwierzytelnienia do wyświetlenia użytkownikowi.",
+            "readOnly": true
+          }
+        },
+        "additionalProperties": false
+      },
       "AuthenticationOperationStatusResponse": {
         "required": [
           "authenticationMethod",
+          "authenticationMethodInfo",
           "startDate",
           "status"
         ],
@@ -6628,7 +6688,22 @@
                 "$ref": "#/components/schemas/AuthenticationMethod"
               }
             ],
-            "description": "Metoda uwierzytelnienia.\n| Wartość | Opis |\n| --- | --- |\n| Token | Token KSeF. |\n| TrustedProfile | Profil Zaufany. |\n| InternalCertificate | Certyfikat KSeF. |\n| QualifiedSignature | Podpis kwalifikowany. |\n| QualifiedSeal | Pieczęć kwalifikowana. |\n| PersonalSignature | Podpis osobisty. |\n| PeppolSignature | Podpis dostawcy usług Peppol. |\n"
+            "description": "Metoda uwierzytelnienia.\n| Wartość | Opis |\n| --- | --- |\n| Token | Token KSeF. |\n| TrustedProfile | Profil Zaufany. |\n| InternalCertificate | Certyfikat KSeF. |\n| QualifiedSignature | Podpis kwalifikowany. |\n| QualifiedSeal | Pieczęć kwalifikowana. |\n| PersonalSignature | Podpis osobisty. |\n| PeppolSignature | Podpis dostawcy usług Peppol. |\n",
+            "deprecated": true,
+            "x-removal-date": "2026-11-16"
+          },
+          "authenticationMethodInfo": {
+            "required": [
+              "category",
+              "code",
+              "displayName"
+            ],
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AuthenticationMethodInfo"
+              }
+            ],
+            "description": "Użyta metoda uwierzytelnienia."
           },
           "status": {
             "allOf": [
@@ -6636,7 +6711,7 @@
                 "$ref": "#/components/schemas/StatusInfo"
               }
             ],
-            "description": "Informacje o aktualnym statusie.\n| Code | Description | Details |\n| --- | --- | --- |\n| 100 | Uwierzytelnianie w toku | - |\n| 200 | Uwierzytelnianie zakończone sukcesem | - |\n| 415 | Uwierzytelnianie zakończone niepowodzeniem | Brak przypisanych uprawnień |\n| 425 | Uwierzytelnienie unieważnione  | Uwierzytelnienie i powiązane refresh tokeny zostały unieważnione przez użytkownika |\n| 450 | Uwierzytelnianie zakończone niepowodzeniem z powodu błędnego tokenu | Nieprawidłowe wyzwanie autoryzacyjne |\n| 450 | Uwierzytelnianie zakończone niepowodzeniem z powodu błędnego tokenu | Nieprawidłowy token |\n| 450 | Uwierzytelnianie zakończone niepowodzeniem z powodu błędnego tokenu | Nieprawidłowy czas tokena |\n| 450 | Uwierzytelnianie zakończone niepowodzeniem z powodu błędnego tokenu | Token unieważniony |\n| 450 | Uwierzytelnianie zakończone niepowodzeniem z powodu błędnego tokenu | Token nieaktywny |\n| 460 | Uwierzytelnianie zakończone niepowodzeniem z powodu błędu certyfikatu | Nieważny certyfikat |\n| 460 | Uwierzytelnianie zakończone niepowodzeniem z powodu błędu certyfikatu | Błąd weryfikacji łańcucha certyfikatów |\n| 460 | Uwierzytelnianie zakończone niepowodzeniem z powodu błędu certyfikatu | Niezaufany łańcuch certyfikatów |\n| 460 | Uwierzytelnianie zakończone niepowodzeniem z powodu błędu certyfikatu | Certyfikat odwołany |\n| 460 | Uwierzytelnianie zakończone niepowodzeniem z powodu błędu certyfikatu | Niepoprawny certyfikat |\n| 470 | Uwierzytelnianie zakończone niepowodzeniem | Próba wykorzystania metod autoryzacyjnych osoby zmarłej |\n| 480 | Uwierzytelnienie zablokowane | Podejrzenie incydentu bezpieczeństwa. Skontaktuj się z Ministerstwem Finansów przez formularz zgłoszeniowy. |\n| 500 | Nieznany błąd | - |\n| 550 | Operacja została anulowana przez system | Przetwarzanie zostało przerwane z przyczyn wewnętrznych systemu. Spróbuj ponownie |"
+            "description": "Informacje o aktualnym statusie.\n| Code | Description | Details |\n| --- | --- | --- |\n| 100 | Uwierzytelnianie w toku | - |\n| 200 | Uwierzytelnianie zakończone sukcesem | - |\n| 415 | Uwierzytelnianie zakończone niepowodzeniem | Brak przypisanych uprawnień |\n| 425 | Uwierzytelnienie unieważnione  | Uwierzytelnienie i powiązane refresh tokeny zostały unieważnione przez użytkownika |\n| 450 | Uwierzytelnianie zakończone niepowodzeniem z powodu błędnego tokenu | Nieprawidłowe wyzwanie autoryzacyjne |\n| 450 | Uwierzytelnianie zakończone niepowodzeniem z powodu błędnego tokenu | Nieprawidłowy token |\n| 450 | Uwierzytelnianie zakończone niepowodzeniem z powodu błędnego tokenu | Nieprawidłowy czas tokena |\n| 450 | Uwierzytelnianie zakończone niepowodzeniem z powodu błędnego tokenu | Token unieważniony |\n| 450 | Uwierzytelnianie zakończone niepowodzeniem z powodu błędnego tokenu | Token nieaktywny |\n| 460 | Uwierzytelnianie zakończone niepowodzeniem z powodu błędu certyfikatu | Nieważny certyfikat |\n| 460 | Uwierzytelnianie zakończone niepowodzeniem z powodu błędu certyfikatu | Błąd weryfikacji łańcucha certyfikatów |\n| 460 | Uwierzytelnianie zakończone niepowodzeniem z powodu błędu certyfikatu | Niezaufany łańcuch certyfikatów |\n| 460 | Uwierzytelnianie zakończone niepowodzeniem z powodu błędu certyfikatu | Certyfikat odwołany |\n| 460 | Uwierzytelnianie zakończone niepowodzeniem z powodu błędu certyfikatu | Certyfikat zawieszony |\n| 460 | Uwierzytelnianie zakończone niepowodzeniem z powodu błędu certyfikatu | Niepoprawny certyfikat |\n| 470 | Uwierzytelnianie zakończone niepowodzeniem | Próba wykorzystania metod autoryzacyjnych osoby zmarłej |\n| 480 | Uwierzytelnienie zablokowane | Podejrzenie incydentu bezpieczeństwa. Skontaktuj się z Ministerstwem Finansów przez formularz zgłoszeniowy. |\n| 500 | Nieznany błąd | - |\n| 550 | Operacja została anulowana przez system | Przetwarzanie zostało przerwane z przyczyn wewnętrznych systemu. Spróbuj ponownie |"
           },
           "isTokenRedeemed": {
             "type": "boolean",
@@ -9838,7 +9913,7 @@
                 "$ref": "#/components/schemas/InvoiceQueryDateRange"
               }
             ],
-            "description": "Typ i zakres dat, według którego filtrowane są faktury.\nMaksymalny dozwolony okres wynosi 3 miesiące w strefie UTC lub w strefie Europe/Warsaw (WAW).\n            \nFormat daty:\n * Daty muszą być przekazane w formacie ISO 8601, np. `yyyy-MM-ddTHH:mm:ss`.\n * Dopuszczalne są następujące warianty:\n   - z sufiksem `Z` (czas UTC),\n   - z jawnym offsetem, np. `+01:00`, `+03:00`,\n   - bez offsetu (interpretowane jako czas lokalny strefy Europe/Warsaw).\n   \nZasady interpretacji dat:\n * Daty z sufiksem `Z` są traktowane jako czas UTC.\n * Daty bez jawnie podanego offsetu są interpretowane jako czas lokalny strefy Europe/Warsaw (WAW).\n * Daty z jawnym offsetem (`+01:00`, `+08:00` itd.) są przeliczane z uwzględnieniem offsetu, a następnie walidowane w strefie UTC lub w strefie Europe/Warsaw (WAW)."
+            "description": "Typ i zakres dat, według którego filtrowane są faktury.\nMaksymalny dozwolony okres wynosi 3 miesiące w strefie UTC lub w strefie Europe/Warsaw (WAW).\n            \nFormat daty:\n * Daty muszą być przekazane w formacie ISO 8601, np. `yyyy-MM-ddTHH:mm:ss`.\n * Dopuszczalne są następujące warianty:\n   - z sufiksem `Z` (czas UTC),\n   - z jawnym offsetem, np. `+01:00`, `+03:00`,\n   - bez offsetu (interpretowane jako czas lokalny strefy Europe/Warsaw)."
           },
           "ksefNumber": {
             "allOf": [
