@@ -24,11 +24,20 @@ RUN apt-get purge -y --auto-remove gcc pkg-config libcairo2-dev
 COPY main.py .
 COPY app/ ./app/
 
+# Create non-root user for security
+RUN useradd -r -u 1000 -m ksef
+
 # Create data directories for persistent storage
-RUN mkdir -p /data/pdf
+RUN mkdir -p /data/pdf && chown -R ksef:ksef /data
 
 # Make main script executable
 RUN chmod +x main.py
+
+# Set ownership of app directory
+RUN chown -R ksef:ksef /app
+
+# Switch to non-root user
+USER ksef
 
 # Expose Prometheus metrics port
 EXPOSE 8000

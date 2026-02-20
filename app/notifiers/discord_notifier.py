@@ -33,6 +33,7 @@ class DiscordNotifier(BaseNotifier):
         Args:
             config: ConfigManager instance or dict with notifications configuration
         """
+        super().__init__()
         notifications_config = config.get("notifications") or {}
         discord_config = notifications_config.get("discord") or {}
 
@@ -100,7 +101,7 @@ class DiscordNotifier(BaseNotifier):
                 payload["avatar_url"] = self.avatar_url
 
             # Send to Discord
-            response = requests.post(
+            response = self.session.post(
                 self.webhook_url,
                 json=payload,
                 timeout=self.timeout
@@ -113,7 +114,7 @@ class DiscordNotifier(BaseNotifier):
         except requests.exceptions.RequestException as e:
             logger.error(f"Failed to send Discord notification: {e}")
             if hasattr(e, 'response') and e.response is not None:
-                logger.error(f"Discord API response: {e.response.text}")
+                logger.error(f"Discord API response status: {e.response.status_code}")
             return False
         except Exception as e:
             logger.error(f"Unexpected error sending Discord notification: {e}")
@@ -134,7 +135,7 @@ class DiscordNotifier(BaseNotifier):
             if self.avatar_url:
                 payload["avatar_url"] = self.avatar_url
 
-            response = requests.post(self.webhook_url, json=payload, timeout=self.timeout)
+            response = self.session.post(self.webhook_url, json=payload, timeout=self.timeout)
             response.raise_for_status()
 
             logger.info(f"Discord notification sent: {context.get('title')}")
@@ -146,7 +147,7 @@ class DiscordNotifier(BaseNotifier):
         except requests.exceptions.RequestException as e:
             logger.error(f"Failed to send Discord notification: {e}")
             if hasattr(e, 'response') and e.response is not None:
-                logger.error(f"Discord API response: {e.response.text}")
+                logger.error(f"Discord API response status: {e.response.status_code}")
             return False
         except Exception as e:
             logger.error(f"Unexpected error sending Discord notification: {e}")

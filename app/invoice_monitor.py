@@ -6,6 +6,7 @@ Main service that coordinates KSeF API polling and notifications
 import json
 import hashlib
 import logging
+import os
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -243,10 +244,11 @@ class InvoiceMonitor:
                 context = self.build_template_context(invoice, subject_type)
                 success = self.notifier.send_invoice_notification(context)
 
+                safe_ksef_log = str(invoice.get('ksefNumber', 'N/A')).replace('\n', ' ').replace('\r', ' ')
                 if success:
-                    logger.info(f"Notification sent [{subject_type}] invoice: {invoice.get('ksefNumber')}")
+                    logger.info(f"Notification sent [{subject_type}] invoice: {safe_ksef_log}")
                 else:
-                    logger.warning(f"Failed to send notification [{subject_type}] invoice: {invoice.get('ksefNumber')}")
+                    logger.warning(f"Failed to send notification [{subject_type}] invoice: {safe_ksef_log}")
 
                 # Save invoice artifacts (PDF, XML, UPO)
                 self._save_invoice_artifacts(invoice, subject_type)
@@ -269,12 +271,18 @@ class InvoiceMonitor:
             for subject_type, count in new_invoices_count.items():
                 self.metrics.increment_new_invoices(subject_type, count)
     
+    @staticmethod
+    def _sanitize_field(value, max_length: int = 500) -> str:
+        """Sanitize a string field from API: strip null bytes and limit length."""
+        return str(value)[:max_length].replace('\x00', '')
+
     def build_template_context(self, invoice: Dict, subject_type: str) -> Dict[str, Any]:
         """
         Build template context dictionary from invoice metadata.
 
         All fields from the KSeF API response are flattened into a
         single-level dict for easy access in Jinja2 templates.
+        String fields are sanitized to prevent injection via malicious data.
 
         Args:
             invoice: Invoice metadata dict from KSeF API
@@ -283,6 +291,7 @@ class InvoiceMonitor:
         Returns:
             Context dictionary for template rendering
         """
+        s = self._sanitize_field
         title = self.SUBJECT_TYPE_TITLES.get(subject_type, self.DEFAULT_TITLE)
 
         priority_emojis = {-2: "🔕", -1: "💤", 0: "📋", 1: "⚠️", 2: "🚨"}
@@ -291,17 +300,17 @@ class InvoiceMonitor:
         priority_colors_int = {-2: 0x808080, -1: 0x808080, 0: 0x3498db, 1: 0xff9900, 2: 0xe74c3c}
 
         return {
-            "ksef_number": invoice.get("ksefNumber", "N/A"),
-            "invoice_number": invoice.get("invoiceNumber", "N/A"),
-            "issue_date": invoice.get("issueDate", "N/A"),
+            "ksef_number": s(invoice.get("ksefNumber", "N/A")),
+            "invoice_number": s(invoice.get("invoiceNumber", "N/A")),
+            "issue_date": s(invoice.get("issueDate", "N/A"), 30),
             "gross_amount": invoice.get("grossAmount", "N/A"),
             "net_amount": invoice.get("netAmount"),
             "vat_amount": invoice.get("vatAmount"),
-            "currency": invoice.get("currency", "PLN"),
-            "seller_name": invoice.get("seller", {}).get("name", "N/A"),
-            "seller_nip": invoice.get("seller", {}).get("nip", "N/A"),
-            "buyer_name": invoice.get("buyer", {}).get("name", "N/A"),
-            "buyer_nip": invoice.get("buyer", {}).get("nip", "N/A"),
+            "currency": s(invoice.get("currency", "PLN"), 10),
+            "seller_name": s(invoice.get("seller", {}).get("name", "N/A")),
+            "seller_nip": s(invoice.get("seller", {}).get("nip", "N/A"), 20),
+            "buyer_name": s(invoice.get("buyer", {}).get("name", "N/A")),
+            "buyer_nip": s(invoice.get("buyer", {}).get("nip", "N/A"), 20),
             "subject_type": subject_type,
             "title": title,
             "priority": self.message_priority,
@@ -357,6 +366,13 @@ class InvoiceMonitor:
 
         # Ensure output directory exists
         self.output_dir.mkdir(parents=True, exist_ok=True)
+
+        # Path traversal guard: ensure generated filenames stay within output_dir
+        resolved_dir = self.output_dir.resolve()
+        test_path = (self.output_dir / f"{base_name}.tmp").resolve()
+        if not str(test_path).startswith(str(resolved_dir) + os.sep):
+            logger.error(f"Path traversal detected for KSeF number: {ksef_number} - skipping")
+            return
 
         # Fetch invoice XML (needed for both XML saving and PDF generation)
         xml_result = self.ksef.get_invoice_xml(ksef_number)

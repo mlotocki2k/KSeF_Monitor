@@ -24,6 +24,7 @@ class PushoverNotifier(BaseNotifier):
         Args:
             config: ConfigManager instance or dict with notifications configuration
         """
+        super().__init__()
         # Support both new notifications structure and legacy root-level pushover
         notifications_config = config.get("notifications") or {}
         pushover_config = notifications_config.get("pushover") or config.get("pushover") or {}
@@ -79,7 +80,7 @@ class PushoverNotifier(BaseNotifier):
                 payload["url"] = url
                 payload["url_title"] = "View in KSeF"
 
-            response = requests.post(self.API_URL, data=payload, timeout=10)
+            response = self.session.post(self.API_URL, data=payload, timeout=10)
             response.raise_for_status()
 
             logger.info(f"Pushover notification sent: {title}")
@@ -88,7 +89,7 @@ class PushoverNotifier(BaseNotifier):
         except requests.exceptions.RequestException as e:
             logger.error(f"Failed to send Pushover notification: {e}")
             if hasattr(e, 'response') and e.response is not None:
-                logger.error(f"Pushover API response: {e.response.text}")
+                logger.error(f"Pushover API response status: {e.response.status_code}")
             return False
         except Exception as e:
             logger.error(f"Unexpected error sending Pushover notification: {e}")
@@ -113,7 +114,7 @@ class PushoverNotifier(BaseNotifier):
                 payload["url"] = url
                 payload["url_title"] = "View in KSeF"
 
-            response = requests.post(self.API_URL, data=payload, timeout=10)
+            response = self.session.post(self.API_URL, data=payload, timeout=10)
             response.raise_for_status()
 
             logger.info(f"Pushover notification sent: {context.get('title')}")
@@ -122,7 +123,7 @@ class PushoverNotifier(BaseNotifier):
         except requests.exceptions.RequestException as e:
             logger.error(f"Failed to send Pushover notification: {e}")
             if hasattr(e, 'response') and e.response is not None:
-                logger.error(f"Pushover API response: {e.response.text}")
+                logger.error(f"Pushover API response status: {e.response.status_code}")
             return False
         except Exception as e:
             logger.error(f"Unexpected error sending Pushover notification: {e}")

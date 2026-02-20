@@ -69,7 +69,7 @@ class PrometheusMetrics:
 
         try:
             # Start HTTP server in daemon thread
-            start_http_server(self.port)
+            start_http_server(self.port, addr='127.0.0.1')
             self._server_started = True
             logger.info(f"✓ Prometheus metrics server started on port {self.port}")
             logger.info(f"  Metrics endpoint: http://localhost:{self.port}/metrics")

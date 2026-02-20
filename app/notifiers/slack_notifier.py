@@ -32,6 +32,7 @@ class SlackNotifier(BaseNotifier):
         Args:
             config: ConfigManager instance or dict with notifications configuration
         """
+        super().__init__()
         notifications_config = config.get("notifications") or {}
         slack_config = notifications_config.get("slack") or {}
 
@@ -131,7 +132,7 @@ class SlackNotifier(BaseNotifier):
             }
 
             # Send to Slack
-            response = requests.post(
+            response = self.session.post(
                 self.webhook_url,
                 json=payload,
                 timeout=self.timeout
@@ -144,7 +145,7 @@ class SlackNotifier(BaseNotifier):
         except requests.exceptions.RequestException as e:
             logger.error(f"Failed to send Slack notification: {e}")
             if hasattr(e, 'response') and e.response is not None:
-                logger.error(f"Slack API response: {e.response.text}")
+                logger.error(f"Slack API response status: {e.response.status_code}")
             return False
         except Exception as e:
             logger.error(f"Unexpected error sending Slack notification: {e}")
@@ -161,7 +162,7 @@ class SlackNotifier(BaseNotifier):
             payload["username"] = self.username
             payload["icon_emoji"] = self.icon_emoji
 
-            response = requests.post(self.webhook_url, json=payload, timeout=self.timeout)
+            response = self.session.post(self.webhook_url, json=payload, timeout=self.timeout)
             response.raise_for_status()
 
             logger.info(f"Slack notification sent: {context.get('title')}")
@@ -173,7 +174,7 @@ class SlackNotifier(BaseNotifier):
         except requests.exceptions.RequestException as e:
             logger.error(f"Failed to send Slack notification: {e}")
             if hasattr(e, 'response') and e.response is not None:
-                logger.error(f"Slack API response: {e.response.text}")
+                logger.error(f"Slack API response status: {e.response.status_code}")
             return False
         except Exception as e:
             logger.error(f"Unexpected error sending Slack notification: {e}")

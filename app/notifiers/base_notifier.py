@@ -7,6 +7,8 @@ import logging
 from abc import ABC, abstractmethod
 from typing import Any, Dict, Optional
 
+import requests
+
 logger = logging.getLogger(__name__)
 
 
@@ -17,6 +19,9 @@ class BaseNotifier(ABC):
     All notifiers must implement this interface to ensure consistent behavior
     across different notification platforms (Pushover, Discord, Slack, Email, Webhook)
     """
+
+    def __init__(self):
+        self.session = requests.Session()
 
     @abstractmethod
     def send_notification(self, title: str, message: str, priority: int = 0, url: Optional[str] = None) -> bool:

@@ -218,7 +218,7 @@ class KSeFClient:
         except Exception as e:
             logger.error(f"Token authentication failed: {e}")
             if hasattr(e, 'response') and e.response is not None:
-                logger.error(f"Response: {e.response.text}")
+                logger.error(f"Response status: {e.response.status_code}")
             return None
     
     def _wait_for_auth_status(self, reference_number: str, authentication_token: str, max_attempts: int = 15) -> bool:
@@ -312,7 +312,7 @@ class KSeFClient:
         except Exception as e:
             logger.error(f"Token redemption failed: {e}")
             if hasattr(e, 'response') and e.response is not None:
-                logger.error(f"Response: {e.response.text}")
+                logger.error(f"Response status: {e.response.status_code}")
             return False
     
     def refresh_access_token(self) -> bool:
@@ -427,7 +427,7 @@ class KSeFClient:
         except requests.exceptions.RequestException as e:
             logger.error(f"Failed to get invoices: {e}")
             if hasattr(e, 'response') and e.response is not None:
-                logger.error(f"Response: {e.response.text}")
+                logger.error(f"Response status: {e.response.status_code}")
             return []
         except Exception as e:
             logger.error(f"Unexpected error while getting invoices: {e}")
@@ -560,7 +560,7 @@ class KSeFClient:
         except requests.exceptions.RequestException as e:
             logger.error(f"Failed to get invoice XML: {e}")
             if hasattr(e, 'response') and e.response is not None:
-                logger.error(f"Response: {e.response.text}")
+                logger.error(f"Response status: {e.response.status_code}")
             return None
         except Exception as e:
             logger.error(f"Unexpected error while getting invoice XML: {e}")
@@ -624,7 +624,7 @@ class KSeFClient:
         except requests.exceptions.RequestException as e:
             logger.error(f"Failed to get UPO: {e}")
             if hasattr(e, 'response') and e.response is not None:
-                logger.error(f"Response: {e.response.text}")
+                logger.error(f"Response status: {e.response.status_code}")
             return None
         except Exception as e:
             logger.error(f"Unexpected error while getting UPO: {e}")

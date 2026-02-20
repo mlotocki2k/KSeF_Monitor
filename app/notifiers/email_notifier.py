@@ -5,6 +5,7 @@ Sends notifications via SMTP with HTML formatting
 
 import logging
 import smtplib
+import ssl
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from typing import Any, Dict, Optional, List
@@ -33,6 +34,7 @@ class EmailNotifier(BaseNotifier):
         Args:
             config: ConfigManager instance or dict with notifications configuration
         """
+        super().__init__()
         notifications_config = config.get("notifications") or {}
         email_config = notifications_config.get("email") or {}
 
@@ -166,7 +168,7 @@ class EmailNotifier(BaseNotifier):
             # Send email
             with smtplib.SMTP(self.smtp_server, self.smtp_port, timeout=self.timeout) as server:
                 if self.use_tls:
-                    server.starttls()
+                    server.starttls(context=ssl.create_default_context())
                 server.login(self.username, self.password)
                 server.sendmail(self.from_address, self.to_addresses, msg.as_string())
 
@@ -205,7 +207,7 @@ class EmailNotifier(BaseNotifier):
 
             with smtplib.SMTP(self.smtp_server, self.smtp_port, timeout=self.timeout) as server:
                 if self.use_tls:
-                    server.starttls()
+                    server.starttls(context=ssl.create_default_context())
                 server.login(self.username, self.password)
                 server.sendmail(self.from_address, self.to_addresses, msg.as_string())
 
