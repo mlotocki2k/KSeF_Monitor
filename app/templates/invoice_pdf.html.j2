@@ -279,7 +279,7 @@
         <tr><td class="info-label">Miejsce wystawienia:</td><td class="info-value">{{ header.p1m }}</td></tr>
         {% endif %}
         {% if header.p6 %}
-        <tr><td class="info-label">Data dokonania dostawy / wykonania us&#322;ugi:</td><td class="info-value">{{ header.p6 }}</td></tr>
+        <tr><td class="info-label">Data dokonania dostawy / wykonania usługi:</td><td class="info-value">{{ header.p6 }}</td></tr>
         {% endif %}
         {% if header.p6_od %}
         <tr><td class="info-label">Okres faktury od:</td><td class="info-value">{{ header.p6_od }}</td></tr>
@@ -366,10 +366,10 @@
 <thead>
 <tr>
     <th>Lp.</th>
-    <th>Nazwa (rodzaj) towaru lub us&#322;ugi</th>
+    <th>Nazwa (rodzaj) towaru lub usługi</th>
     {% if has_col.indeks %}<th>Indeks</th>{% endif %}
     {% if has_col.p8a %}<th>J.m.</th>{% endif %}
-    {% if has_col.p8b %}<th>Ilo&#347;&#263;</th>{% endif %}
+    {% if has_col.p8b %}<th>Ilość</th>{% endif %}
     {% if has_col.p9a %}<th>Cena jedn.<br/>netto</th>{% endif %}
     {% if has_col.p9b %}<th>Cena jedn.<br/>brutto</th>{% endif %}
     {% if has_col.p10 %}<th>Rabaty/<br/>opusty</th>{% endif %}
@@ -409,7 +409,7 @@
 <thead>
 <tr>
     <th>Stawka VAT</th>
-    <th>Warto&#347;&#263; netto</th>
+    <th>Wartość netto</th>
     <th>Kwota VAT</th>
 </tr>
 </thead>
@@ -440,22 +440,22 @@
 
 {# ===== PAYMENT ===== #}
 {% if payment %}
-<div class="section-header">P&#322;atno&#347;&#263;</div>
+<div class="section-header">Płatność</div>
 <table class="payment-table">
 {% if payment.zaplacono == '1' %}
-<tr><td class="payment-label">Zap&#322;acono:</td><td class="payment-value">Tak</td></tr>
+<tr><td class="payment-label">Zapłacono:</td><td class="payment-value">Tak</td></tr>
 {% if payment.data_zaplaty %}
-<tr><td class="payment-label">Data zap&#322;aty:</td><td class="payment-value">{{ payment.data_zaplaty }}</td></tr>
+<tr><td class="payment-label">Data zapłaty:</td><td class="payment-value">{{ payment.data_zaplaty }}</td></tr>
 {% endif %}
 {% endif %}
 {% if payment.forma %}
-<tr><td class="payment-label">Forma p&#322;atno&#347;ci:</td><td class="payment-value">{{ payment.forma | payment_method }}</td></tr>
+<tr><td class="payment-label">Forma płatności:</td><td class="payment-value">{{ payment.forma | payment_method }}</td></tr>
 {% endif %}
 {% if payment.platnosc_inna == '1' %}
-<tr><td class="payment-label">Inna forma p&#322;atno&#347;ci:</td><td class="payment-value">{{ payment.opis_platnosci | default('') }}</td></tr>
+<tr><td class="payment-label">Inna forma płatności:</td><td class="payment-value">{{ payment.opis_platnosci | default('') }}</td></tr>
 {% endif %}
 {% for termin in payment.terminy | default([]) %}
-<tr><td class="payment-label">Termin p&#322;atno&#347;ci:</td><td class="payment-value">{{ termin.termin | default('') }}</td></tr>
+<tr><td class="payment-label">Termin płatności:</td><td class="payment-value">{{ termin.termin | default('') }}</td></tr>
 {% endfor %}
 {% for r in payment.rachunki | default([]) %}
 <tr><td class="payment-label">Rachunek bankowy:</td><td class="payment-value">{{ r.nr_rb | default('') }}{% if r.swift %} (SWIFT: {{ r.swift }}){% endif %}</td></tr>
@@ -474,7 +474,7 @@
 {% endfor %}
 </table>
 {% if payment.zaplaty_czesciowe %}
-<div class="section-header" style="font-size: 8pt;">Zap&#322;aty cz&#281;&#347;ciowe</div>
+<div class="section-header" style="font-size: 8pt;">Zapłaty częściowe</div>
 <table class="payment-table">
 {% for zc in payment.zaplaty_czesciowe %}
 <tr><td class="payment-label">Kwota:</td><td class="payment-value">{{ zc.kwota | default('') | fmt_amt }}</td></tr>
@@ -489,7 +489,7 @@
 <table class="payment-table">
 <tr><td class="payment-label">Warunki skonta:</td><td class="payment-value">{{ payment.skonto_warunki }}</td></tr>
 {% if payment.skonto_wysokosc %}
-<tr><td class="payment-label">Wysoko&#347;&#263; skonta:</td><td class="payment-value">{{ payment.skonto_wysokosc }}</td></tr>
+<tr><td class="payment-label">Wysokość skonta:</td><td class="payment-value">{{ payment.skonto_wysokosc }}</td></tr>
 {% endif %}
 </table>
 {% endif %}

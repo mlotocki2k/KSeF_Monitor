@@ -5,6 +5,7 @@ Based on official KSeF API documentation from github.com/CIRFMF/ksef-docs
 """
 
 import logging
+import re
 import time
 import base64
 from datetime import datetime
@@ -47,6 +48,7 @@ class KSeFClient:
         self.access_token = None
         self.refresh_token = None
         self._ksef_public_key = None
+        self.session = requests.Session()
 
         date_type = config.get("monitoring", "date_type")
         if date_type not in self.VALID_DATE_TYPES:
@@ -124,17 +126,17 @@ class KSeFClient:
                 }
             }
 
-            response = requests.post(url, json=payload, timeout=30)
+            response = self.session.post(url, json=payload, timeout=30)
             response.raise_for_status()
 
             data = response.json()
-            logger.info(f"Challenge response: {data}")
+            logger.info(f"Challenge received: timestamp={data.get('timestamp')}")
             return data
 
         except Exception as e:
             logger.error(f"Failed to get challenge: {e}")
             if hasattr(e, 'response') and e.response is not None:
-                logger.error(f"Response: {e.response.text}")
+                logger.error(f"Response status: {e.response.status_code}")
             return None
     
     def _fetch_public_key(self):
@@ -147,7 +149,7 @@ class KSeFClient:
         try:
             url = f"{self.base_url}/{self.API_VERSION}/security/public-key-certificates"
 
-            response = requests.get(url, timeout=30)
+            response = self.session.get(url, timeout=30)
             response.raise_for_status()
 
             certificates = response.json()
@@ -208,7 +210,7 @@ class KSeFClient:
                 "encryptedToken": encrypted_token_b64
             }
 
-            response = requests.post(url, json=payload, headers=headers, timeout=30)
+            response = self.session.post(url, json=payload, headers=headers, timeout=30)
             response.raise_for_status()
 
             return response.json()
@@ -219,11 +221,13 @@ class KSeFClient:
                 logger.error(f"Response: {e.response.text}")
             return None
     
-    def _wait_for_auth_status(self, reference_number: str, authentication_token: str, max_attempts: int = 10) -> bool:
+    def _wait_for_auth_status(self, reference_number: str, authentication_token: str, max_attempts: int = 15) -> bool:
         """
-        Wait for authentication to complete
+        Wait for authentication to complete with exponential backoff.
         Endpoint: GET /v2/auth/{referenceNumber}
         Requires Bearer authenticationToken (temporary token from ksef-token response)
+
+        Backoff: 1s, 2s, 4s, 8s, 10s, 10s... (base=1, max=10)
 
         Args:
             reference_number: Reference number from ksef-token response
@@ -241,7 +245,7 @@ class KSeFClient:
 
         for attempt in range(max_attempts):
             try:
-                response = requests.get(url, headers=headers, timeout=30)
+                response = self.session.get(url, headers=headers, timeout=30)
                 response.raise_for_status()
 
                 data = response.json()
@@ -251,8 +255,9 @@ class KSeFClient:
                     logger.info("Authentication completed successfully")
                     return True
                 elif processing_code == 100:
-                    logger.debug(f"Authentication in progress (attempt {attempt + 1}/{max_attempts})...")
-                    time.sleep(2)
+                    delay = min(1 * (2 ** attempt), 10)
+                    logger.debug(f"Authentication in progress (attempt {attempt + 1}/{max_attempts}), retry in {delay}s...")
+                    time.sleep(delay)
                 else:
                     logger.error(f"Unexpected processing code: {processing_code}")
                     return False
@@ -260,7 +265,8 @@ class KSeFClient:
             except Exception as e:
                 logger.error(f"Status check failed: {e}")
                 if attempt < max_attempts - 1:
-                    time.sleep(2)
+                    delay = min(1 * (2 ** attempt), 10)
+                    time.sleep(delay)
                 else:
                     return False
 
@@ -289,7 +295,7 @@ class KSeFClient:
                 "Authorization": f"Bearer {authentication_token}"
             }
 
-            response = requests.post(url, headers=headers, timeout=30)
+            response = self.session.post(url, headers=headers, timeout=30)
             response.raise_for_status()
 
             data = response.json()
@@ -328,7 +334,7 @@ class KSeFClient:
                 "Authorization": f"Bearer {self.refresh_token}"
             }
             
-            response = requests.post(url, headers=headers, timeout=30)
+            response = self.session.post(url, headers=headers, timeout=30)
             response.raise_for_status()
             
             data = response.json()
@@ -395,17 +401,17 @@ class KSeFClient:
 
             logger.info(f"Querying invoices [{subject_type}] from {date_from_str} to {date_to_str}")
             
-            response = requests.post(url, json=payload, headers=headers, timeout=30)
+            response = self.session.post(url, json=payload, headers=headers, timeout=30)
             
             # Handle token expiration
             if response.status_code == 401:
                 logger.warning("Access token expired, refreshing...")
                 if self.refresh_access_token():
                     headers["Authorization"] = f"Bearer {self.access_token}"
-                    response = requests.post(url, json=payload, headers=headers, timeout=30)
+                    response = self.session.post(url, json=payload, headers=headers, timeout=30)
                 elif self.authenticate():
                     headers["Authorization"] = f"Bearer {self.access_token}"
-                    response = requests.post(url, json=payload, headers=headers, timeout=30)
+                    response = self.session.post(url, json=payload, headers=headers, timeout=30)
                 else:
                     logger.error("Re-authentication failed")
                     return []
@@ -444,7 +450,7 @@ class KSeFClient:
                 "Authorization": f"Bearer {self.access_token}"
             }
             
-            response = requests.get(url, headers=headers, timeout=10)
+            response = self.session.get(url, headers=headers, timeout=10)
             response.raise_for_status()
             
             data = response.json()
@@ -468,7 +474,7 @@ class KSeFClient:
                 "Authorization": f"Bearer {self.access_token}"
             }
 
-            response = requests.delete(url, headers=headers, timeout=10)
+            response = self.session.delete(url, headers=headers, timeout=10)
             response.raise_for_status()
 
             logger.info("Session revoked successfully")
@@ -477,6 +483,18 @@ class KSeFClient:
         finally:
             self.access_token = None
             self.refresh_token = None
+            self.session.close()
+
+    # KSeF number format: NIP(10digits)-YYYYMMDD-RANDOM(6+ alnum)-SUFFIX(2 uppercase letters)
+    _KSEF_NUMBER_PATTERN = re.compile(r'^\d{10}-\d{8}-[A-Za-z0-9]{6,}-[A-Z]{2}$')
+
+    @staticmethod
+    def _validate_ksef_number(ksef_number: str) -> bool:
+        """
+        Validate KSeF number format.
+        Expected: NIP(10digits)-YYYYMMDD-RANDOM(6+alnum)-XX(2 uppercase)
+        """
+        return bool(KSeFClient._KSEF_NUMBER_PATTERN.match(ksef_number))
 
     def get_invoice_xml(self, ksef_number: str) -> Optional[Dict]:
         """
@@ -489,6 +507,10 @@ class KSeFClient:
         Returns:
             Dict with 'xml_content' (str) and 'sha256_hash' (str), or None if failed
         """
+        if not self._validate_ksef_number(ksef_number):
+            logger.error(f"Invalid KSeF number format: {ksef_number}")
+            return None
+
         try:
             # Ensure we're authenticated
             if not self.access_token:
@@ -504,17 +526,17 @@ class KSeFClient:
 
             logger.info(f"Fetching invoice XML for KSeF number: {ksef_number}")
 
-            response = requests.get(url, headers=headers, timeout=30)
+            response = self.session.get(url, headers=headers, timeout=30)
 
             # Handle token expiration
             if response.status_code == 401:
                 logger.warning("Access token expired, refreshing...")
                 if self.refresh_access_token():
                     headers["Authorization"] = f"Bearer {self.access_token}"
-                    response = requests.get(url, headers=headers, timeout=30)
+                    response = self.session.get(url, headers=headers, timeout=30)
                 elif self.authenticate():
                     headers["Authorization"] = f"Bearer {self.access_token}"
-                    response = requests.get(url, headers=headers, timeout=30)
+                    response = self.session.get(url, headers=headers, timeout=30)
                 else:
                     logger.error("Re-authentication failed")
                     return None
@@ -570,17 +592,17 @@ class KSeFClient:
 
             logger.info(f"Fetching UPO for KSeF number: {ksef_number}")
 
-            response = requests.get(url, headers=headers, timeout=30)
+            response = self.session.get(url, headers=headers, timeout=30)
 
             # Handle token expiration
             if response.status_code == 401:
                 logger.warning("Access token expired, refreshing...")
                 if self.refresh_access_token():
                     headers["Authorization"] = f"Bearer {self.access_token}"
-                    response = requests.get(url, headers=headers, timeout=30)
+                    response = self.session.get(url, headers=headers, timeout=30)
                 elif self.authenticate():
                     headers["Authorization"] = f"Bearer {self.access_token}"
-                    response = requests.get(url, headers=headers, timeout=30)
+                    response = self.session.get(url, headers=headers, timeout=30)
                 else:
                     logger.error("Re-authentication failed")
                     return None

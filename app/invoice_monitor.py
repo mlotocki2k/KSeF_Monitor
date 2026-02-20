@@ -128,10 +128,15 @@ class InvoiceMonitor:
             logger.warning(f"Failed to parse datetime '{date_string}': {e}")
             raise
 
+    # TTL for seen_invoices entries (90 days)
+    SEEN_INVOICES_TTL_DAYS = 90
+
     def load_state(self) -> Dict:
         """
-        Load last check state from file
-        
+        Load last check state from file.
+        Filters out seen_invoices entries older than TTL.
+        Handles backward compatibility with old string-only format.
+
         Returns:
             State dictionary containing last_check timestamp and seen_invoices list
         """
@@ -139,12 +144,25 @@ class InvoiceMonitor:
             if self.state_file.exists():
                 with open(self.state_file, 'r', encoding='utf-8') as f:
                     state = json.load(f)
+
+                    # Filter seen_invoices by TTL and migrate old format
+                    raw_seen = state.get("seen_invoices", [])
+                    cutoff = (datetime.now() - timedelta(days=self.SEEN_INVOICES_TTL_DAYS)).isoformat()
+                    filtered = []
+                    for entry in raw_seen:
+                        if isinstance(entry, dict) and "h" in entry:
+                            # New format: {"h": "sha256...", "ts": "ISO"}
+                            if entry.get("ts", "") >= cutoff:
+                                filtered.append(entry)
+                        # else: old MD5 string format — discard (one-time re-download)
+                    state["seen_invoices"] = filtered
+
                     logger.debug(f"Loaded state: last_check={state.get('last_check')}, "
-                               f"seen_invoices={len(state.get('seen_invoices', []))}")
+                               f"seen_invoices={len(filtered)}")
                     return state
         except Exception as e:
             logger.error(f"Failed to load state: {e}")
-        
+
         return {
             "last_check": None,
             "seen_invoices": []
@@ -165,22 +183,20 @@ class InvoiceMonitor:
         except Exception as e:
             logger.error(f"Failed to save state: {e}")
     
-    def get_invoice_hash(self, invoice: Dict) -> str:
+    def get_invoice_id_hash(self, invoice: Dict) -> str:
         """
-        Generate unique hash for invoice to track duplicates
-        
+        Generate SHA-256 hash for invoice deduplication.
+        Uses ksefReferenceNumber as primary key (unique KSeF identifier),
+        falls back to ksefNumber if not available.
+
         Args:
             invoice: Invoice metadata dictionary
-            
+
         Returns:
-            MD5 hash string
+            SHA-256 hex digest string
         """
-        # Create a unique identifier based on invoice data
-        # KSeF number is unique for each invoice
-        ksef_number = invoice.get('ksefNumber', '')
-        invoice_ref = invoice.get('invoiceNumber', '')
-        identifier = f"{ksef_number}_{invoice_ref}"
-        return hashlib.md5(identifier.encode()).hexdigest()
+        ksef_ref = invoice.get('ksefReferenceNumber') or invoice.get('ksefNumber', '')
+        return hashlib.sha256(ksef_ref.encode()).hexdigest()
     
     def check_for_new_invoices(self):
         """
@@ -202,7 +218,8 @@ class InvoiceMonitor:
             logger.info("First run - checking last 24 hours")
 
         date_to = now
-        seen_invoices = set(state.get("seen_invoices", []))
+        seen_entries = state.get("seen_invoices", [])
+        seen_hashes = {e["h"] for e in seen_entries if isinstance(e, dict)}
         found_any = False
 
         # Track new invoices per subject type for Prometheus
@@ -214,11 +231,12 @@ class InvoiceMonitor:
             new_count = 0
 
             for invoice in invoices:
-                invoice_hash = self.get_invoice_hash(invoice)
-                if invoice_hash in seen_invoices:
+                invoice_hash = self.get_invoice_id_hash(invoice)
+                if invoice_hash in seen_hashes:
                     continue
 
-                seen_invoices.add(invoice_hash)
+                seen_hashes.add(invoice_hash)
+                seen_entries.append({"h": invoice_hash, "ts": now.isoformat()})
                 found_any = True
                 new_count += 1
 
@@ -242,7 +260,7 @@ class InvoiceMonitor:
 
         # Save timestamp in ISO format (includes timezone if available)
         state["last_check"] = now.isoformat()
-        state["seen_invoices"] = list(seen_invoices)[-1000:]
+        state["seen_invoices"] = seen_entries[-1000:]
         self.save_state(state)
 
         # Update Prometheus metrics
@@ -432,16 +450,17 @@ class InvoiceMonitor:
     def shutdown(self):
         """
         Clean shutdown
-        Revokes KSeF session and sends shutdown notification
+        Revokes KSeF session, marks metrics as stopped, sends shutdown notification.
+        Order: revoke first (may take up to 10s), then stop metrics.
         """
         logger.info("Shutting down...")
 
-        # Mark metrics as stopped
+        # Revoke session first (metrics should remain active during this)
+        self.ksef.revoke_current_session()
+
+        # Mark metrics as stopped (after session cleanup)
         if self.metrics:
             self.metrics.shutdown()
-
-        # Revoke session
-        self.ksef.revoke_current_session()
 
         # Send shutdown notification
         self.notifier.send_notification(

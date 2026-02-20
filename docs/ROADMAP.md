@@ -16,7 +16,7 @@
 ### 1) Powiadomienia oparte o template ✅
 - [x] System szablonów Jinja2 z osobnym szablonem per kanał (5 szablonów)
 - [x] `TemplateRenderer` z custom filtrami (`money`, `money_raw`, `date`, `json_escape`)
-- [x] Możliwość podmeny szablonów przez użytkownika (`templates_dir` w config)
+- [x] Możliwość podmiany szablonów przez użytkownika (`templates_dir` w config)
 - [x] Fallback na wbudowane domyślne szablony + plain text przy błędach
 - [x] Polskie formatowanie kwot (`,` separator dziesiętny, spacja tysięcy, kod waluty)
 - [x] Dokumentacja: [TEMPLATES.md](TEMPLATES.md) — zmienne, filtry, przykłady modyfikacji
@@ -24,7 +24,7 @@
 ### 2) Template generowania obrazu faktury ✅
 - [x] HTML/CSS template (Jinja2) → render do PDF przez xhtml2pdf
 - [x] `InvoicePDFTemplateRenderer` z custom filtrami (`fmt_amt`, `vat_label`, `payment_method`)
-- [x] Możliwość podmeny szablonu przez użytkownika (`pdf_templates_dir` w config storage)
+- [x] Możliwość podmiany szablonu przez użytkownika (`pdf_templates_dir` w config storage)
 - [x] Automatyczny fallback na ReportLab generator przy błędach lub braku xhtml2pdf
 - [x] Dynamiczne kolumny tabeli pozycji (warunkowe wyświetlanie)
 - [x] QR Code Type I jako base64 data URI w HTML
