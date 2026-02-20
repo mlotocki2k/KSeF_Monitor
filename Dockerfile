@@ -3,12 +3,22 @@ FROM python:3.11-slim
 # Set working directory
 WORKDIR /app
 
-# Install system dependencies (DejaVu fonts for PDF Polish character support)
-RUN apt-get update && apt-get install -y --no-install-recommends fonts-dejavu-core && rm -rf /var/lib/apt/lists/*
+# Install system dependencies:
+#   fonts-dejavu-core  - DejaVu fonts for PDF Polish character support
+#   gcc, libcairo2-dev, pkg-config - build deps for xhtml2pdf (pycairo)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    fonts-dejavu-core \
+    gcc \
+    libcairo2-dev \
+    pkg-config \
+    && rm -rf /var/lib/apt/lists/*
 
 # Install Python dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
+
+# Remove build-only dependencies to keep image smaller
+RUN apt-get purge -y --auto-remove gcc pkg-config libcairo2-dev
 
 # Copy application structure
 COPY main.py .
