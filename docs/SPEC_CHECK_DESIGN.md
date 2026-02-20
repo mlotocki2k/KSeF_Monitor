@@ -53,7 +53,7 @@ GA cron → pobierz spec → diff → jeśli zmiana: utwórz issue + webhook do 
 - Notyfikacja dociera do użytkownika przez istniejący webhook
 - Najlepsze z obu światów
 
-## Rekomendacja: Opcja A (GitHub Actions) z elementami C
+## Rekomendacja: Opcja C — Hybrid (GitHub Actions + Pushover)
 
 ### Dlaczego
 
@@ -65,10 +65,39 @@ GA cron → pobierz spec → diff → jeśli zmiana: utwórz issue + webhook do 
 
 4. **Schemat FA** — nowe wersje XSD publikowane są na `crd.gov.pl`. Workflow może pobrać i porównać hash.
 
-5. **Powiadomienie** — workflow może:
-   - Utworzyć GitHub Issue z diffem
-   - Wysłać webhook (Discord/Slack) bezpośrednio z GA
-   - Oznaczyć label `api-breaking-change`
+5. **Pushover z GA** — Pushover API to prosty HTTP POST, wystarczy `curl` z workflow:
+   ```yaml
+   - name: Send Pushover notification
+     if: steps.check.outputs.changed == 'true'
+     run: |
+       curl -sf -F "token=${{ secrets.PUSHOVER_API_TOKEN }}" \
+            -F "user=${{ secrets.PUSHOVER_USER_KEY }}" \
+            -F "title=KSeF Spec Change" \
+            -F "message=${SUMMARY}" \
+            -F "priority=1" \
+            https://api.pushover.net/1/messages.json
+   ```
+
+6. **GitHub Issue** — oprócz push notification, workflow tworzy issue z pełnym diffem i analizą wpływu.
+
+### Bezpieczeństwo GitHub Secrets
+
+Secrets (`PUSHOVER_API_TOKEN`, `PUSHOVER_USER_KEY`) przechowywane jako **Repository Secrets**:
+
+- **Szyfrowane at-rest** — libsodium sealed box
+- **Write-only** — nawet owner po zapisaniu nie może odczytać wartości, tylko nadpisać
+- **Maskowane w logach** — GitHub automatycznie zastępuje wartości `***`
+- **Niedostępne w forkach** — forki nie mają dostępu do secrets repo nadrzędnego
+- **Niedostępne w PR z forków** — workflow `pull_request` od zewnętrznych contributorów nie widzi secrets
+
+Konfiguracja: `Settings → Secrets and variables → Actions → New repository secret`
+
+#### Zasady bezpieczeństwa w workflow
+
+1. **Trigger tylko cron + workflow_dispatch** — nigdy `pull_request` (fork mógłby odczytać secrets)
+2. **Minimalne permissions** — `contents: read`, `issues: write`
+3. **Nigdy nie echo-wać secrets** — bez `echo`, bez `curl -v`
+4. **Pinować actions do SHA** — `actions/checkout@<sha>` zamiast `@v4` (ochrona przed supply-chain attack)
 
 ## Proponowana architektura
 

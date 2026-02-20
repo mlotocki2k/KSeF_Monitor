@@ -83,13 +83,38 @@ class KSeFClient:
             response = self.session.request(method, url, **kwargs)
             if response.status_code != 429:
                 return response
+            # Parse response body for details (KSeF TooManyRequestsResponse)
+            details = ""
+            try:
+                body = response.json()
+                status = body.get("status", {})
+                details_list = status.get("details", [])
+                if details_list:
+                    details = "; ".join(details_list)
+            except (ValueError, AttributeError):
+                pass
             if attempt == self.MAX_429_RETRIES:
-                logger.error("Rate limit exceeded after %d retries", self.MAX_429_RETRIES)
+                logger.error("Rate limit exceeded after %d retries. %s", self.MAX_429_RETRIES, details)
                 return response
-            retry_after = int(response.headers.get("Retry-After", self.DEFAULT_RETRY_AFTER))
+            # Parse Retry-After header (integer seconds or HTTP-date)
+            retry_after = self.DEFAULT_RETRY_AFTER
+            retry_after_header = response.headers.get("Retry-After")
+            if retry_after_header:
+                try:
+                    retry_after = int(retry_after_header)
+                except ValueError:
+                    # RFC 7231: Retry-After can be HTTP-date (eg. "Thu, 20 Feb 2026 12:00:00 GMT")
+                    from email.utils import parsedate_to_datetime
+                    try:
+                        retry_date = parsedate_to_datetime(retry_after_header)
+                        from datetime import datetime, timezone
+                        delta = (retry_date - datetime.now(timezone.utc)).total_seconds()
+                        retry_after = max(int(delta), 1)
+                    except (ValueError, TypeError):
+                        retry_after = self.DEFAULT_RETRY_AFTER
             retry_after = min(retry_after, 120)  # cap at 2 minutes
-            logger.warning("Rate limited (429). Waiting %ds before retry %d/%d",
-                           retry_after, attempt + 1, self.MAX_429_RETRIES)
+            logger.warning("Rate limited (429). Waiting %ds before retry %d/%d. %s",
+                           retry_after, attempt + 1, self.MAX_429_RETRIES, details)
             time.sleep(retry_after)
         return response  # unreachable, but satisfies type checker
 
