@@ -74,7 +74,8 @@
     "save_xml": false,
     "save_pdf": false,
     "output_dir": "/data/invoices",
-    "description": "File storage settings. save_xml: save invoice XML files. save_pdf: generate and save PDF files. output_dir: directory for saved files (auto-created if missing). Both default to false."
+    "pdf_templates_dir": "/data/pdf_templates",
+    "description": "File storage settings. save_xml: save invoice XML files. save_pdf: generate and save PDF files. output_dir: directory for saved files (auto-created if missing). pdf_templates_dir: optional custom HTML/CSS template directory for PDF generation (place modified invoice_pdf.html.j2 here). Both save flags default to false."
   },
   "prometheus": {
     "enabled": true,

@@ -1059,10 +1059,21 @@ class InvoicePDFGenerator:
             return val
 
 
+try:
+    from xhtml2pdf import pisa as _pisa_check
+    XHTML2PDF_AVAILABLE = True
+except ImportError:
+    XHTML2PDF_AVAILABLE = False
+
+
 def generate_invoice_pdf(xml_content: str, ksef_number: str = '',
                          output_path: str = None, environment: str = '',
-                         timezone: str = '') -> BytesIO:
+                         timezone: str = '',
+                         template_dir: str = None) -> BytesIO:
     """Generate PDF from KSeF invoice XML.
+
+    Uses HTML template rendering (xhtml2pdf) when available, with automatic
+    fallback to direct ReportLab generation.
 
     Args:
         xml_content: Raw XML string of the KSeF invoice
@@ -1070,12 +1081,25 @@ def generate_invoice_pdf(xml_content: str, ksef_number: str = '',
         output_path: File path to write PDF (if None, returns BytesIO)
         environment: KSeF environment ('test', 'demo', 'prod') for QR code URL
         timezone: IANA timezone name for generation timestamp (default: Europe/Warsaw)
+        template_dir: Custom PDF template directory (overrides built-in default)
     """
     parser = InvoiceXMLParser(xml_content)
     invoice_data = parser.parse()
     if ksef_number:
         invoice_data['ksef_metadata']['ksef_number'] = ksef_number
 
+    # Try template-based rendering first (xhtml2pdf)
+    if XHTML2PDF_AVAILABLE:
+        try:
+            from .invoice_pdf_template import InvoicePDFTemplateRenderer
+            renderer = InvoicePDFTemplateRenderer(custom_templates_dir=template_dir)
+            return renderer.render(invoice_data, ksef_number=ksef_number,
+                                   xml_content=xml_content, environment=environment,
+                                   timezone=timezone, output_path=output_path)
+        except Exception as e:
+            logger.warning(f"Template PDF rendering failed, falling back to ReportLab: {e}")
+
+    # Fallback: existing ReportLab generator
     generator = InvoicePDFGenerator()
     return generator.generate(invoice_data, output_path,
                               xml_content=xml_content, environment=environment,

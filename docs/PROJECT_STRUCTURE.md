@@ -16,11 +16,13 @@ ksef-invoice-monitor/
 │   ├── secrets_manager.py      # Secrets from env / Docker secrets / config
 │   ├── ksef_client.py          # KSeF API v2.0 client
 │   ├── invoice_monitor.py      # Main monitoring logic + template context
-│   ├── invoice_pdf_generator.py # XML parser + PDF generator
+│   ├── invoice_pdf_generator.py # XML parser + ReportLab PDF generator (fallback)
+│   ├── invoice_pdf_template.py # HTML/CSS template PDF renderer (xhtml2pdf)
 │   ├── prometheus_metrics.py   # Prometheus metrics endpoint
 │   ├── scheduler.py            # Flexible scheduling (5 modes)
 │   ├── template_renderer.py    # Jinja2 template engine (v0.3)
-│   ├── templates/              # Built-in notification templates (v0.3)
+│   ├── templates/              # Built-in templates (v0.3)
+│   │   ├── invoice_pdf.html.j2 # Invoice PDF template (HTML/CSS)
 │   │   ├── pushover.txt.j2    # Plain text (Pushover)
 │   │   ├── email.html.j2      # HTML (Email)
 │   │   ├── slack.json.j2      # Block Kit JSON (Slack)
@@ -137,11 +139,22 @@ Implements the full KSeF authentication flow:
 - `has_template(channel)` - Check template availability
 
 ### `app/invoice_pdf_generator.py`
-**Invoice XML parser + PDF generator**
+**Invoice XML parser + ReportLab PDF generator (fallback)**
 
-- Parses FA_VAT XML from KSeF API
-- Generates PDF with ReportLab (A4 format, QR code, Polish characters)
+- `InvoiceXMLParser` — parses FA_VAT XML from KSeF API into `invoice_data` dict
+- `InvoicePDFGenerator` — generates PDF with ReportLab (A4 format, QR code, Polish characters)
+- `generate_invoice_pdf()` — public API: template-first (xhtml2pdf) with ReportLab fallback
 - Polish monetary formatting (v0.3)
+
+### `app/invoice_pdf_template.py`
+**HTML/CSS template PDF renderer (v0.3)**
+
+- `InvoicePDFTemplateRenderer` — renders invoice PDF from Jinja2 HTML/CSS template via xhtml2pdf
+- User template override mechanism (custom dir → built-in defaults)
+- Custom Jinja2 filters: `fmt_amt`, `vat_label`, `payment_method`
+- QR Code Type I as base64 data URI for HTML embedding
+
+See [PDF_TEMPLATES.md](PDF_TEMPLATES.md) for template customization guide.
 
 ### `app/scheduler.py`
 **Flexible scheduling system**
@@ -233,7 +246,8 @@ Custom template → Built-in template → Plain text fallback
 |-------|-------------------|------|---------|
 | `./config.json` | `/data/config.json` | ro | Configuration |
 | `./data` | `/data` | rw | Persistent state |
-| `./templates` | `/data/templates` | ro | Custom templates (optional) |
+| `./templates` | `/data/templates` | ro | Custom notification templates (optional) |
+| `./pdf_templates` | `/data/pdf_templates` | ro | Custom invoice PDF template (optional) |
 
 ## Development Workflow
 
@@ -266,9 +280,10 @@ Managed in `requirements.txt`:
 | `cryptography` | RSA-OAEP encryption |
 | `pytz` | Timezone support |
 | `prometheus-client` | Prometheus metrics |
-| `Jinja2` | Notification templates (v0.3) |
-| `reportlab` | PDF generation |
+| `Jinja2` | Notification + PDF templates (v0.3) |
+| `reportlab` | PDF generation (fallback engine) |
 | `qrcode` | QR Code on invoices |
+| `xhtml2pdf` | HTML/CSS to PDF rendering (v0.3) |
 
 Installed during Docker build.
 

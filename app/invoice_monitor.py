@@ -364,9 +364,10 @@ class InvoiceMonitor:
                 try:
                     pdf_path = str(self.output_dir / f"{base_name}.pdf")
                     tz_name = self.config.get_timezone() if hasattr(self.config, 'get_timezone') else ''
+                    template_dir = self.config.get("storage", "pdf_templates_dir", default=None)
                     generate_invoice_pdf(xml_content, ksef_number=ksef_number,
                                          output_path=pdf_path, environment=self.ksef.environment,
-                                         timezone=tz_name)
+                                         timezone=tz_name, template_dir=template_dir)
                     logger.info(f"Invoice PDF saved: {pdf_path}")
                 except Exception as e:
                     logger.error(f"Failed to generate PDF for {ksef_number}: {e}")

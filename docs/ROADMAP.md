@@ -21,9 +21,14 @@
 - [x] Polskie formatowanie kwot (`,` separator dziesiętny, spacja tysięcy, kod waluty)
 - [x] Dokumentacja: [TEMPLATES.md](TEMPLATES.md) — zmienne, filtry, przykłady modyfikacji
 
-### 2) Template generowania obrazu faktury
-- HTML/CSS template → render do PNG/PDF (lub tylko PNG)
-- dokumentacja: jak zmienić wygląd, jak podmienić logo/kolory, lista pól
+### 2) Template generowania obrazu faktury ✅
+- [x] HTML/CSS template (Jinja2) → render do PDF przez xhtml2pdf
+- [x] `InvoicePDFTemplateRenderer` z custom filtrami (`fmt_amt`, `vat_label`, `payment_method`)
+- [x] Możliwość podmeny szablonu przez użytkownika (`pdf_templates_dir` w config storage)
+- [x] Automatyczny fallback na ReportLab generator przy błędach lub braku xhtml2pdf
+- [x] Dynamiczne kolumny tabeli pozycji (warunkowe wyświetlanie)
+- [x] QR Code Type I jako base64 data URI w HTML
+- [x] Dokumentacja: [PDF_TEMPLATES.md](PDF_TEMPLATES.md) — zmienne, filtry, CSS customizacja
 
 ### 3) Przeniesienie informacji o fakturach do bazy
 - model danych rozdzielony “per subject, per NIP”

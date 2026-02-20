@@ -363,6 +363,15 @@ class ConfigManager:
         if "output_dir" not in storage:
             storage["output_dir"] = "/data/invoices"
 
+        # Validate optional pdf_templates_dir
+        pdf_templates_dir = storage.get("pdf_templates_dir")
+        if pdf_templates_dir:
+            if not Path(pdf_templates_dir).is_dir():
+                logger.warning(
+                    f"Custom PDF templates directory not found: {pdf_templates_dir}. "
+                    f"Built-in default template will be used."
+                )
+
         logger.info(f"Storage: save_xml={storage['save_xml']}, save_pdf={storage['save_pdf']}, output_dir={storage['output_dir']}")
 
     _SENTINEL = object()

@@ -66,6 +66,7 @@ chmod +x setup.sh && ./setup.sh
 | Document | Description | Read When |
 |----------|-------------|-----------|
 | **[PDF_GENERATION.md](PDF_GENERATION.md)** | PDF generation from KSeF invoices | Configuring file storage |
+| **[PDF_TEMPLATES.md](PDF_TEMPLATES.md)** | Custom invoice PDF templates (v0.3) | Customizing PDF appearance |
 
 **Features:**
 - ✅ Fetch invoice XML by KSeF number
@@ -73,6 +74,7 @@ chmod +x setup.sh && ./setup.sh
 - ✅ Generate PDF with QR code, Polish characters
 - ✅ Integrated with main app (config: `storage.save_pdf`)
 - ✅ Configurable output directory
+- ✅ Custom HTML/CSS templates for PDF appearance (v0.3)
 
 ### 🧪 Testing & Quality
 
@@ -135,6 +137,7 @@ ksef-invoice-monitor/
 │   ├── TEMPLATES.md                # Jinja2 templates guide (v0.3)
 │   ├── SECURITY.md                 # Security practices
 │   ├── PDF_GENERATION.md           # PDF generation guide
+│   ├── PDF_TEMPLATES.md            # Custom PDF templates guide (v0.3)
 │   ├── PROJECT_STRUCTURE.md        # Architecture
 │   ├── IDE_TROUBLESHOOTING.md      # IDE fixes
 │   ├── TESTING.md                  # Test guide
@@ -150,11 +153,13 @@ ksef-invoice-monitor/
 │       ├── config_manager.py       # Configuration
 │       ├── ksef_client.py          # KSeF API client
 │       ├── invoice_monitor.py      # Main monitoring logic
-│       ├── invoice_pdf_generator.py # PDF generator
+│       ├── invoice_pdf_generator.py # PDF generator (ReportLab fallback)
+│       ├── invoice_pdf_template.py # PDF template renderer (xhtml2pdf)
 │       ├── prometheus_metrics.py   # Prometheus metrics
 │       ├── scheduler.py            # Flexible scheduling
 │       ├── template_renderer.py    # Jinja2 template engine (v0.3)
-│       ├── templates/              # Built-in notification templates
+│       ├── templates/              # Built-in templates
+│       │   ├── invoice_pdf.html.j2 # Invoice PDF (HTML/CSS)
 │       │   ├── pushover.txt.j2
 │       │   ├── email.html.j2
 │       │   ├── slack.json.j2
