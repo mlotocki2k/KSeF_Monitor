@@ -1,7 +1,7 @@
 requests==2.32.5
 python-dateutil==2.9.0.post0
 cryptography==46.0.5
-prometheus-client==0.23.1
+prometheus-client==0.24.1
 pytz==2025.2
 
 # Notification templates
