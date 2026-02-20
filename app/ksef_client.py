@@ -24,6 +24,9 @@ class KSeFClient:
     # API version
     API_VERSION = "v2"
     VALID_DATE_TYPES = {"Issue", "Invoicing", "PermanentStorage"}
+    # Rate limit retry settings
+    MAX_429_RETRIES = 3
+    DEFAULT_RETRY_AFTER = 30  # seconds
     
     def __init__(self, config):
         """
@@ -58,7 +61,38 @@ class KSeFClient:
 
         logger.info(f"KSeF client initialized for {self.environment} environment")
         logger.info(f"Base URL: {self.base_url}, date_type: {self.date_type}")
-    
+
+    def _request_with_retry(self, method: str, url: str, **kwargs) -> requests.Response:
+        """
+        Send HTTP request with automatic 429 (Too Many Requests) retry.
+
+        Respects Retry-After header from KSeF API. Retries up to MAX_429_RETRIES times.
+
+        Args:
+            method: HTTP method (get, post, delete)
+            url: Request URL
+            **kwargs: Passed to session.request()
+
+        Returns:
+            Response object
+
+        Raises:
+            requests.HTTPError: If non-429 error or retries exhausted
+        """
+        for attempt in range(self.MAX_429_RETRIES + 1):
+            response = self.session.request(method, url, **kwargs)
+            if response.status_code != 429:
+                return response
+            if attempt == self.MAX_429_RETRIES:
+                logger.error("Rate limit exceeded after %d retries", self.MAX_429_RETRIES)
+                return response
+            retry_after = int(response.headers.get("Retry-After", self.DEFAULT_RETRY_AFTER))
+            retry_after = min(retry_after, 120)  # cap at 2 minutes
+            logger.warning("Rate limited (429). Waiting %ds before retry %d/%d",
+                           retry_after, attempt + 1, self.MAX_429_RETRIES)
+            time.sleep(retry_after)
+        return response  # unreachable, but satisfies type checker
+
     def authenticate(self) -> bool:
         """
         Authenticate with KSeF API using authorization token
@@ -126,7 +160,7 @@ class KSeFClient:
                 }
             }
 
-            response = self.session.post(url, json=payload, timeout=30)
+            response = self._request_with_retry("POST", url, json=payload, timeout=30)
             response.raise_for_status()
 
             data = response.json()
@@ -149,7 +183,7 @@ class KSeFClient:
         try:
             url = f"{self.base_url}/{self.API_VERSION}/security/public-key-certificates"
 
-            response = self.session.get(url, timeout=30)
+            response = self._request_with_retry("GET", url, timeout=30)
             response.raise_for_status()
 
             certificates = response.json()
@@ -210,7 +244,7 @@ class KSeFClient:
                 "encryptedToken": encrypted_token_b64
             }
 
-            response = self.session.post(url, json=payload, headers=headers, timeout=30)
+            response = self._request_with_retry("POST", url, json=payload, headers=headers, timeout=30)
             response.raise_for_status()
 
             return response.json()
@@ -245,7 +279,7 @@ class KSeFClient:
 
         for attempt in range(max_attempts):
             try:
-                response = self.session.get(url, headers=headers, timeout=30)
+                response = self._request_with_retry("GET", url, headers=headers, timeout=30)
                 response.raise_for_status()
 
                 data = response.json()
@@ -295,7 +329,7 @@ class KSeFClient:
                 "Authorization": f"Bearer {authentication_token}"
             }
 
-            response = self.session.post(url, headers=headers, timeout=30)
+            response = self._request_with_retry("POST", url, headers=headers, timeout=30)
             response.raise_for_status()
 
             data = response.json()
@@ -334,9 +368,9 @@ class KSeFClient:
                 "Authorization": f"Bearer {self.refresh_token}"
             }
             
-            response = self.session.post(url, headers=headers, timeout=30)
+            response = self._request_with_retry("POST", url, headers=headers, timeout=30)
             response.raise_for_status()
-            
+
             data = response.json()
             self.access_token = data.get("accessToken", {}).get("token")
 
@@ -401,17 +435,17 @@ class KSeFClient:
 
             logger.info(f"Querying invoices [{subject_type}] from {date_from_str} to {date_to_str}")
             
-            response = self.session.post(url, json=payload, headers=headers, timeout=30)
-            
+            response = self._request_with_retry("POST", url, json=payload, headers=headers, timeout=30)
+
             # Handle token expiration
             if response.status_code == 401:
                 logger.warning("Access token expired, refreshing...")
                 if self.refresh_access_token():
                     headers["Authorization"] = f"Bearer {self.access_token}"
-                    response = self.session.post(url, json=payload, headers=headers, timeout=30)
+                    response = self._request_with_retry("POST", url, json=payload, headers=headers, timeout=30)
                 elif self.authenticate():
                     headers["Authorization"] = f"Bearer {self.access_token}"
-                    response = self.session.post(url, json=payload, headers=headers, timeout=30)
+                    response = self._request_with_retry("POST", url, json=payload, headers=headers, timeout=30)
                 else:
                     logger.error("Re-authentication failed")
                     return []
@@ -450,9 +484,9 @@ class KSeFClient:
                 "Authorization": f"Bearer {self.access_token}"
             }
             
-            response = self.session.get(url, headers=headers, timeout=10)
+            response = self._request_with_retry("GET", url, headers=headers, timeout=10)
             response.raise_for_status()
-            
+
             data = response.json()
             return data.get('sessions', [])
             
@@ -474,7 +508,7 @@ class KSeFClient:
                 "Authorization": f"Bearer {self.access_token}"
             }
 
-            response = self.session.delete(url, headers=headers, timeout=10)
+            response = self._request_with_retry("DELETE", url, headers=headers, timeout=10)
             response.raise_for_status()
 
             logger.info("Session revoked successfully")
@@ -526,17 +560,17 @@ class KSeFClient:
 
             logger.info(f"Fetching invoice XML for KSeF number: {ksef_number}")
 
-            response = self.session.get(url, headers=headers, timeout=30)
+            response = self._request_with_retry("GET", url, headers=headers, timeout=30)
 
             # Handle token expiration
             if response.status_code == 401:
                 logger.warning("Access token expired, refreshing...")
                 if self.refresh_access_token():
                     headers["Authorization"] = f"Bearer {self.access_token}"
-                    response = self.session.get(url, headers=headers, timeout=30)
+                    response = self._request_with_retry("GET", url, headers=headers, timeout=30)
                 elif self.authenticate():
                     headers["Authorization"] = f"Bearer {self.access_token}"
-                    response = self.session.get(url, headers=headers, timeout=30)
+                    response = self._request_with_retry("GET", url, headers=headers, timeout=30)
                 else:
                     logger.error("Re-authentication failed")
                     return None
@@ -592,17 +626,17 @@ class KSeFClient:
 
             logger.info(f"Fetching UPO for KSeF number: {ksef_number}")
 
-            response = self.session.get(url, headers=headers, timeout=30)
+            response = self._request_with_retry("GET", url, headers=headers, timeout=30)
 
             # Handle token expiration
             if response.status_code == 401:
                 logger.warning("Access token expired, refreshing...")
                 if self.refresh_access_token():
                     headers["Authorization"] = f"Bearer {self.access_token}"
-                    response = self.session.get(url, headers=headers, timeout=30)
+                    response = self._request_with_retry("GET", url, headers=headers, timeout=30)
                 elif self.authenticate():
                     headers["Authorization"] = f"Bearer {self.access_token}"
-                    response = self.session.get(url, headers=headers, timeout=30)
+                    response = self._request_with_retry("GET", url, headers=headers, timeout=30)
                 else:
                     logger.error("Re-authentication failed")
                     return None

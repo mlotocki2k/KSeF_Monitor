@@ -2,7 +2,6 @@ version: '3.8'
 
 services:
   ksef-monitor:
-    build: .
     image: ghcr.io/mlotocki2k/ksef_monitor:latest
     container_name: ksef-invoice-monitor
     restart: unless-stopped
@@ -12,23 +11,25 @@ services:
       - "127.0.0.1:8000:8000"
 
     volumes:
-      
       # Configuration file - REQUIRED
       # Copy config.example.json to config.json and edit with your credentials
       - ./config.json:/data/config.json:ro
-      
-      # Persistent storage for tracking seen invoices
-      - ./data:/data
+
+      # Persistent storage (named volume — Docker manages permissions)
+      - ksef-data:/data
 
       # Uncomment to use custom notification templates (Jinja2)
       # - ./templates:/data/templates:ro
 
       # Uncomment to use custom invoice PDF template (HTML/CSS)
       # - ./pdf_templates:/data/pdf_templates:ro
-    
+
     logging:
       driver: "json-file"
       options:
         max-size: "10m"
         max-file: "3"
+
+volumes:
+  ksef-data:
 

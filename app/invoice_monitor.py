@@ -250,8 +250,10 @@ class InvoiceMonitor:
                 else:
                     logger.warning(f"Failed to send notification [{subject_type}] invoice: {safe_ksef_log}")
 
-                # Save invoice artifacts (PDF, XML, UPO)
+                # Save invoice artifacts (PDF, XML, UPO) with rate limit pause
                 self._save_invoice_artifacts(invoice, subject_type)
+                if self.save_xml or self.save_pdf:
+                    time.sleep(2)  # Rate limit: max 30 req/min API limit
 
             # Store count for this subject type
             if new_count > 0:
