@@ -10,7 +10,7 @@ import json
 import logging
 import requests
 import socket
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 from urllib.parse import urlparse
 
@@ -129,7 +129,7 @@ class WebhookNotifier(BaseNotifier):
                 "message": message,
                 "priority": priority,
                 "priority_name": self.PRIORITY_NAMES.get(priority, "normal"),
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
                 "source": "ksef-monitor"
             }
 

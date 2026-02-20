@@ -6,7 +6,7 @@ Sends notifications via Discord webhooks with rich embeds
 import json
 import logging
 import requests
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 from .base_notifier import BaseNotifier
@@ -81,7 +81,7 @@ class DiscordNotifier(BaseNotifier):
                 "title": title[:256],  # Discord title max length
                 "description": message[:4096],  # Discord description max length
                 "color": color,
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
                 "footer": {
                     "text": "KSeF Invoice Monitor"
                 }

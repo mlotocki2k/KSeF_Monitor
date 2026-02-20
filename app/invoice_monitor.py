@@ -8,7 +8,7 @@ import hashlib
 import logging
 import os
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -148,7 +148,7 @@ class InvoiceMonitor:
 
                     # Filter seen_invoices by TTL and migrate old format
                     raw_seen = state.get("seen_invoices", [])
-                    cutoff = (datetime.utcnow() - timedelta(days=self.SEEN_INVOICES_TTL_DAYS)).isoformat()
+                    cutoff = (datetime.now(timezone.utc) - timedelta(days=self.SEEN_INVOICES_TTL_DAYS)).isoformat()
                     filtered = []
                     for entry in raw_seen:
                         if isinstance(entry, dict) and "h" in entry:
@@ -318,7 +318,7 @@ class InvoiceMonitor:
             "priority_name": priority_names.get(self.message_priority, "normal"),
             "priority_color": priority_colors.get(self.message_priority, "#36a64f"),
             "priority_color_int": priority_colors_int.get(self.message_priority, 0x3498db),
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "url": None,
         }
     
