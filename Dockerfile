@@ -11,6 +11,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     libcairo2-dev \
     pkg-config \
+    gosu \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Python dependencies
