@@ -30,14 +30,15 @@ RUN useradd -r -u 1000 -m ksef
 # Create data directories for persistent storage
 RUN mkdir -p /data/pdf && chown -R ksef:ksef /data
 
+# Copy and set up entrypoint (runs as root, then drops to ksef)
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
 # Make main script executable
 RUN chmod +x main.py
 
 # Set ownership of app directory
 RUN chown -R ksef:ksef /app
-
-# Switch to non-root user
-USER ksef
 
 # Expose Prometheus metrics port
 EXPOSE 8000
@@ -46,5 +47,5 @@ EXPOSE 8000
 HEALTHCHECK --interval=60s --timeout=10s --retries=3 \
   CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/metrics', timeout=5)" || exit 1
 
-# Run the application
-CMD ["python", "-u", "main.py"]
+# Entrypoint fixes /data ownership on bind mount, then drops to ksef user
+ENTRYPOINT ["/entrypoint.sh"]
