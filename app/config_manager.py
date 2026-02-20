@@ -268,6 +268,16 @@ class ConfigManager:
             elif channel == "webhook" and channel in notifications:
                 self._validate_webhook(notifications[channel])
 
+        # Validate optional templates_dir
+        templates_dir = notifications.get("templates_dir")
+        if templates_dir:
+            from pathlib import Path
+            if not Path(templates_dir).is_dir():
+                logger.warning(
+                    f"Custom templates directory not found: {templates_dir}. "
+                    f"Built-in defaults will be used."
+                )
+
     def _validate_pushover(self, pushover: Dict[str, Any]):
         """Validate Pushover configuration"""
         if not pushover.get("user_key"):

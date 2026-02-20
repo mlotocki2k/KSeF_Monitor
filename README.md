@@ -1,9 +1,9 @@
-# KSeF Invoice Monitor v0.2
+# KSeF Invoice Monitor v0.3
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
 
-Monitor faktur w Krajowym Systemie e-Faktur (KSeF). Aplikacja cyklicznie pobiera metadata faktur z API KSeF v2 i wysyła powiadomienia o nowych fakturach sprzedażowych i/lub zakupowych przez **5 kanałów notyfikacji**.
+Monitor faktur w Krajowym Systemie e-Faktur (KSeF). Aplikacja cyklicznie pobiera metadata faktur z API KSeF v2 i wysyła powiadomienia o nowych fakturach sprzedażowych i/lub zakupowych przez **5 kanałów notyfikacji** z **konfigurowalnym systemem szablonów Jinja2**.
 
 **Obsługiwane kanały:**
 - 📱 **Pushover** - powiadomienia mobilne
@@ -27,13 +27,20 @@ ksef_monitor_v0_1/
 │   ├── config_manager.py        # Wczytanie i walidacja config.json
 │   ├── secrets_manager.py       # Sekretne wartości z env / Docker secrets / config
 │   ├── ksef_client.py           # Klient API KSeF v2 (autentykacja + zapytania)
-│   ├── invoice_monitor.py       # Główna pętla monitorowania + formatowanie
+│   ├── invoice_monitor.py       # Główna pętla monitorowania + kontekst szablonów
 │   ├── invoice_pdf_generator.py # XML parser + PDF generator
 │   ├── prometheus_metrics.py    # Prometheus metrics endpoint
 │   ├── scheduler.py             # Elastyczny system schedulowania (5 trybów)
+│   ├── template_renderer.py     # Silnik szablonów Jinja2 (v0.3)
+│   ├── templates/               # Wbudowane szablony powiadomień (v0.3)
+│   │   ├── pushover.txt.j2     # Plain text (Pushover)
+│   │   ├── email.html.j2       # HTML (Email)
+│   │   ├── slack.json.j2       # Block Kit JSON (Slack)
+│   │   ├── discord.json.j2     # Embed JSON (Discord)
+│   │   └── webhook.json.j2     # Payload JSON (Webhook)
 │   └── notifiers/               # Multi-channel notification system
 │       ├── __init__.py
-│       ├── base_notifier.py     # Abstract base class dla notifierów
+│       ├── base_notifier.py     # Abstract base class + render_and_send()
 │       ├── notification_manager.py  # Facade zarządzający wieloma kanałami
 │       ├── pushover_notifier.py     # Powiadomienia mobilne Pushover
 │       ├── discord_notifier.py      # Webhook Discord z rich embeds
@@ -44,11 +51,13 @@ ksef_monitor_v0_1/
 │   ├── QUICKSTART.md            # Quick start guide
 │   ├── KSEF_TOKEN.md            # Tworzenie tokena KSeF (read-only)
 │   ├── NOTIFICATIONS.md         # Konfiguracja powiadomień (5 kanałów)
+│   ├── TEMPLATES.md             # Szablony Jinja2 — zmienne, filtry, przykłady (v0.3)
 │   ├── SECURITY.md              # Security best practices
 │   ├── TESTING.md               # Testing guide
 │   ├── PDF_GENERATION.md        # Generowanie PDF faktur
 │   ├── PROJECT_STRUCTURE.md     # Project architecture
 │   ├── IDE_TROUBLESHOOTING.md   # IDE setup help
+│   ├── ROADMAP.md               # Roadmap projektu
 │   └── INDEX.md                 # Documentation index
 ├── examples/                    # Example configuration files
 │   ├── config.example.json      # Configuration template
@@ -72,10 +81,13 @@ Katalog `data/` powstaje w runtime i zawiera plik stanu `last_check.json`.
 - 📖 [QUICKSTART.md](docs/QUICKSTART.md) — Szybki start w 5 minut
 - 🔑 [KSEF_TOKEN.md](docs/KSEF_TOKEN.md) — Tworzenie tokena KSeF (krok po kroku, uprawnienia read-only)
 - 🔔 [NOTIFICATIONS.md](docs/NOTIFICATIONS.md) — Konfiguracja powiadomień (5 kanałów, tworzenie webhooków)
+- 🎨 [TEMPLATES.md](docs/TEMPLATES.md) — Szablony Jinja2 powiadomień (zmienne, filtry, przykłady)
 - 🔒 [SECURITY.md](docs/SECURITY.md) — Najlepsze praktyki bezpieczeństwa
 - 🧪 [TESTING.md](docs/TESTING.md) — Przewodnik testowania
+- 📄 [PDF_GENERATION.md](docs/PDF_GENERATION.md) — Generowanie PDF faktur
 - 🏗️ [PROJECT_STRUCTURE.md](docs/PROJECT_STRUCTURE.md) — Architektura projektu
 - 💻 [IDE_TROUBLESHOOTING.md](docs/IDE_TROUBLESHOOTING.md) — Pomoc z konfiguracją IDE
+- 🗺️ [ROADMAP.md](docs/ROADMAP.md) — Roadmap projektu
 - 📚 [INDEX.md](docs/INDEX.md) — Indeks dokumentacji
 
 ---
@@ -100,6 +112,7 @@ Katalog `data/` powstaje w runtime i zawiera plik stanu `last_check.json`.
 | `cryptography` | 46.0.5 | RSA-OAEP encryption tokena w auth flow |
 | `pytz` | 2025.2 | Obsługa stref czasowych (timezone support) |
 | `prometheus-client` | 0.23.1 | Eksport metryk Prometheus |
+| `Jinja2` | 3.1.0+ | Silnik szablonów powiadomień (v0.3) |
 | `reportlab` | 4.4.10 | Generowanie PDF faktur (włączane w sekcji `storage`) |
 | `qrcode` | 8.2 | Generowanie QR Code Type I na fakturach PDF |
 
@@ -134,6 +147,7 @@ System powiadomień obsługuje **5 kanałów** jednocześnie. Możesz włączyć
 | `channels` | Lista włączonych kanałów: `["pushover", "discord", "slack", "email", "webhook"]` |
 | `message_priority` | Priority dla nowych faktur. `-2` cisza \| `-1` cicho \| `0` normalne \| `1` wysoka \| `2` pilne (Pushover). |
 | `test_notification` | `true` wysyła testowe powiadomienie przy starcie. |
+| `templates_dir` | Opcjonalny katalog z własnymi szablonami Jinja2 (nadpisują wbudowane). Domyślnie: brak (wbudowane szablony). Szczegóły: [TEMPLATES.md](docs/TEMPLATES.md) |
 
 **Konfiguracja kanałów:**
 
@@ -273,6 +287,7 @@ System powiadomień obsługuje **5 kanałów** jednocześnie. Możesz włączyć
 ```
 
 Pełna dokumentacja: [docs/NOTIFICATIONS.md](docs/NOTIFICATIONS.md)
+Szablony powiadomień: [docs/TEMPLATES.md](docs/TEMPLATES.md)
 
 ### Sekcja `monitoring`
 
@@ -646,6 +661,7 @@ Wszystkie kanały otrzymują te same tytuły:
 Do: <nazwa nabywcy> - NIP <NIP>
 Nr Faktury: <numer faktury>
 Data: <data wystawienia>
+Brutto: 1 234,56 PLN
 Numer KSeF: <numer KSeF>
 ```
 
@@ -655,6 +671,7 @@ Numer KSeF: <numer KSeF>
 Od: <nazwa sprzedawcy> - NIP <NIP>
 Nr Faktury: ...
 Data: ...
+Brutto: 1 234,56 PLN
 Numer KSeF: ...
 ```
 
@@ -665,8 +682,11 @@ Od: <sprzedawca> - NIP ...
 Do: <nabywca>   - NIP ...
 Nr Faktury: ...
 Data: ...
+Brutto: 1 234,56 PLN
 Numer KSeF: ...
 ```
+
+> **Uwaga:** Format powiadomień jest konfigurowalny przez szablony Jinja2. Szczegóły: [TEMPLATES.md](docs/TEMPLATES.md)
 
 ### Pozostałe powiadomienia
 

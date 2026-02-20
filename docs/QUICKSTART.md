@@ -1,6 +1,6 @@
 # Quick Start Guide
 
-Get your KSeF Invoice Monitor v0.2 running in 5 minutes!
+Get your KSeF Invoice Monitor v0.3 running in 5 minutes!
 
 ## Prerequisites
 
@@ -214,9 +214,9 @@ docker service logs -f ksef_ksef-monitor
 ### Expected output:
 ```
 ksef-monitor | ======================================================================
-ksef-monitor | KSeF Invoice Monitor v0.2
+ksef-monitor | KSeF Invoice Monitor v0.3
 ksef-monitor | Based on KSeF API v2.0 (github.com/CIRFMF/ksef-docs)
-ksef-monitor | Multi-channel notifications: Pushover, Discord, Slack, Email, Webhook
+ksef-monitor | Multi-channel notifications with Jinja2 templates
 ksef-monitor | ======================================================================
 ksef-monitor | Loading configuration...
 ksef-monitor | ✓ Configuration loaded
@@ -492,7 +492,10 @@ ksef-invoice-monitor/
 │   ├── ksef_client.py
 │   ├── invoice_monitor.py
 │   ├── scheduler.py           # Flexible scheduling system
+│   ├── template_renderer.py   # Jinja2 template engine (v0.3)
+│   ├── templates/             # Built-in notification templates
 │   └── notifiers/             # Multi-channel notification system
+│       ├── base_notifier.py
 │       ├── notification_manager.py
 │       ├── pushover_notifier.py
 │       ├── discord_notifier.py
@@ -512,12 +515,13 @@ ksef-invoice-monitor/
 1. **Read the docs:**
    - [README.md](../README.md) - Full documentation
    - [NOTIFICATIONS.md](./NOTIFICATIONS.md) - Complete notification channel guide
+   - [TEMPLATES.md](./TEMPLATES.md) - Custom notification templates (Jinja2)
    - [SECURITY.md](./SECURITY.md) - Security best practices
    - [PROJECT_STRUCTURE.md](./PROJECT_STRUCTURE.md) - Architecture details
 
 2. **Customize:**
    - Change check interval
-   - Modify notification format
+   - Customize notification templates ([TEMPLATES.md](./TEMPLATES.md))
    - Add custom logic
 
 3. **Monitor:**

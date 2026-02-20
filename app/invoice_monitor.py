@@ -9,7 +9,7 @@ import logging
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Dict, List
+from typing import Any, Dict, List
 
 from .scheduler import Scheduler
 from .notifiers import NotificationManager
@@ -222,12 +222,8 @@ class InvoiceMonitor:
                 found_any = True
                 new_count += 1
 
-                message = self.format_invoice_message(invoice, subject_type)
-                success = self.notifier.send_notification(
-                    title=title,
-                    message=message,
-                    priority=self.message_priority
-                )
+                context = self.build_template_context(invoice, subject_type)
+                success = self.notifier.send_invoice_notification(context)
 
                 if success:
                     logger.info(f"Notification sent [{subject_type}] invoice: {invoice.get('ksefNumber')}")
@@ -255,51 +251,49 @@ class InvoiceMonitor:
             for subject_type, count in new_invoices_count.items():
                 self.metrics.increment_new_invoices(subject_type, count)
     
-    def format_invoice_message(self, invoice: Dict, subject_type: str) -> str:
+    def build_template_context(self, invoice: Dict, subject_type: str) -> Dict[str, Any]:
         """
-        Format invoice data for notification message.
-        Counterparty line depends on subject_type:
-            Subject1 (sprzedażowa) -> "Do:" (buyer)
-            Subject2 (zakupowa)    -> "Od:" (seller)
-            other                  -> both "Od:" and "Do:"
+        Build template context dictionary from invoice metadata.
+
+        All fields from the KSeF API response are flattened into a
+        single-level dict for easy access in Jinja2 templates.
+
+        Args:
+            invoice: Invoice metadata dict from KSeF API
+            subject_type: Subject type (Subject1 or Subject2)
+
+        Returns:
+            Context dictionary for template rendering
         """
-        ksef_number = invoice.get('ksefNumber', 'N/A')
-        invoice_ref = invoice.get('invoiceNumber', 'N/A')
-        issue_date = invoice.get('issueDate', 'N/A')
-        gross_value = invoice.get('grossAmount','N/A')
+        title = self.SUBJECT_TYPE_TITLES.get(subject_type, self.DEFAULT_TITLE)
 
-        seller_name = invoice.get('seller', {}).get("name", 'N/A')
-        seller_nip = invoice.get('seller', {}).get("nip", 'N/A')
-        buyer_name = invoice.get('buyer', {}).get("name", 'N/A')
-        buyer_nip = invoice.get('buyer', {}).get("nip", 'N/A')
+        priority_emojis = {-2: "🔕", -1: "💤", 0: "📋", 1: "⚠️", 2: "🚨"}
+        priority_names = {-2: "lowest", -1: "low", 0: "normal", 1: "high", 2: "urgent"}
+        priority_colors = {-2: "#808080", -1: "#808080", 0: "#36a64f", 1: "#ff9900", 2: "#e74c3c"}
+        priority_colors_int = {-2: 0x808080, -1: 0x808080, 0: 0x3498db, 1: 0xff9900, 2: 0xe74c3c}
 
-
-        try:
-            if issue_date != 'N/A':
-                dt = datetime.fromisoformat(issue_date.replace('Z', '+00:00'))
-                issue_date = dt.strftime('%Y-%m-%d %H:%M:%S')
-        except (ValueError, TypeError):
-            pass
-
-        if subject_type == "Subject1":
-            counterparty = f"Do: {buyer_name} - NIP {buyer_nip}"
-        elif subject_type == "Subject2":
-            counterparty = f"Od: {seller_name} - NIP {seller_nip}"
-        else:
-            counterparty = (
-                f"Od: {seller_name} - NIP {seller_nip}\n"
-                f"Do: {buyer_name} - NIP {buyer_nip}"
-            )
-
-        message = (
-            f"{counterparty}\n"
-            f"Nr Faktury: {invoice_ref}\n"
-            f"Data: {issue_date}\n"
-            f"Brutto: {gross_value}\n"
-            f"Numer KSeF: {ksef_number}"
-        )
-
-        return message
+        return {
+            "ksef_number": invoice.get("ksefNumber", "N/A"),
+            "invoice_number": invoice.get("invoiceNumber", "N/A"),
+            "issue_date": invoice.get("issueDate", "N/A"),
+            "gross_amount": invoice.get("grossAmount", "N/A"),
+            "net_amount": invoice.get("netAmount"),
+            "vat_amount": invoice.get("vatAmount"),
+            "currency": invoice.get("currency", "PLN"),
+            "seller_name": invoice.get("seller", {}).get("name", "N/A"),
+            "seller_nip": invoice.get("seller", {}).get("nip", "N/A"),
+            "buyer_name": invoice.get("buyer", {}).get("name", "N/A"),
+            "buyer_nip": invoice.get("buyer", {}).get("nip", "N/A"),
+            "subject_type": subject_type,
+            "title": title,
+            "priority": self.message_priority,
+            "priority_emoji": priority_emojis.get(self.message_priority, "📋"),
+            "priority_name": priority_names.get(self.message_priority, "normal"),
+            "priority_color": priority_colors.get(self.message_priority, "#36a64f"),
+            "priority_color_int": priority_colors_int.get(self.message_priority, 0x3498db),
+            "timestamp": datetime.utcnow().isoformat(),
+            "url": None,
+        }
     
     def _format_date_for_filename(self, date_string: str) -> str:
         """Format date string to YYYYMMDD for filename"""

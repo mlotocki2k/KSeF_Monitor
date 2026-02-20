@@ -4,7 +4,7 @@ Manages multiple notification channels and sends notifications to all enabled ch
 """
 
 import logging
-from typing import List, Optional, Dict, Type
+from typing import Any, List, Optional, Dict, Type
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +27,7 @@ class NotificationManager:
         self.config = config
         self.notifiers: List = []
         self._initialize_notifiers()
+        self._initialize_template_renderer()
 
     def _initialize_notifiers(self):
         """
@@ -80,6 +81,48 @@ class NotificationManager:
 
         if not self.notifiers:
             logger.warning("No notification channels successfully configured - notifications disabled")
+
+    def _initialize_template_renderer(self):
+        """Initialize the Jinja2 template renderer."""
+        from ..template_renderer import TemplateRenderer
+
+        notifications_config = self.config.get("notifications") or {}
+        custom_templates_dir = notifications_config.get("templates_dir")
+        self.template_renderer = TemplateRenderer(custom_templates_dir)
+
+    def send_invoice_notification(self, context: Dict[str, Any]) -> bool:
+        """
+        Send invoice notification using templates to all enabled channels.
+
+        Args:
+            context: Template context dict from InvoiceMonitor.build_template_context()
+
+        Returns:
+            True if at least one channel succeeded
+        """
+        if not self.notifiers:
+            logger.debug("No notifiers configured - skipping notification")
+            return False
+
+        success_count = 0
+        total_count = len(self.notifiers)
+
+        for notifier in self.notifiers:
+            try:
+                if notifier.render_and_send(context, self.template_renderer):
+                    success_count += 1
+                    logger.debug(f"✓ {notifier.channel_name} invoice notification sent")
+                else:
+                    logger.warning(f"⚠ {notifier.channel_name} invoice notification failed")
+            except Exception as e:
+                logger.error(f"✗ {notifier.channel_name} invoice notification error: {e}", exc_info=True)
+
+        if success_count > 0:
+            logger.info(f"Invoice notification sent to {success_count}/{total_count} channel(s)")
+            return True
+        else:
+            logger.error(f"All invoice notification channels failed ({total_count} tried)")
+            return False
 
     def send_notification(self, title: str, message: str, priority: int = 0, url: Optional[str] = None) -> bool:
         """

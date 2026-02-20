@@ -1,6 +1,6 @@
 # Project Structure
 
-This document explains the organization of the KSeF Invoice Monitor application.
+This document explains the organization of the KSeF Invoice Monitor v0.3 application.
 
 ## Directory Layout
 
@@ -13,23 +13,60 @@ ksef-invoice-monitor/
 ├── app/                         # Application package
 │   ├── __init__.py             # Makes app a Python package
 │   ├── config_manager.py       # Configuration management
+│   ├── secrets_manager.py      # Secrets from env / Docker secrets / config
 │   ├── ksef_client.py          # KSeF API v2.0 client
-│   ├── pushover_notifier.py    # Pushover notification service
-│   └── invoice_monitor.py      # Main monitoring logic
+│   ├── invoice_monitor.py      # Main monitoring logic + template context
+│   ├── invoice_pdf_generator.py # XML parser + PDF generator
+│   ├── prometheus_metrics.py   # Prometheus metrics endpoint
+│   ├── scheduler.py            # Flexible scheduling (5 modes)
+│   ├── template_renderer.py    # Jinja2 template engine (v0.3)
+│   ├── templates/              # Built-in notification templates (v0.3)
+│   │   ├── pushover.txt.j2    # Plain text (Pushover)
+│   │   ├── email.html.j2      # HTML (Email)
+│   │   ├── slack.json.j2      # Block Kit JSON (Slack)
+│   │   ├── discord.json.j2    # Embed JSON (Discord)
+│   │   └── webhook.json.j2    # Payload JSON (Webhook)
+│   └── notifiers/              # Multi-channel notification system
+│       ├── __init__.py
+│       ├── base_notifier.py    # Abstract base + render_and_send()
+│       ├── notification_manager.py  # Facade managing multiple channels
+│       ├── pushover_notifier.py     # Pushover mobile notifications
+│       ├── discord_notifier.py      # Discord webhook with rich embeds
+│       ├── slack_notifier.py        # Slack webhook with Block Kit
+│       ├── email_notifier.py        # SMTP email with HTML
+│       └── webhook_notifier.py      # Generic HTTP endpoint
+│
+├── docs/                        # Documentation
+│   ├── INDEX.md                # Documentation index
+│   ├── QUICKSTART.md           # Quick start guide
+│   ├── KSEF_TOKEN.md           # KSeF token creation guide
+│   ├── NOTIFICATIONS.md        # Notification channels guide
+│   ├── TEMPLATES.md            # Jinja2 templates guide (v0.3)
+│   ├── SECURITY.md             # Security best practices
+│   ├── TESTING.md              # Testing guide
+│   ├── PDF_GENERATION.md       # PDF generation guide
+│   ├── ROADMAP.md              # Project roadmap
+│   ├── PROJECT_STRUCTURE.md    # This file
+│   └── IDE_TROUBLESHOOTING.md  # IDE setup help
+│
+├── examples/                    # Example configuration files
+│   ├── config.example.json     # Configuration template (with secrets)
+│   ├── config.secure.json      # Config for Docker secrets (no secrets)
+│   └── .env.example            # Environment variables template
+│
+├── spec/                        # API specifications
+│   └── openapi.json            # KSeF API v2.0 OpenAPI spec
 │
 ├── config.json                  # Your configuration (git-ignored)
-├── config.example.json          # Configuration template
-│
-├── Dockerfile                   # Docker image definition
-├── docker-compose.yml           # Docker Compose orchestration
+├── .env                         # Your secrets (git-ignored)
 ├── requirements.txt             # Python dependencies
+├── Dockerfile                   # Docker image definition
+├── docker-compose.yml           # Standard Docker Compose
+├── docker-compose.env.yml       # Docker Compose with .env
+├── docker-compose.secrets.yml   # Docker Compose with Docker secrets
 │
-├── .gitignore                  # Git ignore patterns
-├── README.md                   # Main documentation
-├── PROJECT_STRUCTURE.md        # This file
-│
-└── data/                       # Persistent data (auto-created)
-    └── last_check.json         # Application state
+└── data/                        # Persistent data (auto-created)
+    └── last_check.json          # Application state
 ```
 
 ## Module Responsibilities
@@ -42,118 +79,161 @@ ksef-invoice-monitor/
 - Registers signal handlers for graceful shutdown
 - Orchestrates the monitoring process
 
-**Key functions:**
-- `main()` - Application initialization and startup
-- `signal_handler()` - Handles SIGINT and SIGTERM
-
 ### `app/config_manager.py`
 **Configuration loading and validation**
 
 - Loads configuration from JSON file
-- Validates required fields
+- Validates required fields (ksef, notifications, schedule, storage, prometheus)
+- Validates `templates_dir` if provided (warning only, non-blocking)
 - Provides typed access to configuration values
 
-**Key class:**
-- `ConfigManager` - Manages application configuration
+### `app/secrets_manager.py`
+**Secrets management with priority chain**
+
+- Loads secrets from: environment variables → Docker secrets → config file
+- Supports all 7 secret types (KSeF token + 6 notification channels)
 
 ### `app/ksef_client.py`
 **KSeF API v2.0 integration**
 
 Implements the full KSeF authentication flow:
 1. Challenge request
-2. Token authentication
+2. Token authentication (RSA-OAEP encryption)
 3. Status polling
 4. Token redemption
 5. Automatic token refresh
 
-**Key class:**
-- `KSeFClient` - Handles all KSeF API interactions
-
 **Key methods:**
 - `authenticate()` - Complete auth flow
 - `get_invoices_metadata()` - Query invoice metadata
+- `get_invoice_xml()` - Fetch invoice XML by KSeF number
 - `refresh_access_token()` - Refresh expired tokens
 - `revoke_current_session()` - Clean session termination
-
-### `app/pushover_notifier.py`
-**Push notification service**
-
-- Sends notifications via Pushover API
-- Handles errors gracefully
-- Provides specialized notification types
-
-**Key class:**
-- `PushoverNotifier` - Manages Pushover notifications
-
-**Key methods:**
-- `send_notification()` - Send standard notification
-- `send_error_notification()` - Send error with high priority
-- `test_connection()` - Test Pushover setup
 
 ### `app/invoice_monitor.py`
 **Core monitoring logic**
 
 - Polls KSeF API at configured intervals
-- Tracks seen invoices to prevent duplicates
-- Formats and sends notifications
-- Manages persistent state
-
-**Key class:**
-- `InvoiceMonitor` - Main monitoring service
+- Tracks seen invoices to prevent duplicates (MD5 hash deduplication)
+- Builds template context for notifications (v0.3)
+- Manages persistent state (`last_check.json`)
 
 **Key methods:**
 - `run()` - Main monitoring loop
 - `check_for_new_invoices()` - Check and notify
-- `format_invoice_message()` - Format notification text
+- `build_template_context()` - Build context dict for Jinja2 templates (v0.3)
 - `shutdown()` - Graceful shutdown
 
+### `app/template_renderer.py` (v0.3)
+**Jinja2 notification template engine**
+
+- Loads templates from user directory (priority) with fallback to built-in defaults
+- `select_autoescape` only for `.html` — JSON/TXT without autoescaping
+- Custom Jinja2 filters: `money`, `money_raw`, `date`, `json_escape`
+- Polish monetary formatting (`,` decimal, space thousands separator)
+
+**Key class:** `TemplateRenderer`
+- `render(channel, context)` - Render template for given channel
+- `has_template(channel)` - Check template availability
+
+### `app/invoice_pdf_generator.py`
+**Invoice XML parser + PDF generator**
+
+- Parses FA_VAT XML from KSeF API
+- Generates PDF with ReportLab (A4 format, QR code, Polish characters)
+- Polish monetary formatting (v0.3)
+
+### `app/scheduler.py`
+**Flexible scheduling system**
+
+5 scheduling modes: `simple`, `minutes`, `hourly`, `daily`, `weekly`
+
+### `app/prometheus_metrics.py`
+**Prometheus metrics endpoint**
+
+Exports: `ksef_last_check_timestamp`, `ksef_new_invoices_total`, `ksef_monitor_up`
+
+### `app/notifiers/`
+**Multi-channel notification system**
+
+#### `base_notifier.py`
+Abstract base class for all notifiers:
+- `send_notification()` - Abstract method for sending notifications
+- `render_and_send()` - Render Jinja2 template + send (v0.3)
+- `_send_rendered()` - Channel-specific rendered content handler (v0.3)
+- `_build_fallback_message()` - Plain text fallback on template errors (v0.3)
+
+#### `notification_manager.py`
+Facade managing multiple notification channels:
+- `send_notification()` - Send to all channels (error/test/start/stop messages)
+- `send_invoice_notification()` - Send invoice via templates to all channels (v0.3)
+- Initializes `TemplateRenderer` from config (v0.3)
+
+#### Channel notifiers
+Each notifier overrides `_send_rendered()` for channel-specific formatting:
+
+| Notifier | Channel | `_send_rendered()` behavior |
+|----------|---------|---------------------------|
+| `pushover_notifier.py` | Pushover | Plain text, truncated to 1024 chars |
+| `discord_notifier.py` | Discord | JSON embed wrapped in `{"embeds": [...]}` |
+| `slack_notifier.py` | Slack | Block Kit JSON with username/icon |
+| `email_notifier.py` | Email | HTML body + plain text fallback |
+| `webhook_notifier.py` | Webhook | JSON payload via configured HTTP method |
+
 ## Data Flow
+
+### Invoice Notification (v0.3)
 
 ```
 ┌─────────────┐
 │   main.py   │ ← Entry point
 └──────┬──────┘
        │ initializes
-       ├──────────────────────────────┐
-       │                              │
-       ▼                              ▼
-┌──────────────┐              ┌──────────────┐
-│config_manager│◄─────────────┤invoice_monitor│
-└──────────────┘              └───────┬──────┘
-                                      │
-                              ┌───────┴───────┐
-                              │               │
-                              ▼               ▼
-                      ┌──────────────┐ ┌──────────────┐
-                      │ ksef_client  │ │pushover_     │
-                      │              │ │notifier      │
-                      └──────┬───────┘ └──────┬───────┘
-                             │                │
-                             ▼                ▼
-                      ┌──────────────┐ ┌──────────────┐
-                      │  KSeF API    │ │ Pushover API │
-                      └──────────────┘ └──────────────┘
+       ├─────────────────────────────────────┐
+       │                                     │
+       ▼                                     ▼
+┌──────────────┐              ┌──────────────────────┐
+│config_manager│◄─────────────│   invoice_monitor    │
+└──────────────┘              └──────────┬───────────┘
+                                         │
+                              build_template_context()
+                                         │
+                                         ▼
+                              ┌──────────────────────┐
+                              │notification_manager  │
+                              │send_invoice_notification()│
+                              └──────────┬───────────┘
+                                         │
+                              ┌──────────┴───────────┐
+                              │                      │
+                              ▼                      ▼
+                    ┌─────────────────┐   ┌──────────────────┐
+                    │template_renderer│   │   notifiers[]    │
+                    │  render()       │──▶│ render_and_send() │
+                    └─────────────────┘   └──────────────────┘
+                              │                      │
+                    ┌─────────┘           ┌──────────┴──────────┐
+                    ▼                     ▼         ▼          ▼
+              ┌──────────┐         ┌─────────┐ ┌────────┐ ┌────────┐
+              │templates/│         │Pushover │ │Discord │ │Email   │ ...
+              │  *.j2    │         │  API    │ │Webhook │ │ SMTP   │
+              └──────────┘         └─────────┘ └────────┘ └────────┘
+```
+
+### Fallback chain (template errors)
+
+```
+Custom template → Built-in template → Plain text fallback
+   (user dir)       (app/templates/)    (_build_fallback_message)
 ```
 
 ## Volume Mounts (Docker)
 
-The docker-compose.yml configuration mounts:
-
-1. **`./main.py:/app/main.py:ro`**
-   - Main entry point (read-only)
-   - Allows updates without rebuild
-
-2. **`./app:/app/app:ro`**
-   - All application modules (read-only)
-   - Hot reload capability
-
-3. **`./config.json:/data/config.json:ro`**
-   - Configuration file (read-only)
-   - Separate from code for security
-
-4. **`./data:/data`**
-   - Persistent state (read-write)
-   - Survives container restarts
+| Mount | Path in Container | Mode | Purpose |
+|-------|-------------------|------|---------|
+| `./config.json` | `/data/config.json` | ro | Configuration |
+| `./data` | `/data` | rw | Persistent state |
+| `./templates` | `/data/templates` | ro | Custom templates (optional) |
 
 ## Development Workflow
 
@@ -165,100 +245,32 @@ The docker-compose.yml configuration mounts:
 
 No rebuild needed thanks to volume mounts!
 
-### Adding New Module
+### Customizing Templates
 
-1. Create new file in `app/` directory
-2. Add import in `app/__init__.py`
-3. Import and use in `main.py`
-4. Restart container
+1. Copy built-in templates: `cp -r app/templates/ ./templates/`
+2. Edit templates in `./templates/`
+3. Mount volume in docker-compose: `- ./templates:/data/templates:ro`
+4. Set `templates_dir` in config: `"templates_dir": "/data/templates"`
+5. Restart container
 
-### Testing Changes
+See [TEMPLATES.md](TEMPLATES.md) for template syntax and available variables.
 
-```bash
-# Test configuration
-docker-compose exec ksef-monitor python3 -c "
-from app.config_manager import ConfigManager
-config = ConfigManager('/data/config.json')
-print('Config OK')
-"
+## Dependencies
 
-# Test KSeF authentication
-docker-compose exec ksef-monitor python3 -c "
-from app import ConfigManager, KSeFClient
-config = ConfigManager('/data/config.json')
-client = KSeFClient(config)
-print('Auth:', client.authenticate())
-"
+Managed in `requirements.txt`:
 
-# Test Pushover
-docker-compose exec ksef-monitor python3 -c "
-from app import ConfigManager, PushoverNotifier
-config = ConfigManager('/data/config.json')
-notifier = PushoverNotifier(config)
-notifier.test_connection()
-"
-```
+| Package | Purpose |
+|---------|---------|
+| `requests` | HTTP client for APIs |
+| `python-dateutil` | Date parsing utilities |
+| `cryptography` | RSA-OAEP encryption |
+| `pytz` | Timezone support |
+| `prometheus-client` | Prometheus metrics |
+| `Jinja2` | Notification templates (v0.3) |
+| `reportlab` | PDF generation |
+| `qrcode` | QR Code on invoices |
 
-## Configuration Management
-
-### File Location
-
-- **Host**: `./config.json`
-- **Container**: `/data/config.json`
-- **Mounted**: Read-only
-- **Not in git**: Listed in `.gitignore`
-
-### Structure
-
-```json
-{
-  "ksef": { ... },       // KSeF API settings
-  "pushover": { ... },   // Notification settings
-  "monitoring": { ... }  // Monitoring behavior
-}
-```
-
-### Loading
-
-Configuration is loaded once at startup by `ConfigManager`:
-1. Validates file exists
-2. Parses JSON
-3. Validates required fields
-4. Provides typed access
-
-## State Management
-
-### State File
-
-- **Location**: `./data/last_check.json`
-- **Format**: JSON
-- **Purpose**: Track seen invoices and last check time
-
-### Structure
-
-```json
-{
-  "last_check": "2024-02-04T15:30:00",
-  "seen_invoices": ["hash1", "hash2", ...]
-}
-```
-
-### Lifecycle
-
-1. **Load** on startup (or create empty)
-2. **Update** after each check
-3. **Persist** to disk
-4. **Retain** across restarts
-
-## Error Handling
-
-Each module implements comprehensive error handling:
-
-- **config_manager.py**: Validation errors exit with message
-- **ksef_client.py**: Retries authentication, logs API errors
-- **pushover_notifier.py**: Logs failures, continues operation
-- **invoice_monitor.py**: Catches exceptions, sends error notifications
-- **main.py**: Top-level exception handler, graceful shutdown
+Installed during Docker build.
 
 ## Logging
 
@@ -270,43 +282,18 @@ logger = logging.getLogger(__name__)
 
 **Log levels:**
 - `INFO`: Normal operations
-- `WARNING`: Recoverable issues
-- `ERROR`: Operation failures
+- `WARNING`: Recoverable issues (e.g., template dir not found)
+- `ERROR`: Operation failures (e.g., template rendering error, notification send failure)
 - `DEBUG`: Detailed information (not enabled by default)
 
-**Log format:**
-```
-%(asctime)s - %(name)s - %(levelname)s - %(message)s
-```
+## Error Handling
 
-## Security Considerations
+Each module implements comprehensive error handling:
 
-1. **Config file**: Read-only mount, not in git
-2. **Tokens**: Never logged or exposed
-3. **Credentials**: Only in config.json
-4. **File permissions**: Config should be 600 or 644
-5. **Volume mounts**: Code is read-only
-
-## Dependencies
-
-Managed in `requirements.txt`:
-- `requests` - HTTP client for APIs
-- `python-dateutil` - Date parsing utilities
-
-Installed during Docker build.
-
-## Future Extensions
-
-To add new features:
-
-1. **New API client**: Create `app/new_api_client.py`
-2. **Database storage**: Add persistence module
-3. **Web interface**: Add Flask/FastAPI app
-4. **Multiple monitors**: Run multiple instances with different configs
-5. **Metrics**: Add Prometheus exporter
-
-Each new module follows the same pattern:
-- Create class in `app/`
-- Import in `app/__init__.py`
-- Initialize in `main.py`
-- Use dependency injection
+- **config_manager.py**: Validation errors exit with message; `templates_dir` warns only
+- **ksef_client.py**: Retries authentication, logs API errors
+- **template_renderer.py**: Returns `None` on render failure (triggers fallback)
+- **base_notifier.py**: `render_and_send()` falls back to plain text on template errors
+- **notifiers/*.py**: Log failures, continue operation (one channel failure doesn't stop others)
+- **invoice_monitor.py**: Catches exceptions, sends error notifications
+- **main.py**: Top-level exception handler, graceful shutdown

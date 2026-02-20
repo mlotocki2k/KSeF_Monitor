@@ -3,10 +3,11 @@ Discord Notification Service
 Sends notifications via Discord webhooks with rich embeds
 """
 
+import json
 import logging
 import requests
 from datetime import datetime
-from typing import Optional
+from typing import Any, Dict, Optional
 
 from .base_notifier import BaseNotifier
 
@@ -109,6 +110,39 @@ class DiscordNotifier(BaseNotifier):
             logger.info(f"Discord notification sent: {title}")
             return True
 
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Failed to send Discord notification: {e}")
+            if hasattr(e, 'response') and e.response is not None:
+                logger.error(f"Discord API response: {e.response.text}")
+            return False
+        except Exception as e:
+            logger.error(f"Unexpected error sending Discord notification: {e}")
+            return False
+
+    def _send_rendered(self, rendered: str, context: Dict[str, Any]) -> bool:
+        """Send Discord notification from rendered JSON template."""
+        if not self.is_configured:
+            logger.error("Discord not configured - notification not sent")
+            return False
+
+        try:
+            embed = json.loads(rendered)
+            payload = {
+                "username": self.username,
+                "embeds": [embed],
+            }
+            if self.avatar_url:
+                payload["avatar_url"] = self.avatar_url
+
+            response = requests.post(self.webhook_url, json=payload, timeout=self.timeout)
+            response.raise_for_status()
+
+            logger.info(f"Discord notification sent: {context.get('title')}")
+            return True
+
+        except json.JSONDecodeError as e:
+            logger.error(f"Invalid JSON from Discord template: {e}")
+            return False
         except requests.exceptions.RequestException as e:
             logger.error(f"Failed to send Discord notification: {e}")
             if hasattr(e, 'response') and e.response is not None:

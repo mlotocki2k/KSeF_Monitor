@@ -7,7 +7,7 @@ import logging
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-from typing import Optional, List
+from typing import Any, Dict, Optional, List
 
 from .base_notifier import BaseNotifier
 
@@ -164,6 +164,45 @@ class EmailNotifier(BaseNotifier):
             msg.attach(part2)
 
             # Send email
+            with smtplib.SMTP(self.smtp_server, self.smtp_port, timeout=self.timeout) as server:
+                if self.use_tls:
+                    server.starttls()
+                server.login(self.username, self.password)
+                server.sendmail(self.from_address, self.to_addresses, msg.as_string())
+
+            logger.info(f"Email notification sent to {len(self.to_addresses)} recipient(s): {title}")
+            return True
+
+        except smtplib.SMTPException as e:
+            logger.error(f"SMTP error sending email notification: {e}")
+            return False
+        except Exception as e:
+            logger.error(f"Unexpected error sending email notification: {e}")
+            return False
+
+    def _send_rendered(self, rendered: str, context: Dict[str, Any]) -> bool:
+        """Send email with rendered HTML template as body."""
+        if not self.is_configured:
+            logger.error("Email not configured - notification not sent")
+            return False
+
+        try:
+            title = context.get("title", "")
+            priority = context.get("priority", 0)
+
+            msg = MIMEMultipart('alternative')
+            msg['Subject'] = f"[KSeF Monitor] {title}"
+            msg['From'] = self.from_address
+            msg['To'] = ', '.join(self.to_addresses)
+            msg['X-Priority'] = self.PRIORITY_HEADER.get(priority, "3")
+
+            # Plain text fallback
+            text_content = f"{title}\n\n{self._build_fallback_message(context)}"
+            msg.attach(MIMEText(text_content, 'plain'))
+
+            # HTML from template
+            msg.attach(MIMEText(rendered, 'html'))
+
             with smtplib.SMTP(self.smtp_server, self.smtp_port, timeout=self.timeout) as server:
                 if self.use_tls:
                     server.starttls()

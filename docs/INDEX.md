@@ -1,7 +1,7 @@
 # KSeF Invoice Monitor - Documentation Index
 
-**Version:** 2.0.0  
-**Based on:** KSeF API v2.0  
+**Version:** v0.3
+**Based on:** KSeF API v2.0
 **License:** MIT
 
 ---
@@ -35,6 +35,7 @@ chmod +x setup.sh && ./setup.sh
 | Document | Description | Read When |
 |----------|-------------|-----------|
 | **[NOTIFICATIONS.md](NOTIFICATIONS.md)** | All 5 notification channels guide | Configuring notifications |
+| **[TEMPLATES.md](TEMPLATES.md)** | Jinja2 notification templates (v0.3) | Customizing notification format |
 
 ### 🔐 Security
 
@@ -131,25 +132,36 @@ ksef-invoice-monitor/
 │   ├── QUICKSTART.md               # Quick setup guide
 │   ├── KSEF_TOKEN.md               # KSeF token creation guide
 │   ├── NOTIFICATIONS.md            # Notification channels guide
+│   ├── TEMPLATES.md                # Jinja2 templates guide (v0.3)
 │   ├── SECURITY.md                 # Security practices
 │   ├── PDF_GENERATION.md           # PDF generation guide
 │   ├── PROJECT_STRUCTURE.md        # Architecture
 │   ├── IDE_TROUBLESHOOTING.md      # IDE fixes
 │   ├── TESTING.md                  # Test guide
+│   ├── ROADMAP.md                  # Project roadmap
 │   └── INDEX.md                    # This file
 │
 ├── 🚀 Application
 │   ├── main.py                     # Entry point
-│   ├── test_invoice_pdf.py         # [IN DEV] PDF test script
+│   ├── test_invoice_pdf.py         # PDF test script
 │   └── app/                        # Application package
 │       ├── __init__.py
 │       ├── secrets_manager.py      # Secrets handling
 │       ├── config_manager.py       # Configuration
 │       ├── ksef_client.py          # KSeF API client
-│       ├── invoice_pdf_generator.py # [IN DEV] PDF generator
+│       ├── invoice_monitor.py      # Main monitoring logic
+│       ├── invoice_pdf_generator.py # PDF generator
 │       ├── prometheus_metrics.py   # Prometheus metrics
 │       ├── scheduler.py            # Flexible scheduling
+│       ├── template_renderer.py    # Jinja2 template engine (v0.3)
+│       ├── templates/              # Built-in notification templates
+│       │   ├── pushover.txt.j2
+│       │   ├── email.html.j2
+│       │   ├── slack.json.j2
+│       │   ├── discord.json.j2
+│       │   └── webhook.json.j2
 │       └── notifiers/              # Multi-channel notifications
+│           ├── base_notifier.py
 │           ├── notification_manager.py
 │           ├── pushover_notifier.py
 │           ├── discord_notifier.py
@@ -264,11 +276,13 @@ Before running in production:
 
 ## 📊 Version Information
 
-**Current Version:** 2.0.0
+**Current Version:** v0.3
 
 **Features:**
 - ✅ Full KSeF API v2.0 support
 - ✅ Multi-channel notifications (5 channels)
+- ✅ Customizable Jinja2 notification templates (v0.3)
+- ✅ Polish monetary formatting (v0.3)
 - ✅ Prometheus metrics endpoint
 - ✅ Flexible scheduling system
 - ✅ Token-based authentication

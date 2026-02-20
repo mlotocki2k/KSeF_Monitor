@@ -4,6 +4,9 @@ cryptography==46.0.5
 prometheus-client==0.23.1
 pytz==2025.2
 
+# Notification templates
+Jinja2>=3.1.0
+
 # PDF generation
 reportlab==4.4.10
 qrcode==8.2

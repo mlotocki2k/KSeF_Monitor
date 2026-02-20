@@ -9,6 +9,8 @@
     "channels": ["pushover"],
     "message_priority": 0,
     "test_notification": true,
+    "templates_dir": "/data/templates",
+    "templates_description": "Optional: path to custom Jinja2 template directory. Templates found here override built-in defaults. Files: email.html.j2, slack.json.j2, discord.json.j2, pushover.txt.j2, webhook.json.j2",
     "description": "Multi-channel notification system. Enable one or more channels by listing them in 'channels' array. Secrets can be provided via config, environment variables, or Docker secrets.",
     "pushover": {
       "user_key": "your-pushover-user-key",

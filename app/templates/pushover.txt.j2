@@ -1,0 +1,12 @@
+{% if subject_type == "Subject1" -%}
+Do: {{ buyer_name }} - NIP {{ buyer_nip }}
+{% elif subject_type == "Subject2" -%}
+Od: {{ seller_name }} - NIP {{ seller_nip }}
+{% else -%}
+Od: {{ seller_name }} - NIP {{ seller_nip }}
+Do: {{ buyer_name }} - NIP {{ buyer_nip }}
+{% endif -%}
+Nr Faktury: {{ invoice_number }}
+Data: {{ issue_date | date }}
+Brutto: {{ gross_amount | money_raw }} {{ currency }}
+Numer KSeF: {{ ksef_number }}

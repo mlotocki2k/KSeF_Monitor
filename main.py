@@ -47,9 +47,9 @@ def main():
     global monitor
     
     logger.info("=" * 70)
-    logger.info("KSeF Invoice Monitor v0.2")
+    logger.info("KSeF Invoice Monitor v0.3")
     logger.info("Based on KSeF API v2.0 (github.com/CIRFMF/ksef-docs)")
-    logger.info("Multi-channel notifications: Pushover, Discord, Slack, Email, Webhook")
+    logger.info("Multi-channel notifications with Jinja2 templates")
     logger.info("=" * 70)
     
     try:

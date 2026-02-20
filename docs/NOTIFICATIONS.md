@@ -1,6 +1,8 @@
 # Notification Channels Guide
 
-KSeF Monitor v0.2 supports multiple notification channels. You can enable one or more channels simultaneously to receive invoice notifications through your preferred platform(s).
+KSeF Monitor v0.3 supports multiple notification channels with **customizable Jinja2 templates**. You can enable one or more channels simultaneously to receive invoice notifications through your preferred platform(s).
+
+> **New in v0.3:** Notification format is now fully customizable through Jinja2 templates. See [TEMPLATES.md](TEMPLATES.md) for details.
 
 ## Supported Channels
 
@@ -24,6 +26,7 @@ All notification channels are configured under the `notifications` section in `c
     "channels": ["pushover", "discord"],
     "message_priority": 0,
     "test_notification": true,
+    "templates_dir": "/data/templates",
     "pushover": { ... },
     "discord": { ... },
     "slack": { ... },
@@ -37,6 +40,7 @@ All notification channels are configured under the `notifications` section in `c
 - `channels`: Array of enabled channels (choose 1-5)
 - `message_priority`: Default priority for all channels (-2 to 2)
 - `test_notification`: Send test notification on startup
+- `templates_dir`: Optional path to custom Jinja2 templates (overrides built-in defaults). See [TEMPLATES.md](TEMPLATES.md)
 
 ---
 
@@ -332,14 +336,30 @@ echo "your-token" | docker secret create webhook_token -
 ```json
 {
   "title": "Nowa faktura sprzedażowa w KSeF",
-  "message": "Kontrahent: ACME Corp\nNumer: FV/2025/01/001\n...",
+  "message": "Do: ACME Corp - NIP 1234567890\nNr Faktury: FV/2026/01/001\nData: 2026-02-20\nBrutto: 1 234,56 PLN\nNumer KSeF: 1234567890-20260220-ABCDEF-AB",
   "priority": 0,
   "priority_name": "normal",
-  "timestamp": "2026-02-06T12:34:56.789Z",
+  "timestamp": "2026-02-20T10:30:00",
   "source": "ksef-monitor",
+  "invoice": {
+    "ksef_number": "1234567890-20260220-ABCDEF-AB",
+    "invoice_number": "FV/2026/01/001",
+    "issue_date": "2026-02-20T10:30:00",
+    "gross_amount": 1234.56,
+    "net_amount": 1003.71,
+    "vat_amount": 230.85,
+    "currency": "PLN",
+    "seller_name": "Firma ABC Sp. z o.o.",
+    "seller_nip": "1234567890",
+    "buyer_name": "ACME Corp S.A.",
+    "buyer_nip": "0987654321",
+    "subject_type": "Subject1"
+  },
   "url": "https://ksef.mf.gov.pl/..."
 }
 ```
+
+> **Uwaga:** Format payloadu jest konfigurowalny przez szablon `webhook.json.j2`. Szczegóły: [TEMPLATES.md](TEMPLATES.md)
 
 ### Supported Methods
 - `POST` - Most common (default)
@@ -352,6 +372,47 @@ echo "your-token" | docker secret create webhook_token -
 - ✅ JSON payload
 - ✅ Configurable timeout
 - ✅ Works with Zapier, n8n, Make.com, etc.
+
+---
+
+## Custom Templates (v0.3)
+
+Notification format is customizable through Jinja2 templates. Each channel has its own template file:
+
+| Channel | Template | Format |
+|---------|----------|--------|
+| Pushover | `pushover.txt.j2` | Plain text |
+| Email | `email.html.j2` | HTML |
+| Slack | `slack.json.j2` | Block Kit JSON |
+| Discord | `discord.json.j2` | Embed JSON |
+| Webhook | `webhook.json.j2` | Payload JSON |
+
+### Quick Start
+
+1. Skopiuj wbudowane szablony do katalogu templates:
+   ```bash
+   mkdir -p templates
+   cp app/templates/*.j2 templates/
+   ```
+
+2. Dodaj `templates_dir` do konfiguracji:
+   ```json
+   {
+     "notifications": {
+       "templates_dir": "/data/templates"
+     }
+   }
+   ```
+
+3. Odmontuj katalog w Docker:
+   ```yaml
+   volumes:
+     - ./templates:/data/templates:ro
+   ```
+
+4. Edytuj szablony według potrzeb.
+
+Pełna dokumentacja szablonów: **[TEMPLATES.md](TEMPLATES.md)** — zmienne, filtry, przykłady modyfikacji, mini-przewodnik Jinja2.
 
 ---
 
@@ -552,7 +613,7 @@ curl -X POST "https://discord.com/api/webhooks/..." \
 
 ## Migration from v0.1 (Pushover-only)
 
-Your old config automatically migrates to v0.2 format:
+Your old config automatically migrates to multi-channel format:
 
 **Old format (v0.1):**
 ```json
@@ -694,6 +755,7 @@ A: Yes, set `"channels": []` or remove all channels from the array.
 
 - 📖 [README](../README.md) - Main documentation
 - 🚀 [QUICKSTART](QUICKSTART.md) - Setup guide
+- 🎨 [TEMPLATES](TEMPLATES.md) - Custom notification templates
 - 🔒 [SECURITY](SECURITY.md) - Security best practices
 - 🏗️ [PROJECT_STRUCTURE](PROJECT_STRUCTURE.md) - Architecture
 

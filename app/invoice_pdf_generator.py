@@ -958,7 +958,7 @@ class InvoicePDFGenerator:
             tz_label = tz_name
 
         stamp = now.strftime('%y.%m.%d %H:%M:%S')
-        text = f'Wygenerowane przez KSeF Monitor v0.2 | {stamp} {tz_label}'
+        text = f'Wygenerowane przez KSeF Monitor v0.3 | {stamp} {tz_label}'
         font = self.font
 
         def _draw(canvas_obj, doc):
@@ -1050,7 +1050,11 @@ class InvoicePDFGenerator:
         if not val:
             return ''
         try:
-            return f'{float(val):.2f}'
+            num = float(val)
+            formatted = f'{num:,.2f}'
+            # Polish norms: ',' as decimal separator, '\u00a0' (non-breaking space) as thousands separator
+            formatted = formatted.replace(',', '\u00a0').replace('.', ',')
+            return formatted
         except (ValueError, TypeError):
             return val
 

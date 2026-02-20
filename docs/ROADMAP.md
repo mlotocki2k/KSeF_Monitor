@@ -10,12 +10,16 @@
 
 ---
 
-## v0.3 (Fundament: templating + DB)
+## v0.3 (Fundament: templating + DB) — w trakcie
 **Cel:** ustandaryzować komunikację i zacząć trwale trzymać dane o fakturach
 
-### 1) Powiadomienia oparte o template
-- system template (np. Jinja2) + możliwość wyboru template per kanał
-- dokumentacja: zmienne/placeholdery + przykłady
+### 1) Powiadomienia oparte o template ✅
+- [x] System szablonów Jinja2 z osobnym szablonem per kanał (5 szablonów)
+- [x] `TemplateRenderer` z custom filtrami (`money`, `money_raw`, `date`, `json_escape`)
+- [x] Możliwość podmeny szablonów przez użytkownika (`templates_dir` w config)
+- [x] Fallback na wbudowane domyślne szablony + plain text przy błędach
+- [x] Polskie formatowanie kwot (`,` separator dziesiętny, spacja tysięcy, kod waluty)
+- [x] Dokumentacja: [TEMPLATES.md](TEMPLATES.md) — zmienne, filtry, przykłady modyfikacji
 
 ### 2) Template generowania obrazu faktury
 - HTML/CSS template → render do PNG/PDF (lub tylko PNG)
@@ -26,7 +30,7 @@
 - indeksy pod najczęstsze zapytania (np. subject + nip + timestamp)
 - migracja: zapis przy pobraniu/detekcji faktury
 
-**Zależności:** v0.2  
+**Zależności:** v0.2
 **DoD:** powiadomienia i obraz faktury generują się wyłącznie z template; faktury lądują w DB i da się je filtrować per subject/NIP.
 
 ---

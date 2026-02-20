@@ -186,7 +186,7 @@ ERROR - Forbidden: 403
 - **Osobne tokeny** dla każdego środowiska (test / produkcja)
 - **Osobne tokeny** dla różnych aplikacji korzystających z KSeF
 - **Tylko uprawnienia do odczytu** — monitor nie potrzebuje więcej
-- **Nazwij token opisowo** — np. `KSeF Monitor v0.2 - odczyt` — ułatwia zarządzanie
+- **Nazwij token opisowo** — np. `KSeF Monitor v0.3 - odczyt` — ułatwia zarządzanie
 - **Rotuj tokeny regularnie** — co 3-6 miesięcy lub zgodnie z polityką bezpieczeństwa
 - **Nie udostępniaj tokena** — nie wklejaj w publiczne repozytoria, czaty, emaile
 - **Monitoruj logi** — błędy 401/403 mogą oznaczać problem z tokenem

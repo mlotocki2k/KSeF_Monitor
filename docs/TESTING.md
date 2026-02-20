@@ -160,6 +160,52 @@ print(f'Found {len(invoices)} invoice(s)')
 **Expected:** Query completes (may find 0 invoices if none exist)
 **On Error:** Check authentication and network
 
+### Test 9b: Template Rendering (v0.3)
+
+```bash
+docker-compose run --rm ksef-monitor python3 -c "
+from app.template_renderer import TemplateRenderer
+import json
+
+renderer = TemplateRenderer()
+context = {
+    'ksef_number': 'TEST-20260220-ABCDEF-AB',
+    'invoice_number': 'FV/2026/001',
+    'issue_date': '2026-02-20T10:30:00',
+    'gross_amount': 1234.56,
+    'net_amount': 1003.71,
+    'vat_amount': 230.85,
+    'currency': 'PLN',
+    'seller_name': 'Firma ABC',
+    'seller_nip': '1234567890',
+    'buyer_name': 'Klient XYZ',
+    'buyer_nip': '0987654321',
+    'subject_type': 'Subject1',
+    'title': 'Test',
+    'priority': 0,
+    'priority_emoji': '',
+    'priority_name': 'normal',
+    'priority_color': '#36a64f',
+    'priority_color_int': 3447003,
+    'timestamp': '2026-02-20T10:30:00',
+    'url': None,
+}
+
+# Test all channels
+for channel in ['pushover', 'email', 'slack', 'discord', 'webhook']:
+    result = renderer.render(channel, context)
+    if result:
+        if channel in ['slack', 'discord', 'webhook']:
+            json.loads(result)  # Validate JSON
+        print(f'✓ {channel} template OK')
+    else:
+        print(f'✗ {channel} template FAILED')
+"
+```
+
+**Expected:** All 5 channels render successfully
+**On Error:** Check template files in `app/templates/`
+
 ## Integration Tests
 
 Test the complete workflow.

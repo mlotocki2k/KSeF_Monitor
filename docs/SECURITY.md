@@ -1,6 +1,6 @@
 # Security Guide - Protecting Sensitive Credentials
 
-This guide explains multiple methods to secure your API tokens and credentials for the KSeF Invoice Monitor v0.2.
+This guide explains multiple methods to secure your API tokens and credentials for the KSeF Invoice Monitor v0.3.
 
 **Protected Credentials:**
 - KSeF API token

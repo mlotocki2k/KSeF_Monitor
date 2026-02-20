@@ -3,10 +3,11 @@ Generic Webhook Notification Service
 Sends notifications to custom HTTP/HTTPS endpoints
 """
 
+import json
 import logging
 import requests
 from datetime import datetime
-from typing import Optional, Dict
+from typing import Any, Dict, Optional
 
 from .base_notifier import BaseNotifier
 
@@ -121,6 +122,42 @@ class WebhookNotifier(BaseNotifier):
             logger.info(f"Webhook notification sent ({self.method}): {title}")
             return True
 
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Failed to send webhook notification: {e}")
+            if hasattr(e, 'response') and e.response is not None:
+                logger.error(f"Webhook response: {e.response.text}")
+            return False
+        except Exception as e:
+            logger.error(f"Unexpected error sending webhook notification: {e}")
+            return False
+
+    def _send_rendered(self, rendered: str, context: Dict[str, Any]) -> bool:
+        """Send webhook with rendered JSON payload."""
+        if not self.is_configured:
+            logger.error("Webhook not configured - notification not sent")
+            return False
+
+        try:
+            payload = json.loads(rendered)
+
+            if self.method == "POST":
+                response = requests.post(self.url, json=payload, headers=self.headers, timeout=self.timeout)
+            elif self.method == "PUT":
+                response = requests.put(self.url, json=payload, headers=self.headers, timeout=self.timeout)
+            elif self.method == "GET":
+                response = requests.get(self.url, params=payload, headers=self.headers, timeout=self.timeout)
+            else:
+                logger.error(f"Unsupported HTTP method: {self.method}")
+                return False
+
+            response.raise_for_status()
+
+            logger.info(f"Webhook notification sent ({self.method}): {context.get('title')}")
+            return True
+
+        except json.JSONDecodeError as e:
+            logger.error(f"Invalid JSON from webhook template: {e}")
+            return False
         except requests.exceptions.RequestException as e:
             logger.error(f"Failed to send webhook notification: {e}")
             if hasattr(e, 'response') and e.response is not None:

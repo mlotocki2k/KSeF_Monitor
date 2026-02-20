@@ -381,7 +381,7 @@ Przykład: 1234567890-20240115-ABCDEF123456-AB
   - Wartość netto
   - VAT
   - **RAZEM DO ZAPŁATY** (bold, większa czcionka)
-- Format kwot: 2 miejsca dziesiętne + waluta
+- Format kwot: polskie normy (`,` separator dziesiętny, spacja tysięcy) + waluta
 
 #### 6. Płatność
 - Tytuł: "PŁATNOŚĆ" (uppercase, bold)
@@ -556,9 +556,9 @@ xmllint --noout invoice_<numer>.xml
 
 ### Obecne ograniczenia
 
-1. **Brak integracji z główną aplikacją**
-   - Trzeba uruchamiać skrypt manualnie
-   - Nie ma auto-download dla nowych faktur
+1. **Automatyczna integracja z główną aplikacją** ✅ (od v0.2)
+   - PDF generowany automatycznie dla nowych faktur (config: `storage.save_pdf`)
+   - Skrypt testowy nadal dostępny do manualnego użycia
 
 2. **Tylko format FA_VAT**
    - Obsługiwane tylko faktury VAT
@@ -566,7 +566,7 @@ xmllint --noout invoice_<numer>.xml
 
 3. **Podstawowy layout PDF**
    - Brak logo firmy
-   - Brak QR kodu KSeF
+   - ✅ QR Code Type I (weryfikacja faktury) — dodane w v0.2
    - Brak podpisów elektronicznych
 
 4. **Brak batch processing**
@@ -655,5 +655,5 @@ A: Obecnie tylko polski. W przyszłości może być możliwość wyboru języka 
 
 ---
 
-**Ostatnia aktualizacja:** 2026-02-06
-**Wersja:** IN DEVELOPMENT (v0.1-alpha)
+**Ostatnia aktualizacja:** 2026-02-20
+**Wersja:** v0.3
