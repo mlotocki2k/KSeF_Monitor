@@ -148,7 +148,7 @@ class InvoiceMonitor:
 
                     # Filter seen_invoices by TTL and migrate old format
                     raw_seen = state.get("seen_invoices", [])
-                    cutoff = (datetime.now() - timedelta(days=self.SEEN_INVOICES_TTL_DAYS)).isoformat()
+                    cutoff = (datetime.utcnow() - timedelta(days=self.SEEN_INVOICES_TTL_DAYS)).isoformat()
                     filtered = []
                     for entry in raw_seen:
                         if isinstance(entry, dict) and "h" in entry:

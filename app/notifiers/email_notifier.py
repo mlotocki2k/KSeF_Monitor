@@ -4,6 +4,7 @@ Sends notifications via SMTP with HTML formatting
 """
 
 import logging
+import re
 import smtplib
 import ssl
 from email.mime.text import MIMEText
@@ -17,6 +18,8 @@ logger = logging.getLogger(__name__)
 
 class EmailNotifier(BaseNotifier):
     """Send notifications via email using SMTP"""
+
+    _EMAIL_RE = re.compile(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$')
 
     # Priority to X-Priority header mapping (email standard)
     PRIORITY_HEADER = {
@@ -47,8 +50,21 @@ class EmailNotifier(BaseNotifier):
         self.to_addresses = email_config.get("to_addresses", [])
         self.timeout = email_config.get("timeout", 30)
 
+        # Validate email addresses at init time
+        self._validate_addresses()
+
         if not self.is_configured:
             logger.debug("Email SMTP configuration incomplete")
+
+    def _validate_addresses(self):
+        """Validate email address format at startup."""
+        if self.from_address and not self._EMAIL_RE.match(self.from_address):
+            logger.warning(f"Invalid from_address format: {self.from_address}")
+            self.from_address = None
+        invalid = [a for a in self.to_addresses if not self._EMAIL_RE.match(a)]
+        if invalid:
+            logger.warning(f"Removing invalid to_addresses: {invalid}")
+            self.to_addresses = [a for a in self.to_addresses if self._EMAIL_RE.match(a)]
 
     @property
     def is_configured(self) -> bool:

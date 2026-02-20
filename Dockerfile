@@ -1,4 +1,4 @@
-FROM python:3.11-slim
+FROM python:3.11-slim@sha256:543d6cace00ffc96bc95d332493bb28a4332c6dd614aab5fcbd649ae8a7953d9
 
 # Set working directory
 WORKDIR /app
@@ -41,6 +41,10 @@ USER ksef
 
 # Expose Prometheus metrics port
 EXPOSE 8000
+
+# Health check via Prometheus metrics endpoint
+HEALTHCHECK --interval=60s --timeout=10s --retries=3 \
+  CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/metrics', timeout=5)" || exit 1
 
 # Run the application
 CMD ["python", "-u", "main.py"]

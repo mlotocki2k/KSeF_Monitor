@@ -8,7 +8,7 @@ services:
 
     ports:
       # Prometheus metrics endpoint
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
 
     volumes:
       
@@ -25,10 +25,9 @@ services:
       # Uncomment to use custom invoice PDF template (HTML/CSS)
       # - ./pdf_templates:/data/pdf_templates:ro
     
-    # Uncomment for debugging
-    # logging:
-    #   driver: "json-file"
-    #   options:
-    #     max-size: "10m"
-    #     max-file: "3"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
