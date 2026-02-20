@@ -485,14 +485,14 @@ class KSeFClient:
             self.refresh_token = None
             self.session.close()
 
-    # KSeF number format: NIP(10digits)-YYYYMMDD-RANDOM(6+ alnum)-SUFFIX(2 uppercase letters)
-    _KSEF_NUMBER_PATTERN = re.compile(r'^\d{10}-\d{8}-[A-Za-z0-9]{6,}-[A-Z]{2}$')
+    # KSeF number format: NIP(10digits)-YYYYMMDD-RANDOM(6+ alnum)-SUFFIX(2 alnum)
+    _KSEF_NUMBER_PATTERN = re.compile(r'^\d{10}-\d{8}-[A-Za-z0-9]{6,}-[A-Za-z0-9]{2}$')
 
     @staticmethod
     def _validate_ksef_number(ksef_number: str) -> bool:
         """
         Validate KSeF number format.
-        Expected: NIP(10digits)-YYYYMMDD-RANDOM(6+alnum)-XX(2 uppercase)
+        Expected: NIP(10digits)-YYYYMMDD-RANDOM(6+alnum)-XX(2 alnum)
         """
         return bool(KSeFClient._KSEF_NUMBER_PATTERN.match(ksef_number))
 
