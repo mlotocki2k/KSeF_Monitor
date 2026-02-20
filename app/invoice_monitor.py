@@ -171,15 +171,22 @@ class InvoiceMonitor:
     
     def save_state(self, state: Dict):
         """
-        Save current state to file
-        
+        Save current state to file using atomic write.
+
+        Writes to a temporary file first, then renames to avoid data loss
+        if the process is killed mid-write (docker stop, OOM, etc.).
+
         Args:
             state: State dictionary to save
         """
         try:
             self.state_file.parent.mkdir(parents=True, exist_ok=True)
-            with open(self.state_file, 'w', encoding='utf-8') as f:
+            tmp_file = self.state_file.with_suffix('.tmp')
+            with open(tmp_file, 'w', encoding='utf-8') as f:
                 json.dump(state, f, indent=2, ensure_ascii=False)
+                f.flush()
+                os.fsync(f.fileno())
+            tmp_file.rename(self.state_file)
             logger.debug("State saved successfully")
         except Exception as e:
             logger.error(f"Failed to save state: {e}")
