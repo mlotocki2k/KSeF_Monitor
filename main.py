@@ -55,7 +55,11 @@ def main():
     try:
         # Load configuration
         logger.info("Loading configuration...")
-        config_path = "/data/config.json" if os.path.exists("/data/config.json") else "config.json"
+        # Search order: /config (dedicated mount), /data (legacy), local
+        config_path = next(
+            (p for p in ("/config/config.json", "/data/config.json", "config.json") if os.path.exists(p)),
+            "config.json"
+        )
         config = ConfigManager(config_path)
         logger.info("✓ Configuration loaded")
 

@@ -13,7 +13,7 @@ services:
     volumes:
       # Configuration file - REQUIRED
       # Copy config.example.json to config.json and edit with your credentials
-      - ./config.json:/data/config.json:ro
+      - ./config.json:/config/config.json:ro
 
       # Persistent storage (named volume — Docker manages permissions)
       - ksef-data:/data
