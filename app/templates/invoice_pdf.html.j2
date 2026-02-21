@@ -258,6 +258,13 @@
 </head>
 <body>
 
+{# ===== PAGE FOOTER STAMP (running footer - every page) ===== #}
+<div id="page-footer-content">
+    <div class="page-footer">
+        Wygenerowane przez KSeF Monitor v0.3 | {{ generation_stamp }}
+    </div>
+</div>
+
 {# ===== KSeF BRANDING ===== #}
 <div class="ksef-branding">
     Krajowy System <span class="ksef-e">e</span>-Faktur
@@ -560,12 +567,7 @@
 <div class="footer-info">Data wytworzenia faktury: {{ header.data_wytworzenia }}</div>
 {% endif %}
 
-{# ===== PAGE FOOTER STAMP (running footer - every page) ===== #}
-<div id="page-footer-content">
-    <div class="page-footer">
-        Wygenerowane przez KSeF Monitor v0.3 | {{ generation_stamp }}
-    </div>
-</div>
+
 
 </body>
 </html>
