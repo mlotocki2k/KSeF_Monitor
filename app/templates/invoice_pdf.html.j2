@@ -5,8 +5,16 @@
 <style>
     @page {
         size: A4;
-        margin: 12mm;
+        margin: 12mm 12mm 18mm 12mm;
     }
+    @frame footer_frame {
+        -pdf-frame-content: page-footer-content;
+        left: 12mm;
+        right: 12mm;
+        bottom: 0mm;
+        height: 12mm;
+    }
+    
     {% if font_paths.regular %}
     @font-face {
         font-family: "{{ font_name }}";
@@ -240,11 +248,12 @@
 
     /* Page footer stamp */
     .page-footer {
-        font-size: 6pt;
-        color: grey;
-        text-align: center;
-        margin-top: 6mm;
-    }
+    font-size: 6pt;
+    color: grey;
+    text-align: center;
+    padding-top: 2mm;
+    border-top: 0.5pt solid #cccccc;
+}
 </style>
 </head>
 <body>
@@ -551,9 +560,11 @@
 <div class="footer-info">Data wytworzenia faktury: {{ header.data_wytworzenia }}</div>
 {% endif %}
 
-{# ===== PAGE FOOTER STAMP ===== #}
-<div class="page-footer">
-    Wygenerowane przez KSeF Monitor v0.3 | {{ generation_stamp }}
+{# ===== PAGE FOOTER STAMP (running footer - every page) ===== #}
+<div id="page-footer-content">
+    <div class="page-footer">
+        Wygenerowane przez KSeF Monitor v0.3 | {{ generation_stamp }}
+    </div>
 </div>
 
 </body>
