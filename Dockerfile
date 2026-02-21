@@ -26,7 +26,8 @@ COPY main.py .
 COPY app/ ./app/
 
 # Create non-root user for security
-RUN useradd -r -u 1000 -m ksef
+RUN groupadd -g 1000 ksef && \
+    useradd -r -u 1000 -g ksef -m ksef
 
 # Create data directories for persistent storage
 RUN mkdir -p /data/pdf && chown -R ksef:ksef /data
