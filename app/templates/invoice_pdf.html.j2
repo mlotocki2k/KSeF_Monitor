@@ -6,15 +6,16 @@
     @page {
         size: A4;
         margin: 12mm 12mm 18mm 12mm;
+
+        @frame footer_frame {
+            -pdf-frame-content: page-footer-content;
+            left: 12mm;
+            right: 12mm;
+            bottom: 0mm;
+            height: 12mm;
+        }
     }
-    @frame footer_frame {
-        -pdf-frame-content: page-footer-content;
-        left: 12mm;
-        right: 12mm;
-        bottom: 0mm;
-        height: 12mm;
-    }
-    
+
     {% if font_paths.regular %}
     @font-face {
         font-family: "{{ font_name }}";
@@ -246,14 +247,14 @@
         font-size: 8pt;
     }
 
-    /* Page footer stamp */
+    /* Page footer stamp - rendered in @frame on every page */
     .page-footer {
-    font-size: 6pt;
-    color: grey;
-    text-align: center;
-    padding-top: 2mm;
-    border-top: 0.5pt solid #cccccc;
-}
+        font-size: 6pt;
+        color: grey;
+        text-align: center;
+        padding-top: 2mm;
+        border-top: 0.5pt solid #cccccc;
+    }
 </style>
 </head>
 <body>
@@ -566,7 +567,6 @@
 {% if header.data_wytworzenia %}
 <div class="footer-info">Data wytworzenia faktury: {{ header.data_wytworzenia }}</div>
 {% endif %}
-
 
 
 </body>

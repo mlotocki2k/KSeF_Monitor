@@ -453,7 +453,7 @@ class InvoicePDFGenerator:
         doc = SimpleDocTemplate(
             buffer if output_path is None else output_path,
             pagesize=A4, rightMargin=12*mm, leftMargin=12*mm,
-            topMargin=12*mm, bottomMargin=12*mm)
+            topMargin=12*mm, bottomMargin=18*mm)
 
         story = []
         story.extend(self._ksef_branding(data))
