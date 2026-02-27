@@ -1,7 +1,7 @@
 # KSeF Invoice Monitor - Documentation Index
 
 **Version:** v0.3
-**Based on:** KSeF API v2.0
+**Based on:** KSeF API v2.1
 **License:** MIT
 
 ---
@@ -285,7 +285,7 @@ Before running in production:
 **Current Version:** v0.3
 
 **Features:**
-- ✅ Full KSeF API v2.0 support
+- ✅ Full KSeF API v2.1 support
 - ✅ Multi-channel notifications (5 channels)
 - ✅ Customizable Jinja2 notification templates (v0.3)
 - ✅ Polish monetary formatting (v0.3)

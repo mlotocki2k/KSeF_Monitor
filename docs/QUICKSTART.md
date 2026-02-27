@@ -215,7 +215,7 @@ docker service logs -f ksef_ksef-monitor
 ```
 ksef-monitor | ======================================================================
 ksef-monitor | KSeF Invoice Monitor v0.3
-ksef-monitor | Based on KSeF API v2.0 (github.com/CIRFMF/ksef-docs)
+ksef-monitor | Based on KSeF API v2.1 (github.com/CIRFMF/ksef-docs)
 ksef-monitor | Multi-channel notifications with Jinja2 templates
 ksef-monitor | ======================================================================
 ksef-monitor | Loading configuration...

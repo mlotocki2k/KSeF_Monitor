@@ -14,7 +14,7 @@ ksef-invoice-monitor/
 │   ├── __init__.py             # Makes app a Python package
 │   ├── config_manager.py       # Configuration management
 │   ├── secrets_manager.py      # Secrets from env / Docker secrets / config
-│   ├── ksef_client.py          # KSeF API v2.0 client
+│   ├── ksef_client.py          # KSeF API v2.1 client
 │   ├── invoice_monitor.py      # Main monitoring logic + template context
 │   ├── invoice_pdf_generator.py # XML parser + ReportLab PDF generator (fallback)
 │   ├── invoice_pdf_template.py # HTML/CSS template PDF renderer (xhtml2pdf)
@@ -57,7 +57,7 @@ ksef-invoice-monitor/
 │   └── .env.example            # Environment variables template
 │
 ├── spec/                        # API specifications
-│   └── openapi.json            # KSeF API v2.0 OpenAPI spec
+│   └── openapi.json            # KSeF API v2.1 OpenAPI spec
 │
 ├── config.json                  # Your configuration (git-ignored)
 ├── .env                         # Your secrets (git-ignored)
@@ -98,7 +98,7 @@ ksef-invoice-monitor/
 - Supports all 7 secret types (KSeF token + 6 notification channels)
 
 ### `app/ksef_client.py`
-**KSeF API v2.0 integration**
+**KSeF API v2.1 integration**
 
 Implements the full KSeF authentication flow:
 1. Challenge request
