@@ -56,8 +56,9 @@
     "save_xml": false,
     "save_pdf": false,
     "output_dir": "/data/invoices",
+    "folder_structure": "",
     "pdf_templates_dir": "/data/pdf_templates",
-    "description": "File storage settings. Set save_xml/save_pdf to true to save invoice files. output_dir is auto-created. pdf_templates_dir: optional custom HTML/CSS template for PDF generation."
+    "description": "File storage settings. save_xml/save_pdf: enable saving invoice files. output_dir: auto-created. folder_structure: subfolder pattern ({year}/{month}/{day}/{type}), empty = flat. pdf_templates_dir: optional custom HTML/CSS template for PDF."
   },
   "prometheus": {
     "enabled": true,

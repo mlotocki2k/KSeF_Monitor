@@ -30,7 +30,14 @@
 - [x] QR Code Type I jako base64 data URI w HTML
 - [x] Dokumentacja: [PDF_TEMPLATES.md](PDF_TEMPLATES.md) — zmienne, filtry, CSS customizacja
 
-### 3) Przeniesienie informacji o fakturach do bazy
+### 3) Formatowanie/zapisywanie (struktura folderów) ✅
+- [x] Konfigurowalna struktura folderów (`folder_structure` w config storage)
+- [x] Placeholdery: `{year}`, `{month}`, `{day}`, `{type}` (sprzedaz/zakup)
+- [x] Walidacja wzorca w config_manager (tylko dozwolone placeholdery)
+- [x] Path traversal guard na wynikowej ścieżce
+- [x] Backward compatible: pusty string = flat directory (zachowanie domyślne)
+
+### 4) Przeniesienie informacji o fakturach do bazy
 - model danych rozdzielony “per subject, per NIP”
 - indeksy pod najczęstsze zapytania (np. subject + nip + timestamp)
 - migracja: zapis przy pobraniu/detekcji faktury

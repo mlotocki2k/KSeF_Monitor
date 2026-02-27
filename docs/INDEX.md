@@ -70,10 +70,11 @@ chmod +x setup.sh && ./setup.sh
 
 **Features:**
 - ✅ Fetch invoice XML by KSeF number
-- ✅ Parse FA_VAT format
+- ✅ Parse FA(3) format (full schema compliance)
 - ✅ Generate PDF with QR code, Polish characters
+- ✅ Two rendering engines: xhtml2pdf (primary) + ReportLab (fallback)
 - ✅ Integrated with main app (config: `storage.save_pdf`)
-- ✅ Configurable output directory
+- ✅ Configurable output directory with folder structure patterns (v0.3)
 - ✅ Custom HTML/CSS templates for PDF appearance (v0.3)
 
 ### 🧪 Testing & Quality
@@ -298,7 +299,8 @@ Before running in production:
 - ✅ Docker deployment
 - ✅ Production ready
 - ✅ PDF invoice generation (with QR code, Polish characters)
-- ✅ Configurable XML/PDF file storage
+- ✅ Configurable XML/PDF file storage with folder structure patterns
+- ✅ Custom HTML/CSS invoice PDF templates (v0.3)
 
 **Requirements:**
 - Docker & Docker Compose

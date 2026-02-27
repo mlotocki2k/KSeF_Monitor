@@ -28,11 +28,13 @@ ksef_monitor_v0_1/
 │   ├── secrets_manager.py       # Sekretne wartości z env / Docker secrets / config
 │   ├── ksef_client.py           # Klient API KSeF v2 (autentykacja + zapytania)
 │   ├── invoice_monitor.py       # Główna pętla monitorowania + kontekst szablonów
-│   ├── invoice_pdf_generator.py # XML parser + PDF generator
+│   ├── invoice_pdf_generator.py # XML parser + ReportLab PDF generator (fallback)
+│   ├── invoice_pdf_template.py # HTML/CSS template PDF renderer (xhtml2pdf, v0.3)
 │   ├── prometheus_metrics.py    # Prometheus metrics endpoint
 │   ├── scheduler.py             # Elastyczny system schedulowania (5 trybów)
 │   ├── template_renderer.py     # Silnik szablonów Jinja2 (v0.3)
-│   ├── templates/               # Wbudowane szablony powiadomień (v0.3)
+│   ├── templates/               # Wbudowane szablony (v0.3)
+│   │   ├── invoice_pdf.html.j2 # Szablon PDF faktury (HTML/CSS)
 │   │   ├── pushover.txt.j2     # Plain text (Pushover)
 │   │   ├── email.html.j2       # HTML (Email)
 │   │   ├── slack.json.j2       # Block Kit JSON (Slack)
@@ -55,6 +57,7 @@ ksef_monitor_v0_1/
 │   ├── SECURITY.md              # Security best practices
 │   ├── TESTING.md               # Testing guide
 │   ├── PDF_GENERATION.md        # Generowanie PDF faktur
+│   ├── PDF_TEMPLATES.md         # Szablony PDF faktur (HTML/CSS, v0.3)
 │   ├── PROJECT_STRUCTURE.md     # Project architecture
 │   ├── IDE_TROUBLESHOOTING.md   # IDE setup help
 │   ├── ROADMAP.md               # Roadmap projektu
@@ -85,6 +88,7 @@ Katalog `data/` powstaje w runtime i zawiera plik stanu `last_check.json`.
 - 🔒 [SECURITY.md](docs/SECURITY.md) — Najlepsze praktyki bezpieczeństwa
 - 🧪 [TESTING.md](docs/TESTING.md) — Przewodnik testowania
 - 📄 [PDF_GENERATION.md](docs/PDF_GENERATION.md) — Generowanie PDF faktur
+- 🎨 [PDF_TEMPLATES.md](docs/PDF_TEMPLATES.md) — Szablony PDF faktur (HTML/CSS, v0.3)
 - 🏗️ [PROJECT_STRUCTURE.md](docs/PROJECT_STRUCTURE.md) — Architektura projektu
 - 💻 [IDE_TROUBLESHOOTING.md](docs/IDE_TROUBLESHOOTING.md) — Pomoc z konfiguracją IDE
 - 🗺️ [ROADMAP.md](docs/ROADMAP.md) — Roadmap projektu
@@ -367,6 +371,7 @@ Konfiguracja zapisywania plików faktur (XML, PDF). Domyślnie wyłączone.
 | `save_xml` | `false` | Zapisuj pliki XML faktur (źródłowe dane z KSeF) oraz UPO (dla faktur sprzedażowych). |
 | `save_pdf` | `false` | Generuj i zapisuj pliki PDF faktur (wymaga `reportlab`). |
 | `output_dir` | `"/data/invoices"` | Katalog docelowy dla zapisanych plików. Tworzony automatycznie jeśli nie istnieje. |
+| `folder_structure` | `""` | Wzorzec podfolderów z placeholderami: `{year}`, `{month}`, `{day}`, `{type}`. Pusty = płaski katalog. |
 
 **Przykład konfiguracji:**
 
@@ -375,10 +380,22 @@ Konfiguracja zapisywania plików faktur (XML, PDF). Domyślnie wyłączone.
   "storage": {
     "save_xml": true,
     "save_pdf": true,
-    "output_dir": "/data/invoices"
+    "output_dir": "/data/invoices",
+    "folder_structure": "{year}/{month}"
   }
 }
 ```
+
+**Wzorce `folder_structure`:**
+
+| Wzorzec | Wynik |
+|---|---|
+| `""` (domyślnie) | `/data/invoices/sprz_<ksef>_20260227.pdf` |
+| `"{year}/{month}"` | `/data/invoices/2026/02/sprz_<ksef>_20260227.pdf` |
+| `"{year}/{month}/{day}"` | `/data/invoices/2026/02/27/sprz_<ksef>_20260227.pdf` |
+| `"{type}/{year}/{month}"` | `/data/invoices/sprzedaz/2026/02/sprz_<ksef>_20260227.pdf` |
+
+Dostępne placeholdery: `{year}` (rok), `{month}` (miesiąc 01-12), `{day}` (dzień 01-31), `{type}` (`sprzedaz`/`zakup`).
 
 **Nazewnictwo plików:**
 ```
@@ -392,7 +409,7 @@ UPO_sprz_<numer_ksef>_<data>.xml — UPO (tylko faktury sprzedażowe)
 **Uwagi:**
 - Jeśli oba flagi `save_xml` i `save_pdf` są `false`, żadne pliki nie są pobierane/generowane
 - Generowanie PDF wymaga biblioteki `reportlab` (w `requirements.txt`)
-- Katalog `output_dir` jest tworzony automatycznie przy pierwszym zapisie
+- Katalog `output_dir` i podfoldery są tworzone automatycznie przy pierwszym zapisie
 - UPO (Urzędowe Poświadczenie Odbioru) zapisywane jest razem z XML (zależne od `save_xml`)
 
 ### Sekcja `prometheus`
@@ -755,18 +772,20 @@ Moduł do pobierania XML faktur z KSeF i konwersji do PDF według oficjalnego wz
 
 **Włączenie** — ustaw w `config.json`:
 ```json
-{"storage": {"save_pdf": true, "save_xml": true}}
+{"storage": {"save_pdf": true, "save_xml": true, "folder_structure": "{year}/{month}"}}
 ```
 
 ### Funkcjonalność
 
 - ✅ Pobieranie XML faktury po numerze KSeF (endpoint `GET /v2/invoices/ksef/{ksefNumber}`)
-- ✅ Parser XML faktury FA_VAT (wszystkie główne sekcje)
-- ✅ Generator PDF według oficjalnego wzoru KSeF (XSD/XSL)
+- ✅ Parser XML faktury FA(3) (pełna zgodność ze schematem v1-0E)
+- ✅ Dwa silniki PDF: xhtml2pdf (szablon HTML/CSS, primary) + ReportLab (fallback)
+- ✅ Konfigurowalny szablon PDF (HTML/CSS, Jinja2) z możliwością podmiany
 - ✅ QR Code Type I (weryfikacja faktury)
 - ✅ Polskie znaki diakrytyczne (DejaVu Sans / Arial)
 - ✅ Stopka z datą generowania i strefą czasową
 - ✅ Automatyczny zapis PDF/XML dla nowych faktur (sekcja `storage`)
+- ✅ Konfigurowalna struktura folderów (`folder_structure` z placeholderami)
 - ✅ Skrypt testowy do manualnego generowania PDF
 
 ### Użycie - Skrypt testowy
@@ -828,7 +847,9 @@ Generator tworzy PDF według wzoru KSeF zawierający:
 | Plik | Opis |
 |------|------|
 | `app/ksef_client.py` | Metoda `get_invoice_xml()` - pobieranie XML |
-| `app/invoice_pdf_generator.py` | Parser XML + generator PDF |
+| `app/invoice_pdf_generator.py` | Parser XML FA(3) + ReportLab PDF generator (fallback) |
+| `app/invoice_pdf_template.py` | HTML/CSS template renderer (xhtml2pdf, primary) |
+| `app/templates/invoice_pdf.html.j2` | Szablon HTML/CSS faktury |
 | `test_invoice_pdf.py` | Skrypt testowy CLI |
 
 ### Walidacja numeru KSeF
@@ -871,14 +892,9 @@ python test_invoice_pdf.py 12345-20240101-ABCDEF123456-AB     # NIP za krótki
 
 ### Przyszłe funkcje (planowane)
 
-Funkcje które będą dodane w przyszłości:
-- 🔜 Automatyczne pobieranie PDF dla nowych faktur
-- 🔜 Katalog archiwum PDF (np. `invoices/2024/01/`)
 - 🔜 Załączanie PDF do powiadomień email
 - 🔜 Batch download - pobieranie wielu faktur naraz
 - 🔜 CLI interaktywny do przeglądania i pobierania faktur
-- 🔜 Konfiguracja w config.json (auto-download, katalog docelowy)
-- 🔜 Metadane w PDF (QR kod KSeF, numer referencyjny)
 
 ---
 

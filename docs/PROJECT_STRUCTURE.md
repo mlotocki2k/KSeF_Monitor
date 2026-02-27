@@ -68,7 +68,9 @@ ksef-invoice-monitor/
 ├── docker-compose.secrets.yml   # Docker Compose with Docker secrets
 │
 └── data/                        # Persistent data (auto-created)
-    └── last_check.json          # Application state
+    ├── last_check.json          # Application state
+    └── invoices/                # Saved invoices (XML, PDF, UPO)
+        └── {folder_structure}/  # Subfolders per config (e.g., 2026/02/)
 ```
 
 ## Module Responsibilities
@@ -119,11 +121,14 @@ Implements the full KSeF authentication flow:
 - Tracks seen invoices to prevent duplicates (MD5 hash deduplication)
 - Builds template context for notifications (v0.3)
 - Manages persistent state (`last_check.json`)
+- Saves invoice artifacts (XML, PDF, UPO) with configurable folder structure (v0.3)
 
 **Key methods:**
 - `run()` - Main monitoring loop
 - `check_for_new_invoices()` - Check and notify
 - `build_template_context()` - Build context dict for Jinja2 templates (v0.3)
+- `_resolve_output_dir()` - Resolve target dir from `folder_structure` pattern (v0.3)
+- `_save_invoice_artifacts()` - Save PDF, XML, UPO to target dir
 - `shutdown()` - Graceful shutdown
 
 ### `app/template_renderer.py` (v0.3)

@@ -11,12 +11,14 @@ Aby automatycznie generować PDF dla nowych faktur, ustaw w `config.json`:
   "storage": {
     "save_pdf": true,
     "save_xml": true,
-    "output_dir": "/data/invoices"
+    "output_dir": "/data/invoices",
+    "folder_structure": "{year}/{month}"
   }
 }
 ```
 
 Pliki będą zapisywane automatycznie w katalogu `output_dir` (tworzony automatycznie).
+Klucz `folder_structure` pozwala organizować pliki w podfoldery wg daty/typu (patrz niżej).
 
 ---
 
@@ -40,7 +42,7 @@ Moduł `invoice_pdf_generator` umożliwia:
                          ▼
 ┌─────────────────────────────────────────┐
 │  InvoiceXMLParser                       │
-│  - Parsuje wszystkie sekcje FA_VAT      │
+│  - Parsuje wszystkie sekcje FA(3)       │
 │  - Ekstrahuje dane sprzedawcy/nabywcy   │
 │  - Przetwarza pozycje faktury           │
 │  - Sumuje kwoty                         │
@@ -48,15 +50,23 @@ Moduł `invoice_pdf_generator` umożliwia:
                          │ Strukturyzowane dane
                          ▼
 ┌─────────────────────────────────────────┐
-│  InvoicePDFGenerator                    │
-│  - Tworzy layout PDF (A4)               │
-│  - Renderuje tabele i sekcje            │
-│  - Formatuje kwoty i daty               │
-│  - Zapisuje do pliku lub BytesIO        │
+│  generate_invoice_pdf()                 │
+│  (publiczna funkcja dispatching)        │
+├─────────────────────────────────────────┤
+│                                         │
+│  PRIMARY: InvoicePDFTemplateRenderer    │
+│  - Jinja2 HTML/CSS → xhtml2pdf          │
+│  - Konfigurowalny szablon               │
+│  - Podmiana szablonu przez użytkownika   │
+│                                         │
+│  FALLBACK: InvoicePDFGenerator          │
+│  - ReportLab (programatyczny)           │
+│  - Używany gdy xhtml2pdf niedostępny    │
+│  - Lub gdy rendering szablonu się nie uda│
 └─────────────────────────────────────────┘
                          │ PDF
                          ▼
-                    faktura.pdf
+         output_dir / folder_structure / faktura.pdf
 ```
 
 ### Klasy i metody
@@ -331,8 +341,8 @@ Przykład: 1234567890-20240115-ABCDEF123456-AB
 - **Format:** A4 (210mm x 297mm)
 - **Orientacja:** Portrait (pionowa)
 - **Marginesy:** 15mm wszystkie strony
-- **Czcionka:** Helvetica (sans-serif)
-- **Biblioteka:** reportlab 4.0.7
+- **Czcionka:** DejaVu Sans / Arial (z polskimi znakami)
+- **Biblioteki:** xhtml2pdf (primary) + reportlab (fallback)
 
 ### Sekcje dokumentu
 
@@ -556,63 +566,80 @@ xmllint --noout invoice_<numer>.xml
 
 ### Obecne ograniczenia
 
-1. **Automatyczna integracja z główną aplikacją** ✅ (od v0.2)
-   - PDF generowany automatycznie dla nowych faktur (config: `storage.save_pdf`)
-   - Skrypt testowy nadal dostępny do manualnego użycia
+1. **Tylko format FA(3)**
+   - Obsługiwane faktury zgodne ze schematem FA(3) v1-0E
+   - Brak wsparcia dla starszych wersji schematu
 
-2. **Tylko format FA_VAT**
-   - Obsługiwane tylko faktury VAT
-   - Brak wsparcia dla innych typów dokumentów
-
-3. **Podstawowy layout PDF**
-   - Brak logo firmy
-   - ✅ QR Code Type I (weryfikacja faktury) — dodane w v0.2
-   - Brak podpisów elektronicznych
-
-4. **Brak batch processing**
+2. **Brak batch processing**
    - Trzeba pobierać faktury pojedynczo
    - Brak CLI do przeglądania listy
 
-5. **Brak cache'owania**
+3. **Brak cache'owania**
    - Każde wywołanie pobiera XML na nowo
    - Brak lokalnej bazy PDF-ów
 
 ### Znane problemy
 
 1. **Długie nazwy towarów**
-   - Mogą przekroczyć szerokość kolumny
-   - Workaround: Skrócić nazwę w źródłowej fakturze
+   - Mogą przekroczyć szerokość kolumny w ReportLab renderer
+   - W szablonie HTML/CSS tekst łamie się automatycznie
 
-2. **Wiele stron**
-   - Jeśli faktura ma >30 pozycji, może się nie zmieścić na 1 stronie
-   - Currently: Wszystko na 1 stronie (może być overflow)
-
-3. **Polskie znaki**
-   - Helvetica nie ma polskich znaków z akcentami
-   - Workaround: reportlab używa fallback font
+2. **Polskie znaki w ReportLab (fallback)**
+   - ReportLab wymaga fontu z polskimi znakami (DejaVu Sans / Arial)
+   - Font jest automatycznie wykrywany na Linux, macOS, Docker
 
 ---
 
-## Roadmap
+## Struktura folderów
 
-### W najbliższej przyszłości
+Klucz `folder_structure` w sekcji `storage` pozwala organizować pliki w podfoldery:
 
-- [ ] Integracja z `invoice_monitor.py` (auto-download)
-- [ ] CLI interaktywny do przeglądania faktur
-- [ ] Konfiguracja w `config.json` (włącz/wyłącz auto-PDF)
-- [ ] Katalog archiwum (`invoices/YYYY/MM/`)
-- [ ] Multi-page support (faktury z wieloma pozycjami)
+```json
+{
+  "storage": {
+    "folder_structure": "{year}/{month}"
+  }
+}
+```
 
-### W dalszej przyszłości
+**Dostępne placeholdery:**
+
+| Placeholder | Wartość | Przykład |
+|---|---|---|
+| `{year}` | Rok z daty wystawienia | `2026` |
+| `{month}` | Miesiąc (2-cyfrowy) | `02` |
+| `{day}` | Dzień (2-cyfrowy) | `27` |
+| `{type}` | Typ faktury | `sprzedaz` / `zakup` |
+
+**Przykłady:**
+
+| Wzorzec | Wynik |
+|---|---|
+| `""` (domyślnie) | `/data/invoices/sprz_<ksef>_20260227.pdf` |
+| `"{year}/{month}"` | `/data/invoices/2026/02/sprz_<ksef>_20260227.pdf` |
+| `"{type}/{year}/{month}/{day}"` | `/data/invoices/sprzedaz/2026/02/27/sprz_<ksef>_20260227.pdf` |
+
+Podfoldery tworzone automatycznie. Pusty string = płaski katalog (zachowanie domyślne).
+
+---
+
+## Realizacja i roadmap
+
+### Zrealizowane (v0.3)
+
+- [x] Integracja z `invoice_monitor.py` (auto-download)
+- [x] Konfiguracja w `config.json` (włącz/wyłącz auto-PDF)
+- [x] QR Code Type I na PDF
+- [x] Katalog archiwum z konfigurowalną strukturą folderów
+- [x] Konfigurowalny szablon PDF (HTML/CSS, Jinja2, xhtml2pdf)
+- [x] Pełna zgodność parsera z FA(3) v1-0E
+- [x] Multi-page support (ReportLab automatycznie łamie strony)
+
+### Planowane
 
 - [ ] Załączanie PDF do powiadomień email
-- [ ] QR kod KSeF na PDF
-- [ ] Logo firmy w nagłówku
-- [ ] Różne szablony PDF (minimalistyczny, szczegółowy)
-- [ ] Export do innych formatów (HTML, JSON, CSV)
 - [ ] Batch download (wiele faktur naraz)
-- [ ] Lokalna baza SQLite z metadanymi PDF
-- [ ] OCR dla faktur papierowych (bonus feature)
+- [ ] Logo firmy w nagłówku (konfigurowalny szablon)
 
 ---
 
@@ -625,13 +652,10 @@ A: PDF jest generowany z oryginalnego XML z KSeF, więc zawiera te same dane co 
 A: Zalecane jest używanie oryginalnego XML z KSeF. PDF może służyć do celów poglądowych lub archiwizacyjnych.
 
 **Q: Czy PDF zawiera QR kod KSeF?**
-A: Obecnie nie. To jest planowane na przyszłość.
+A: Tak. QR Code Type I jest generowany automatycznie z danych faktury (NIP sprzedawcy, data, hash XML).
 
 **Q: Czy mogę dostosować wygląd PDF?**
-A: Tak, możesz zmodyfikować kod w `invoice_pdf_generator.py`. Klasa `InvoicePDFGenerator` ma metody do budowania każdej sekcji.
-
-**Q: Dlaczego reportlab jest zakomentowana w requirements.txt?**
-A: To opcjonalna zależność, ponieważ funkcja PDF nie jest jeszcze zintegrowana z główną aplikacją. Odkomentuj jeśli chcesz używać.
+A: Tak. Skopiuj `app/templates/invoice_pdf.html.j2` do własnego katalogu, zmodyfikuj HTML/CSS, i wskaż ścieżkę w `storage.pdf_templates_dir`. Szczegóły: [PDF_TEMPLATES.md](PDF_TEMPLATES.md).
 
 **Q: Czy będzie wsparcie dla innych języków?**
 A: Obecnie tylko polski. W przyszłości może być możliwość wyboru języka (EN, PL).
@@ -655,5 +679,5 @@ A: Obecnie tylko polski. W przyszłości może być możliwość wyboru języka 
 
 ---
 
-**Ostatnia aktualizacja:** 2026-02-20
+**Ostatnia aktualizacja:** 2026-02-27
 **Wersja:** v0.3

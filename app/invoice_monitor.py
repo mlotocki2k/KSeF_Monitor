@@ -57,6 +57,7 @@ class InvoiceMonitor:
         self.save_pdf = config.get("storage", "save_pdf", default=False)
         output_dir = config.get("storage", "output_dir", default="/data/invoices")
         self.output_dir = Path(output_dir)
+        self.folder_structure = config.get("storage", "folder_structure", default="")
 
         # Get timezone from config
         if PYTZ_AVAILABLE:
@@ -340,6 +341,43 @@ class InvoiceMonitor:
             # Fallback: strip separators
             return date_string.replace('-', '').replace(':', '').replace('T', '')[:8]
 
+    def _resolve_output_dir(self, invoice: Dict, subject_type: str) -> Path:
+        """
+        Resolve target directory for invoice artifacts based on folder_structure config.
+
+        Supports placeholders: {year}, {month}, {day}, {type}.
+        Returns self.output_dir (flat) if folder_structure is empty or on error.
+        """
+        if not self.folder_structure:
+            return self.output_dir
+
+        issue_date = invoice.get('issueDate', '')
+        type_name = 'sprzedaz' if subject_type == 'Subject1' else 'zakup'
+
+        try:
+            dt = datetime.fromisoformat(issue_date.replace('Z', '+00:00'))
+            year, month, day = dt.strftime('%Y'), dt.strftime('%m'), dt.strftime('%d')
+        except (ValueError, TypeError):
+            logger.warning(f"Cannot parse issueDate '{issue_date}' for folder structure - using flat directory")
+            return self.output_dir
+
+        try:
+            subfolder = self.folder_structure.format(
+                year=year, month=month, day=day, type=type_name
+            )
+        except (KeyError, IndexError) as e:
+            logger.error(f"Invalid folder_structure pattern '{self.folder_structure}': {e} - using flat directory")
+            return self.output_dir
+
+        target = self.output_dir / subfolder
+
+        # Path traversal guard
+        if not target.resolve().is_relative_to(self.output_dir.resolve()):
+            logger.error(f"Path traversal detected in folder_structure: '{subfolder}' - using flat directory")
+            return self.output_dir
+
+        return target
+
     def _save_invoice_artifacts(self, invoice: Dict, subject_type: str):
         """
         Save PDF, XML and UPO for a new invoice (if enabled in config).
@@ -373,13 +411,14 @@ class InvoiceMonitor:
         # Build base filename
         base_name = f"{prefix}_{safe_ksef}_{date_str}"
 
-        # Ensure output directory exists
-        self.output_dir.mkdir(parents=True, exist_ok=True)
+        # Resolve target directory (may include date-based subfolders)
+        target_dir = self._resolve_output_dir(invoice, subject_type)
+        target_dir.mkdir(parents=True, exist_ok=True)
 
         # Path traversal guard: ensure generated filenames stay within output_dir
         resolved_dir = self.output_dir.resolve()
-        test_path = (self.output_dir / f"{base_name}.tmp").resolve()
-        if not str(test_path).startswith(str(resolved_dir) + os.sep):
+        test_path = (target_dir / f"{base_name}.tmp").resolve()
+        if not test_path.is_relative_to(resolved_dir):
             logger.error(f"Path traversal detected for KSeF number: {ksef_number} - skipping")
             return
 
@@ -393,7 +432,7 @@ class InvoiceMonitor:
 
         # Save XML
         if self.save_xml:
-            xml_path = self.output_dir / f"{base_name}.xml"
+            xml_path = target_dir / f"{base_name}.xml"
             try:
                 with open(xml_path, 'w', encoding='utf-8') as f:
                     f.write(xml_content)
@@ -405,7 +444,7 @@ class InvoiceMonitor:
         if self.save_pdf:
             if REPORTLAB_AVAILABLE:
                 try:
-                    pdf_path = str(self.output_dir / f"{base_name}.pdf")
+                    pdf_path = str(target_dir / f"{base_name}.pdf")
                     tz_name = self.config.get_timezone() if hasattr(self.config, 'get_timezone') else ''
                     template_dir = self.config.get("storage", "pdf_templates_dir", default=None)
                     generate_invoice_pdf(xml_content, ksef_number=ksef_number,
@@ -422,7 +461,7 @@ class InvoiceMonitor:
             try:
                 upo_result = self.ksef.get_invoice_upo(ksef_number)
                 if upo_result:
-                    upo_path = self.output_dir / f"UPO_{base_name}.xml"
+                    upo_path = target_dir / f"UPO_{base_name}.xml"
                     with open(upo_path, 'w', encoding='utf-8') as f:
                         f.write(upo_result['xml_content'])
                     logger.info(f"UPO saved: {upo_path}")

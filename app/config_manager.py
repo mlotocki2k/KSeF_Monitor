@@ -4,6 +4,7 @@ Handles loading and validation of JSON configuration with secrets support
 """
 
 import json
+import re
 import sys
 import logging
 from pathlib import Path
@@ -362,6 +363,22 @@ class ConfigManager:
             storage["save_pdf"] = False
         if "output_dir" not in storage:
             storage["output_dir"] = "/data/invoices"
+
+        # Validate and default folder_structure
+        storage.setdefault("folder_structure", "")
+        folder_structure = storage["folder_structure"]
+        if folder_structure:
+            # Only allow known placeholders: {year}, {month}, {day}, {type}
+            stripped = re.sub(r'\{(year|month|day|type)\}', '', folder_structure)
+            if '{' in stripped or '}' in stripped:
+                logger.warning(
+                    f"Invalid folder_structure '{folder_structure}' - "
+                    f"only {{year}}, {{month}}, {{day}}, {{type}} placeholders allowed. "
+                    f"Falling back to flat directory."
+                )
+                storage["folder_structure"] = ""
+            else:
+                logger.info(f"Storage folder structure: {folder_structure}")
 
         # Validate optional pdf_templates_dir
         pdf_templates_dir = storage.get("pdf_templates_dir")
