@@ -28,6 +28,11 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libcairo2-dev pkg-config
+
       - name: Parse and upgrade packages
         id: upgrade
         run: |
