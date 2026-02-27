@@ -51,6 +51,7 @@ except ImportError:
 from .invoice_pdf_generator import (
     VAT_RATE_LABELS, PAYMENT_METHODS, INVOICE_TYPE_TITLES, QR_BASE_URLS,
     VAT_SUMMARY_ROWS, _FONT_NAME, _FONT_NAME_BOLD,
+    _resolve_vat_summary_labels,
 )
 
 TEMPLATE_NAME = "invoice_pdf.html.j2"
@@ -219,13 +220,17 @@ class InvoicePDFTemplateRenderer:
 
         # Build VAT summary rows (only those with data)
         vat_summary = invoice_data.get('vat_summary', {})
+        resolved_labels = _resolve_vat_summary_labels(items)
+        has_vat_w = any(vat_summary.get(f'P_14_{s}W') for s in ('1', '2', '3', '4'))
         vat_rows = []
-        for label, p13_field, p14_field in VAT_SUMMARY_ROWS:
+        for label, p13_field, p14_field, p14w_field in VAT_SUMMARY_ROWS:
             net = vat_summary.get(p13_field)
             if not net:
                 continue
+            display_label = resolved_labels.get(p13_field, label)
             vat = vat_summary.get(p14_field, '') if p14_field else ''
-            vat_rows.append({'label': label, 'net': net, 'vat': vat})
+            vat_w = vat_summary.get(p14w_field, '') if p14w_field else ''
+            vat_rows.append({'label': display_label, 'net': net, 'vat': vat, 'vat_w': vat_w})
 
         # Font paths for @font-face (try common locations)
         font_paths = self._find_font_paths()
@@ -242,8 +247,17 @@ class InvoicePDFTemplateRenderer:
             'items': items,
             'vat_summary': vat_summary,
             'vat_rows': vat_rows,
+            'has_vat_w': has_vat_w,
             'payment': invoice_data.get('payment', {}),
             'annotations': invoice_data.get('annotations', {}),
+            'podmiot3': invoice_data.get('podmiot3', []),
+            'dodatkowy_opis': invoice_data.get('dodatkowy_opis', []),
+            'dane_korygowanej': invoice_data.get('dane_korygowanej', []),
+            'faktury_zaliczkowe': invoice_data.get('faktury_zaliczkowe', []),
+            'zaliczki_czesciowe': invoice_data.get('zaliczki_czesciowe', []),
+            'rozliczenie': invoice_data.get('rozliczenie', {}),
+            'zamowienie': invoice_data.get('zamowienie', {}),
+            'zalacznik': invoice_data.get('zalacznik', []),
             'footer_data': invoice_data.get('footer', {}),
             'ksef_number': ksef_number,
             'qr_code_data_uri': qr_data_uri,
