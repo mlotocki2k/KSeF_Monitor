@@ -46,3 +46,7 @@ faktura*.xml
 
 #TODO
 TODO.md
+
+CLAUDE.md
+*.sh
+
