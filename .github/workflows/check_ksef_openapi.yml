@@ -1,4 +1,4 @@
-name: "Check KSeF OpenAPI changes (openai.json)"
+name: "Check KSeF OpenAPI changes (all environments)"
 
 on:
   schedule:
@@ -16,23 +16,47 @@ concurrency:
 jobs:
   check:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - env_name: test
+            url: "https://api-test.ksef.mf.gov.pl/docs/v2/openapi.json"
+          - env_name: demo
+            url: "https://api-demo.ksef.mf.gov.pl/docs/v2/openapi.json"
+          - env_name: production
+            url: "https://api.ksef.mf.gov.pl/docs/v2/openapi.json"
+
     steps:
       - name: Checkout test branch
         uses: actions/checkout@v4
         with:
           ref: test
 
-      - name: Fetch remote OpenAPI spec
+      - name: Fetch remote OpenAPI spec (${{ matrix.env_name }})
         id: fetch
         shell: bash
         run: |
           set -euo pipefail
-          URL="https://api.ksef.mf.gov.pl/docs/v2/openapi.json"
-          curl -fsSL "$URL" -o remote-openapi.json
+          HTTP_CODE=$(curl -fsSL -w '%{http_code}' "${{ matrix.url }}" -o remote-openapi.json 2>/dev/null || true)
+
+          if [ ! -s remote-openapi.json ]; then
+            echo "fetch_ok=false" >> "$GITHUB_OUTPUT"
+            echo "http_code=$HTTP_CODE" >> "$GITHUB_OUTPUT"
+            echo "::warning::Failed to fetch OpenAPI spec from ${{ matrix.env_name }} (HTTP $HTTP_CODE)"
+            exit 0
+          fi
+
+          echo "fetch_ok=true" >> "$GITHUB_OUTPUT"
           echo "remote_sha=$(sha256sum remote-openapi.json | awk '{print $1}')" >> "$GITHUB_OUTPUT"
 
-      - name: Compute local openai.json hash
+          # Extract version info if available
+          VERSION=$(python3 -c "import json; d=json.load(open('remote-openapi.json')); print(d.get('info',{}).get('version','unknown'))" 2>/dev/null || echo "unknown")
+          echo "remote_version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Compute local openapi.json hash
         id: local
+        if: steps.fetch.outputs.fetch_ok == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -40,13 +64,18 @@ jobs:
           if [ ! -f "$FILE" ]; then
             echo "local_exists=false" >> "$GITHUB_OUTPUT"
             echo "local_sha=" >> "$GITHUB_OUTPUT"
+            echo "local_version=" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           echo "local_exists=true" >> "$GITHUB_OUTPUT"
           echo "local_sha=$(sha256sum "$FILE" | awk '{print $1}')" >> "$GITHUB_OUTPUT"
 
+          VERSION=$(python3 -c "import json; d=json.load(open('$FILE')); print(d.get('info',{}).get('version','unknown'))" 2>/dev/null || echo "unknown")
+          echo "local_version=$VERSION" >> "$GITHUB_OUTPUT"
+
       - name: Compare
         id: cmp
+        if: steps.fetch.outputs.fetch_ok == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -72,33 +101,47 @@ jobs:
         if: steps.cmp.outputs.changed == 'true'
         uses: actions/github-script@v7
         env:
+          ENV_NAME: ${{ matrix.env_name }}
+          ENV_URL: ${{ matrix.url }}
           REMOTE_SHA: ${{ steps.fetch.outputs.remote_sha }}
+          REMOTE_VERSION: ${{ steps.fetch.outputs.remote_version }}
           LOCAL_EXISTS: ${{ steps.local.outputs.local_exists }}
           LOCAL_SHA: ${{ steps.local.outputs.local_sha }}
+          LOCAL_VERSION: ${{ steps.local.outputs.local_version }}
           REASON: ${{ steps.cmp.outputs.reason }}
         with:
           script: |
-            const title = "KSeF OpenAPI changed vs openai.json (branch: test)";
+            const envName = process.env.ENV_NAME;
+            const envUrl = process.env.ENV_URL;
             const remoteSha = process.env.REMOTE_SHA || "";
+            const remoteVersion = process.env.REMOTE_VERSION || "";
             const localExists = process.env.LOCAL_EXISTS || "";
             const localSha = process.env.LOCAL_SHA || "";
+            const localVersion = process.env.LOCAL_VERSION || "";
             const reason = process.env.REASON || "";
 
+            const title = `KSeF OpenAPI changed — ${envName} environment`;
+
             const body = [
-              "Wykryto zmianę w zdalnym specu OpenAPI względem pliku `openai.json` na branchu `test`.",
+              `Wykryto zmianę w specu OpenAPI KSeF na środowisku **${envName}** względem \`spec/openapi.json\`.`,
               "",
-              "- URL: https://api.ksef.mf.gov.pl/docs/v2/openapi.json",
-              `- Powód: **${reason}**`,
-              `- Local exists: **${localExists}**`,
-              `- Local SHA256: \`${localSha || "(brak pliku)"}\``,
-              `- Remote SHA256: \`${remoteSha}\``,
+              `| | Local | Remote (${envName}) |`,
+              "|---|---|---|",
+              `| **Version** | ${localVersion || "(brak pliku)"} | ${remoteVersion} |`,
+              `| **SHA256** | \`${localSha || "(brak pliku)"}\` | \`${remoteSha}\` |`,
+              "",
+              `- **URL:** ${envUrl}`,
+              `- **Powód:** ${reason}`,
               "",
               "Sugestia:",
-              "- pobierz aktualny spec i zaktualizuj `openai.json`, jeśli to celowe."
+              "- pobierz aktualny spec i zaktualizuj `spec/openapi.json`.",
+              `- jeśli zmiana na **${envName}** — przygotuj się na update produkcji.`
             ].join("\n");
 
+            // Search for existing open issue for this environment
+            const searchTitle = `KSeF OpenAPI changed — ${envName}`;
             const { data: issues } = await github.rest.search.issuesAndPullRequests({
-              q: `repo:${context.repo.owner}/${context.repo.repo} is:issue is:open in:title "${title}"`
+              q: `repo:${context.repo.owner}/${context.repo.repo} is:issue is:open in:title "${searchTitle}"`
             });
 
             if (issues.items.length > 0) {
@@ -114,11 +157,55 @@ jobs:
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 title,
-                body
+                body,
+                labels: ["ksef-api"]
               });
             }
 
-      - name: Summary
+      - name: Send Pushover notification if changed
+        if: steps.cmp.outputs.changed == 'true'
+        shell: bash
+        env:
+          PUSHOVER_TOKEN: ${{ secrets.PUSHOVER_APP_TOKEN }}
+          PUSHOVER_USER: ${{ secrets.PUSHOVER_USER_KEY }}
         run: |
-          echo "Changed: ${{ steps.cmp.outputs.changed }}" >> $GITHUB_STEP_SUMMARY
-          echo "Reason:  ${{ steps.cmp.outputs.reason }}" >> $GITHUB_STEP_SUMMARY
+          if [ -z "$PUSHOVER_TOKEN" ] || [ -z "$PUSHOVER_USER" ]; then
+            echo "::warning::Pushover secrets not configured — skipping notification"
+            exit 0
+          fi
+
+          ENV_NAME="${{ matrix.env_name }}"
+          LOCAL_VER="${{ steps.local.outputs.local_version }}"
+          REMOTE_VER="${{ steps.fetch.outputs.remote_version }}"
+
+          TITLE="KSeF OpenAPI changed — ${ENV_NAME}"
+          MESSAGE="Spec OpenAPI KSeF zmienił się na środowisku ${ENV_NAME}. Local: ${LOCAL_VER:-brak} -> Remote: ${REMOTE_VER:-unknown}. Powód: ${{ steps.cmp.outputs.reason }}"
+
+          curl -s \
+            --form-string "token=$PUSHOVER_TOKEN" \
+            --form-string "user=$PUSHOVER_USER" \
+            --form-string "title=$TITLE" \
+            --form-string "message=$MESSAGE" \
+            --form-string "priority=0" \
+            --form-string "url=https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            --form-string "url_title=GitHub Actions run" \
+            https://api.pushover.net/1/messages.json
+
+      - name: Summary
+        if: always()
+        run: |
+          ENV="${{ matrix.env_name }}"
+          FETCH_OK="${{ steps.fetch.outputs.fetch_ok }}"
+          if [ "$FETCH_OK" != "true" ]; then
+            echo "### ⚠️ $ENV — fetch failed (HTTP ${{ steps.fetch.outputs.http_code }})" >> $GITHUB_STEP_SUMMARY
+          else
+            CHANGED="${{ steps.cmp.outputs.changed }}"
+            REASON="${{ steps.cmp.outputs.reason }}"
+            LOCAL_VER="${{ steps.local.outputs.local_version }}"
+            REMOTE_VER="${{ steps.fetch.outputs.remote_version }}"
+            echo "### $ENV" >> $GITHUB_STEP_SUMMARY
+            echo "- Changed: $CHANGED" >> $GITHUB_STEP_SUMMARY
+            echo "- Reason: $REASON" >> $GITHUB_STEP_SUMMARY
+            echo "- Local version: $LOCAL_VER" >> $GITHUB_STEP_SUMMARY
+            echo "- Remote version: $REMOTE_VER" >> $GITHUB_STEP_SUMMARY
+          fi
