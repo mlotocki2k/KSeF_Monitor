@@ -1,6 +1,6 @@
 """
 KSeF API Client
-Handles authentication and communication with KSeF API v2.1
+Handles authentication and communication with KSeF API v2.2
 Based on official KSeF API documentation from github.com/CIRFMF/ksef-docs
 """
 
@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 
 class KSeFClient:
-    """Client for KSeF API v2.1 interactions"""
+    """Client for KSeF API v2.2 interactions"""
     
     # API version
     API_VERSION = "v2"
