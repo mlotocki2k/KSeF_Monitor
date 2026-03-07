@@ -275,7 +275,7 @@ Use `table` layout for all structural elements (already done in the default temp
 ## File Structure
 
 ```
-ksef-invoice-monitor/
+KSeF_Monitor/
 ├── app/
 │   ├── invoice_pdf_template.py      # Template renderer class
 │   └── templates/

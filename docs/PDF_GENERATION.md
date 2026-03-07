@@ -150,7 +150,7 @@ class InvoicePDFGenerator:
 **Layout PDF:**
 - Format: A4 (210mm x 297mm)
 - Marginesy: 15mm
-- Czcionka: Helvetica (wbudowana)
+- Czcionka: DejaVu Sans (Docker/Linux), Arial (macOS), Helvetica (fallback)
 - Sekcje:
   - Watermark KSeF (prawy górny róg)
   - Nagłówek faktury (tytuł, numer, daty)
@@ -164,21 +164,19 @@ class InvoicePDFGenerator:
 
 ## Instalacja
 
-### 1. Zainstaluj reportlab
+Wszystkie wymagane pakiety (`reportlab`, `xhtml2pdf`, `Jinja2`, `defusedxml`) są w `requirements.txt` i instalowane automatycznie podczas budowania obrazu Docker.
+
+### Lokalna instalacja (bez Docker)
 
 ```bash
-# Odkomentuj w requirements.txt
-nano requirements.txt
-# Usuń komentarz z linii: # reportlab==4.0.7
-
-# Zainstaluj
-pip install reportlab==4.0.7
+pip install -r requirements.txt
 ```
 
-### 2. Zweryfikuj instalację
+### Weryfikacja
 
 ```python
 python -c "import reportlab; print(f'reportlab {reportlab.Version} installed')"
+python -c "from xhtml2pdf import pisa; print('xhtml2pdf OK')"
 ```
 
 ---
@@ -189,23 +187,23 @@ python -c "import reportlab; print(f'reportlab {reportlab.Version} installed')"
 
 ```bash
 # Podstawowe użycie
-python test_invoice_pdf.py <numer-ksef>
+python examples/test_invoice_pdf.py <numer-ksef>
 
 # Przykład
-python test_invoice_pdf.py 1234567890-20240101-ABCDEF123456-AB
+python examples/test_invoice_pdf.py 1234567890-20240101-ABCDEF123456-AB
 # Wygeneruje: invoice_1234567890-20240101-ABCDEF123456-AB.pdf
 
 # Własna nazwa pliku
-python test_invoice_pdf.py 1234567890-20240101-ABCDEF123456-AB --output faktura_12345.pdf
+python examples/test_invoice_pdf.py 1234567890-20240101-ABCDEF123456-AB --output faktura_12345.pdf
 
 # Tylko XML (bez generowania PDF)
-python test_invoice_pdf.py 1234567890-20240101-ABCDEF123456-AB --xml-only
+python examples/test_invoice_pdf.py 1234567890-20240101-ABCDEF123456-AB --xml-only
 
 # Własny config
-python test_invoice_pdf.py 1234567890-20240101-ABCDEF123456-AB --config /path/to/config.json
+python examples/test_invoice_pdf.py 1234567890-20240101-ABCDEF123456-AB --config /path/to/config.json
 
 # Debug mode (pełne logi)
-python test_invoice_pdf.py 1234567890-20240101-ABCDEF123456-AB --debug
+python examples/test_invoice_pdf.py 1234567890-20240101-ABCDEF123456-AB --debug
 ```
 
 **Opcje CLI:**
@@ -453,7 +451,7 @@ Przykład: 1234567890-20240115-ABCDEF123456-AB
 
 **Rozwiązanie:**
 ```bash
-pip install reportlab==4.0.7
+pip install reportlab==4.4.10
 ```
 
 ### Authentication failed
@@ -495,7 +493,7 @@ print(f'Token: {config.get(\"ksef\", \"token\")[:10]}...')
 **Rozwiązanie:**
 ```bash
 # Włącz debug mode
-python test_invoice_pdf.py <numer-ksef> --debug
+python examples/test_invoice_pdf.py <numer-ksef> --debug
 
 # Sprawdź format numeru KSeF
 python -c "
@@ -536,7 +534,7 @@ print('Valid' if re.match(pattern, num) else 'Invalid')
 **Rozwiązanie:**
 ```bash
 # Zapisz XML i sprawdź ręcznie
-python test_invoice_pdf.py <numer-ksef> --xml-only
+python examples/test_invoice_pdf.py <numer-ksef> --xml-only
 
 # Sprawdź poprawność XML
 xmllint --noout invoice_<numer>.xml

@@ -47,7 +47,8 @@ docker-compose build
 ```bash
 # Test imports work
 docker-compose run --rm ksef-monitor python3 -c "
-from app import ConfigManager, KSeFClient, PushoverNotifier, InvoiceMonitor
+from app import ConfigManager, KSeFClient, NotificationManager, InvoiceMonitor
+from app.notifiers.pushover_notifier import PushoverNotifier
 print('✓ All imports successful')
 "
 ```
@@ -64,11 +65,11 @@ Test each component individually.
 ```bash
 docker-compose run --rm ksef-monitor python3 -c "
 from app import ConfigManager
-config = ConfigManager('/data/config.json')
+config = ConfigManager('/config/config.json')
 print('✓ Config loaded')
 print('Environment:', config.get('ksef', 'environment'))
 print('NIP:', config.get('ksef', 'nip'))
-print('Interval:', config.get('monitoring', 'check_interval'))
+print('Schedule mode:', config.get('schedule', 'mode'))
 "
 ```
 
@@ -77,7 +78,7 @@ print('Interval:', config.get('monitoring', 'check_interval'))
 ✓ Config loaded
 Environment: test
 NIP: 1234567890
-Interval: 300
+Schedule mode: minutes
 ```
 
 **On Error:** Check config.json and secrets
@@ -87,26 +88,25 @@ Interval: 300
 ```bash
 docker-compose run --rm ksef-monitor python3 -c "
 from app import ConfigManager
-config = ConfigManager('/data/config.json')
+config = ConfigManager('/config/config.json')
 has_ksef = bool(config.get('ksef', 'token'))
-has_pushover_user = bool(config.get('pushover', 'user_key'))
-has_pushover_api = bool(config.get('pushover', 'api_token'))
+channels = config.get('notifications', 'channels') or []
 print('✓ Secrets check')
 print(f'KSeF token present: {has_ksef}')
-print(f'Pushover user key present: {has_pushover_user}')
-print(f'Pushover API token present: {has_pushover_api}')
+print(f'Enabled channels: {channels}')
 "
 ```
 
-**Expected:** All three should be True
+**Expected:** KSeF token present, channels list matches config
 **On Error:** Check .env file or Docker secrets
 
 ### Test 7: Pushover Connection
 
 ```bash
 docker-compose run --rm ksef-monitor python3 -c "
-from app import ConfigManager, PushoverNotifier
-config = ConfigManager('/data/config.json')
+from app import ConfigManager
+from app.notifiers.pushover_notifier import PushoverNotifier
+config = ConfigManager('/config/config.json')
 notifier = PushoverNotifier(config)
 result = notifier.test_connection()
 print('✓ Test notification sent:', result)
@@ -126,7 +126,7 @@ print('✓ Test notification sent:', result)
 ```bash
 docker-compose run --rm ksef-monitor python3 -c "
 from app import ConfigManager, KSeFClient
-config = ConfigManager('/data/config.json')
+config = ConfigManager('/config/config.json')
 client = KSeFClient(config)
 result = client.authenticate()
 print('✓ KSeF authentication:', 'SUCCESS' if result else 'FAILED')
@@ -147,7 +147,7 @@ print('✓ KSeF authentication:', 'SUCCESS' if result else 'FAILED')
 docker-compose run --rm ksef-monitor python3 -c "
 from app import ConfigManager, KSeFClient
 from datetime import datetime, timedelta
-config = ConfigManager('/data/config.json')
+config = ConfigManager('/config/config.json')
 client = KSeFClient(config)
 client.authenticate()
 now = datetime.now()
@@ -288,7 +288,7 @@ Test how the system handles errors.
 # Temporarily set wrong token
 docker-compose run --rm -e KSEF_TOKEN=invalid ksef-monitor python3 -c "
 from app import ConfigManager, KSeFClient
-config = ConfigManager('/data/config.json')
+config = ConfigManager('/config/config.json')
 client = KSeFClient(config)
 result = client.authenticate()
 print('Auth with bad token:', result)
@@ -304,7 +304,7 @@ print('Auth with bad token:', result)
 # Start monitor without network
 docker-compose run --rm --network none ksef-monitor python3 -c "
 from app import ConfigManager, KSeFClient
-config = ConfigManager('/data/config.json')
+config = ConfigManager('/config/config.json')
 client = KSeFClient(config)
 try:
     client.authenticate()
@@ -320,7 +320,7 @@ except Exception as e:
 
 ```bash
 # Try to run without config
-docker-compose run --rm -v /dev/null:/data/config.json ksef-monitor python3 main.py
+docker-compose run --rm -v /dev/null:/config/config.json ksef-monitor python3 main.py
 
 # Should exit with error message
 ```
@@ -338,7 +338,7 @@ import time
 from app import ConfigManager, KSeFClient
 from datetime import datetime, timedelta
 
-config = ConfigManager('/data/config.json')
+config = ConfigManager('/config/config.json')
 client = KSeFClient(config)
 
 # Test auth time
@@ -432,8 +432,8 @@ grep "restart:" docker-compose.yml
 # 4. Production environment
 grep '"environment"' config.json
 
-# 5. Appropriate check interval
-grep '"check_interval"' config.json
+# 5. Appropriate schedule
+grep -A 2 '"schedule"' config.json
 
 # 6. Security measures
 chmod 600 config.json

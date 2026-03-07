@@ -540,7 +540,7 @@ Sends test message to all enabled channels when monitor starts.
 docker-compose exec ksef-monitor python3 -c "
 from app.config_manager import ConfigManager
 from app.notifiers import NotificationManager
-config = ConfigManager('/data/config.json')
+config = ConfigManager('/config/config.json')
 manager = NotificationManager(config)
 manager.test_connection()
 "

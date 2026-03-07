@@ -5,7 +5,7 @@ This document explains the organization of the KSeF Invoice Monitor v0.3 applica
 ## Directory Layout
 
 ```
-ksef-invoice-monitor/
+KSeF_Monitor/
 │
 ├── main.py                      # Application entry point
 │   └── Orchestrates all modules, handles signals
@@ -17,11 +17,12 @@ ksef-invoice-monitor/
 │   ├── ksef_client.py          # KSeF API v2.1/v2.2 client
 │   ├── invoice_monitor.py      # Main monitoring logic + template context
 │   ├── invoice_pdf_generator.py # XML parser + ReportLab PDF generator (fallback)
-│   ├── invoice_pdf_template.py # HTML/CSS template PDF renderer (xhtml2pdf)
+│   ├── invoice_pdf_template.py  # HTML/CSS template PDF renderer (xhtml2pdf)
+│   ├── template_renderer.py    # Jinja2 template engine
 │   ├── prometheus_metrics.py   # Prometheus metrics endpoint
 │   ├── scheduler.py            # Flexible scheduling (5 modes)
-│   ├── template_renderer.py    # Jinja2 template engine (v0.3)
-│   ├── templates/              # Built-in templates (v0.3)
+│   ├── logging_config.py       # Logging setup with timezone
+│   ├── templates/              # Built-in Jinja2 templates
 │   │   ├── invoice_pdf.html.j2 # Invoice PDF template (HTML/CSS)
 │   │   ├── pushover.txt.j2    # Plain text (Pushover)
 │   │   ├── email.html.j2      # HTML (Email)
@@ -43,21 +44,26 @@ ksef-invoice-monitor/
 │   ├── QUICKSTART.md           # Quick start guide
 │   ├── KSEF_TOKEN.md           # KSeF token creation guide
 │   ├── NOTIFICATIONS.md        # Notification channels guide
-│   ├── TEMPLATES.md            # Jinja2 templates guide (v0.3)
+│   ├── TEMPLATES.md            # Jinja2 templates guide
 │   ├── SECURITY.md             # Security best practices
 │   ├── TESTING.md              # Testing guide
 │   ├── PDF_GENERATION.md       # PDF generation guide
+│   ├── PDF_TEMPLATES.md        # PDF template customization
 │   ├── ROADMAP.md              # Project roadmap
 │   ├── PROJECT_STRUCTURE.md    # This file
 │   └── IDE_TROUBLESHOOTING.md  # IDE setup help
 │
-├── examples/                    # Example configuration files
+├── examples/                    # Example configs & test scripts
 │   ├── config.example.json     # Configuration template (with secrets)
 │   ├── config.secure.json      # Config for Docker secrets (no secrets)
-│   └── .env.example            # Environment variables template
+│   ├── .env.example            # Environment variables template
+│   ├── test_invoice_pdf.py     # CLI test script for PDF generation
+│   ├── test_template_pdf.py    # Test script for template PDF
+│   └── test_dummy_pdf.py       # Test script with dummy data
 │
 ├── spec/                        # API specifications
-│   └── openapi.json            # KSeF API v2.1/v2.2 OpenAPI spec
+│   ├── openapi.json            # KSeF API v2.2.0 OpenAPI spec
+│   └── schemat_FA(3)_v1-0E.xsd # FA(3) invoice XSD schema
 │
 ├── .github/                     # GitHub community & CI
 │   ├── ISSUE_TEMPLATE/
@@ -74,10 +80,11 @@ ksef-invoice-monitor/
 ├── CONTRIBUTING.md              # How to contribute
 ├── CODE_OF_CONDUCT.md           # Community guidelines (Contributor Covenant)
 ├── pyproject.toml               # Python project metadata & keywords
+├── entrypoint.sh                # Docker entrypoint (gosu, ownership fix)
 ├── config.json                  # Your configuration (git-ignored)
 ├── .env                         # Your secrets (git-ignored)
 ├── requirements.txt             # Python dependencies
-├── Dockerfile                   # Docker image definition (OCI labels)
+├── Dockerfile                   # Docker image definition (OCI labels, healthcheck)
 ├── docker-compose.yml           # Standard Docker Compose
 ├── docker-compose.env.yml       # Docker Compose with .env
 ├── docker-compose.secrets.yml   # Docker Compose with Docker secrets
@@ -268,8 +275,8 @@ Custom template → Built-in template → Plain text fallback
 
 | Mount | Path in Container | Mode | Purpose |
 |-------|-------------------|------|---------|
-| `./config.json` | `/data/config.json` | ro | Configuration |
-| `./data` | `/data` | rw | Persistent state |
+| `./config.json` | `/config/config.json` | ro | Configuration |
+| `ksef-data` (named volume) | `/data` | rw | Persistent state + invoices |
 | `./templates` | `/data/templates` | ro | Custom notification templates (optional) |
 | `./pdf_templates` | `/data/pdf_templates` | ro | Custom invoice PDF template (optional) |
 
@@ -304,10 +311,11 @@ Managed in `requirements.txt`:
 | `cryptography` | RSA-OAEP encryption |
 | `pytz` | Timezone support |
 | `prometheus-client` | Prometheus metrics |
-| `Jinja2` | Notification + PDF templates (v0.3) |
+| `Jinja2` | Notification + PDF templates |
+| `defusedxml` | Safe XML parsing (XXE protection) |
 | `reportlab` | PDF generation (fallback engine) |
 | `qrcode` | QR Code on invoices |
-| `xhtml2pdf` | HTML/CSS to PDF rendering (v0.3) |
+| `xhtml2pdf` | HTML/CSS to PDF rendering |
 
 Installed during Docker build.
 

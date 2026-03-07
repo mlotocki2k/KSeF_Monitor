@@ -148,8 +148,7 @@ Enable channels in `notifications` section:
 # Set secure permissions
 chmod 600 .env
 
-# Build and start
-docker-compose build
+# Start (image is pulled automatically from GHCR)
 docker-compose up -d
 
 # View logs
@@ -215,7 +214,7 @@ docker service logs -f ksef_ksef-monitor
 ```
 ksef-monitor | ======================================================================
 ksef-monitor | KSeF Invoice Monitor v0.3
-ksef-monitor | Based on KSeF API v2.1 (github.com/CIRFMF/ksef-docs)
+ksef-monitor | Based on KSeF API v2.2.0 (github.com/CIRFMF/ksef-docs)
 ksef-monitor | Multi-channel notifications with Jinja2 templates
 ksef-monitor | ======================================================================
 ksef-monitor | Loading configuration...
@@ -251,7 +250,7 @@ docker-compose logs -f
 docker-compose exec ksef-monitor python3 -c "
 from app.config_manager import ConfigManager
 from app.notifiers import NotificationManager
-config = ConfigManager('/data/config.json')
+config = ConfigManager('/config/config.json')
 notifier = NotificationManager(config)
 print('Testing all channels...')
 notifier.test_connection()
@@ -483,31 +482,27 @@ This is just an IDE issue - the code runs fine!
 ## File Structure
 
 ```
-ksef-invoice-monitor/
-├── main.py                    # Entry point
-├── app/                       # Application modules
-│   ├── __init__.py
-│   ├── secrets_manager.py
-│   ├── config_manager.py
-│   ├── ksef_client.py
-│   ├── invoice_monitor.py
-│   ├── scheduler.py           # Flexible scheduling system
-│   ├── template_renderer.py   # Jinja2 template engine (v0.3)
-│   ├── templates/             # Built-in notification templates
-│   └── notifiers/             # Multi-channel notification system
-│       ├── base_notifier.py
-│       ├── notification_manager.py
-│       ├── pushover_notifier.py
-│       ├── discord_notifier.py
-│       ├── slack_notifier.py
-│       ├── email_notifier.py
-│       └── webhook_notifier.py
-├── config.json                # Configuration (git-ignored)
-├── .env                       # Secrets (git-ignored)
-├── docker-compose.yml         # Docker Compose config
-├── Dockerfile                 # Docker image
-└── data/                      # Persistent data (auto-created)
-    └── last_check.json        # State file
+KSeF_Monitor/
+├── main.py                        # Entry point
+├── app/                           # Application modules
+│   ├── config_manager.py          # Configuration loading & validation
+│   ├── secrets_manager.py         # Secrets from env / Docker secrets / config
+│   ├── ksef_client.py             # KSeF API v2.1/v2.2 client
+│   ├── invoice_monitor.py         # Main monitoring loop
+│   ├── invoice_pdf_generator.py   # XML parser + ReportLab PDF (fallback)
+│   ├── invoice_pdf_template.py    # HTML/CSS → PDF via xhtml2pdf (primary)
+│   ├── template_renderer.py       # Jinja2 notification templates
+│   ├── scheduler.py               # 5 scheduling modes
+│   ├── prometheus_metrics.py      # /metrics endpoint
+│   ├── logging_config.py          # Logging with timezone
+│   ├── templates/                 # Built-in Jinja2 templates
+│   └── notifiers/                 # Multi-channel notifications (5 channels)
+├── config.json                    # Configuration (git-ignored)
+├── .env                           # Secrets (git-ignored)
+├── docker-compose.yml             # Docker Compose config
+├── Dockerfile                     # Docker image definition
+└── data/                          # Persistent data (auto-created)
+    └── last_check.json            # State file
 ```
 
 ## Next Steps

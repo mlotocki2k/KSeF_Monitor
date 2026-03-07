@@ -3,7 +3,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
 [![Docker](https://img.shields.io/badge/Docker-ready-blue?logo=docker)](https://ghcr.io/mlotocki2k/ksef_monitor)
-[![KSeF API](https://img.shields.io/badge/KSeF_API-v2.1.2-green)](https://github.com/CIRFMF/ksef-docs)
+[![KSeF API](https://img.shields.io/badge/KSeF_API-v2.2.0-green)](https://github.com/CIRFMF/ksef-docs)
 [![Prometheus](https://img.shields.io/badge/Prometheus-metrics-orange?logo=prometheus)](docs/PROJECT_STRUCTURE.md)
 [![GitHub Actions](https://img.shields.io/github/actions/workflow/status/mlotocki2k/KSeF_Monitor/docker-publish.yml?branch=test&label=build)](https://github.com/mlotocki2k/KSeF_Monitor/actions)
 
@@ -41,30 +41,30 @@ Szczegóły konfiguracji: [config.example.json](examples/config.example.json) | 
 ## Struktura projektu
 
 ```
-ksef_monitor_v0_1/
+KSeF_Monitor/
 ├── main.py                      # Entry point — logging, signal handling, bootstrap
-├── test_invoice_pdf.py          # Test script for PDF generation
 ├── app/                         # Application modules
 │   ├── __init__.py
 │   ├── config_manager.py        # Wczytanie i walidacja config.json
 │   ├── secrets_manager.py       # Sekretne wartości z env / Docker secrets / config
-│   ├── ksef_client.py           # Klient API KSeF v2 (autentykacja + zapytania)
+│   ├── ksef_client.py           # Klient API KSeF v2.1/v2.2 (autentykacja + paginacja)
 │   ├── invoice_monitor.py       # Główna pętla monitorowania + kontekst szablonów
 │   ├── invoice_pdf_generator.py # XML parser + ReportLab PDF generator (fallback)
-│   ├── invoice_pdf_template.py # HTML/CSS template PDF renderer (xhtml2pdf, v0.3)
+│   ├── invoice_pdf_template.py  # HTML/CSS template PDF renderer (xhtml2pdf)
+│   ├── template_renderer.py     # Silnik szablonów Jinja2
 │   ├── prometheus_metrics.py    # Prometheus metrics endpoint
 │   ├── scheduler.py             # Elastyczny system schedulowania (5 trybów)
-│   ├── template_renderer.py     # Silnik szablonów Jinja2 (v0.3)
-│   ├── templates/               # Wbudowane szablony (v0.3)
-│   │   ├── invoice_pdf.html.j2 # Szablon PDF faktury (HTML/CSS)
-│   │   ├── pushover.txt.j2     # Plain text (Pushover)
-│   │   ├── email.html.j2       # HTML (Email)
-│   │   ├── slack.json.j2       # Block Kit JSON (Slack)
-│   │   ├── discord.json.j2     # Embed JSON (Discord)
-│   │   └── webhook.json.j2     # Payload JSON (Webhook)
+│   ├── logging_config.py        # Logging setup z timezone
+│   ├── templates/               # Wbudowane szablony Jinja2
+│   │   ├── invoice_pdf.html.j2  # Szablon PDF faktury (HTML/CSS)
+│   │   ├── pushover.txt.j2      # Plain text (Pushover)
+│   │   ├── email.html.j2        # HTML (Email)
+│   │   ├── slack.json.j2        # Block Kit JSON (Slack)
+│   │   ├── discord.json.j2      # Embed JSON (Discord)
+│   │   └── webhook.json.j2      # Payload JSON (Webhook)
 │   └── notifiers/               # Multi-channel notification system
 │       ├── __init__.py
-│       ├── base_notifier.py     # Abstract base class + render_and_send()
+│       ├── base_notifier.py     # Abstract base + render_and_send()
 │       ├── notification_manager.py  # Facade zarządzający wieloma kanałami
 │       ├── pushover_notifier.py     # Powiadomienia mobilne Pushover
 │       ├── discord_notifier.py      # Webhook Discord z rich embeds
@@ -75,21 +75,31 @@ ksef_monitor_v0_1/
 │   ├── QUICKSTART.md            # Quick start guide
 │   ├── KSEF_TOKEN.md            # Tworzenie tokena KSeF (read-only)
 │   ├── NOTIFICATIONS.md         # Konfiguracja powiadomień (5 kanałów)
-│   ├── TEMPLATES.md             # Szablony Jinja2 — zmienne, filtry, przykłady (v0.3)
+│   ├── TEMPLATES.md             # Szablony Jinja2 powiadomień
 │   ├── SECURITY.md              # Security best practices
 │   ├── TESTING.md               # Testing guide
 │   ├── PDF_GENERATION.md        # Generowanie PDF faktur
-│   ├── PDF_TEMPLATES.md         # Szablony PDF faktur (HTML/CSS, v0.3)
+│   ├── PDF_TEMPLATES.md         # Szablony HTML/CSS dla PDF
 │   ├── PROJECT_STRUCTURE.md     # Project architecture
+│   ├── ROADMAP.md               # Project roadmap
 │   ├── IDE_TROUBLESHOOTING.md   # IDE setup help
-│   ├── ROADMAP.md               # Roadmap projektu
 │   └── INDEX.md                 # Documentation index
+├── spec/                        # API specifications
+│   ├── openapi.json             # KSeF API v2.1/v2.2 OpenAPI spec
+│   └── schemat_FA(3)_v1-0E.xsd # Schemat FA(3) faktury
 ├── examples/                    # Example configuration files
 │   ├── config.example.json      # Configuration template
 │   ├── config.secure.json       # Config for Docker secrets
 │   └── .env.example             # Environment variables template
+├── .github/                     # GitHub community & CI
+│   ├── ISSUE_TEMPLATE/          # Issue templates (bug, feature)
+│   ├── PULL_REQUEST_TEMPLATE.md # PR template
+│   └── workflows/               # GitHub Actions (5 workflows)
+├── CONTRIBUTING.md              # How to contribute
+├── CODE_OF_CONDUCT.md           # Community guidelines
+├── pyproject.toml               # Python project metadata
 ├── requirements.txt             # Python dependencies
-├── Dockerfile                   # Docker image definition
+├── Dockerfile                   # Docker image definition (OCI labels)
 ├── docker-compose.yml           # Basic Docker Compose setup
 ├── docker-compose.env.yml       # Docker Compose with .env
 ├── docker-compose.secrets.yml   # Docker Compose with secrets
@@ -137,10 +147,12 @@ Katalog `data/` powstaje w runtime i zawiera plik stanu `last_check.json`.
 | `python-dateutil` | 2.9.0 | Parsing dat w odpowiedziach API |
 | `cryptography` | 46.0.5 | RSA-OAEP encryption tokena w auth flow |
 | `pytz` | 2025.2 | Obsługa stref czasowych (timezone support) |
-| `prometheus-client` | 0.23.1 | Eksport metryk Prometheus |
-| `Jinja2` | 3.1.0+ | Silnik szablonów powiadomień (v0.3) |
-| `reportlab` | 4.4.10 | Generowanie PDF faktur (włączane w sekcji `storage`) |
+| `prometheus-client` | 0.24.1 | Eksport metryk Prometheus |
+| `Jinja2` | >=3.1.0 | Silnik szablonów powiadomień i PDF |
+| `defusedxml` | >=0.7.1 | Bezpieczne parsowanie XML faktur (ochrona przed XXE) |
+| `reportlab` | 4.4.10 | Generowanie PDF faktur (silnik fallback) |
 | `qrcode` | 8.2 | Generowanie QR Code Type I na fakturach PDF |
+| `xhtml2pdf` | >=0.2.16 | Renderowanie HTML/CSS do PDF (silnik primary) |
 
 ---
 
@@ -661,20 +673,28 @@ Endpoint: `POST /v2/invoices/query/metadata`
 - `dateType` pochodzi z pola `date_type` w konfiguracji.
 - Daty w formacie ISO 8601 z sufixem `Z` (UTC).
 - Wszystkie daty są konwertowane z skonfigurowanej strefy czasowej (`timezone`) do UTC przed wysłaniem do API.
-- `pageSize: 100`, `pageOffset: 0`.
+- `dateRange` ograniczony do max 90 dni (limit KSeF API).
+- `pageSize` i `pageOffset` przekazywane jako **query params** (nie w body) — zgodnie ze specyfikacją API.
 
-Przykładowy payload:
+**Paginacja:**
+- `pageSize: 250` (max dozwolone przez KSeF API, min 10).
+- `hasMore=false` → koniec danych.
+- `hasMore=true`, `isTruncated=false` → następna strona (`pageOffset++`).
+- `hasMore=true`, `isTruncated=true` → zawężenie `dateRange.from` do daty ostatniej faktury, reset `pageOffset=0` (limit 10 000 rekordów).
 
-```json
+Przykładowe zapytanie:
+
+```
+POST /v2/invoices/query/metadata?pageSize=250&pageOffset=0&sortOrder=Asc
+
+Body:
 {
   "subjectType": "Subject1",
   "dateRange": {
     "dateType": "Invoicing",
-    "From": "2026-02-04T00:00:00.000Z",
-    "To":   "2026-02-05T12:00:00.000Z"
-  },
-  "pageSize": 100,
-  "pageOffset": 0
+    "from": "2026-02-04T00:00:00.000Z",
+    "to":   "2026-02-05T12:00:00.000Z"
+  }
 }
 ```
 
@@ -764,7 +784,7 @@ Plik `data/last_check.json` przechowuje stan między restartami:
 ```
 
 - `last_check` — ISO 8601 timestamp ostatniego sprawdzenia. Kolejne zapytanie zacznie zakres od tej daty.
-- `seen_invoices` — hashes MD5 (`ksefNumber_invoiceNumber`) faktur dla których powiadomienie wysłano. Max 1000 najnowszych pozycji.
+- `seen_invoices` — hashes SHA-256 (`ksefNumber`) faktur dla których powiadomienie wysłano. Max 1000 najnowszych pozycji.
 - Przy pierwszym uruchomieniu (brak pliku lub brak `last_check`) zakres zapytania to ostatnie 24 godziny.
 
 ---
@@ -814,19 +834,19 @@ Moduł do pobierania XML faktur z KSeF i konwersji do PDF według oficjalnego wz
 
 ```bash
 # Podstawowe użycie - pobierz XML i wygeneruj PDF
-python test_invoice_pdf.py <numer-ksef>
+python examples/test_invoice_pdf.py <numer-ksef>
 
 # Przykład
-python test_invoice_pdf.py 1234567890-20240101-ABCDEF123456-AB
+python examples/test_invoice_pdf.py 1234567890-20240101-ABCDEF123456-AB
 
 # Z własną nazwą pliku
-python test_invoice_pdf.py 1234567890-20240101-ABCDEF123456-AB -o moja_faktura.pdf
+python examples/test_invoice_pdf.py 1234567890-20240101-ABCDEF123456-AB -o moja_faktura.pdf
 
 # Tylko XML (bez PDF)
-python test_invoice_pdf.py 1234567890-20240101-ABCDEF123456-AB --xml-only
+python examples/test_invoice_pdf.py 1234567890-20240101-ABCDEF123456-AB --xml-only
 
 # Debug mode
-python test_invoice_pdf.py 1234567890-20240101-ABCDEF123456-AB --debug
+python examples/test_invoice_pdf.py 1234567890-20240101-ABCDEF123456-AB --debug
 ```
 
 ### Użycie programatyczne
@@ -872,7 +892,7 @@ Generator tworzy PDF według wzoru KSeF zawierający:
 | `app/invoice_pdf_generator.py` | Parser XML FA(3) + ReportLab PDF generator (fallback) |
 | `app/invoice_pdf_template.py` | HTML/CSS template renderer (xhtml2pdf, primary) |
 | `app/templates/invoice_pdf.html.j2` | Szablon HTML/CSS faktury |
-| `test_invoice_pdf.py` | Skrypt testowy CLI |
+| `examples/test_invoice_pdf.py` | Skrypt testowy CLI |
 
 ### Walidacja numeru KSeF
 
@@ -905,11 +925,11 @@ pip install reportlab
 **Invalid KSeF number format**
 ```bash
 # Poprawny format
-python test_invoice_pdf.py 1234567890-20240101-ABCDEF123456-AB
+python examples/test_invoice_pdf.py 1234567890-20240101-ABCDEF123456-AB
 
 # Niepoprawne
-python test_invoice_pdf.py 123456789020240101ABCDEF123456AB  # brak myślników
-python test_invoice_pdf.py 12345-20240101-ABCDEF123456-AB     # NIP za krótki
+python examples/test_invoice_pdf.py 123456789020240101ABCDEF123456AB  # brak myślników
+python examples/test_invoice_pdf.py 12345-20240101-ABCDEF123456-AB     # NIP za krótki
 ```
 
 ### Przyszłe funkcje (planowane)

@@ -418,7 +418,7 @@ docker-compose logs | grep "Enabled channels"
 ```bash
 docker-compose exec ksef-monitor python3 -c "
 from app.config_manager import ConfigManager
-config = ConfigManager('/data/config.json')
+config = ConfigManager('/config/config.json')
 print('✓ Config loaded successfully')
 print('Environment:', config.get('ksef', 'environment'))
 print('Secrets loaded:', 'token' in str(config.get('ksef', 'token')))

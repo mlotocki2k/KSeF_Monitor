@@ -129,7 +129,7 @@ chmod +x setup.sh && ./setup.sh
 | **Start Monitor** | `docker-compose up -d` | [QUICKSTART.md](QUICKSTART.md) |
 | **View Logs** | `docker-compose logs -f` | [README.md](README.md) |
 | **Stop Monitor** | `docker-compose down` | [README.md](README.md) |
-| **Generate Invoice PDF** | `python test_invoice_pdf.py <ksef-number>` | [PDF_GENERATION.md](PDF_GENERATION.md) |
+| **Generate Invoice PDF** | `python examples/test_invoice_pdf.py <ksef-number>` | [PDF_GENERATION.md](PDF_GENERATION.md) |
 | **Test Setup** | See [TESTING.md](TESTING.md) | [TESTING.md](TESTING.md) |
 | **Fix IDE Errors** | See [IDE_TROUBLESHOOTING.md](IDE_TROUBLESHOOTING.md) | [IDE_TROUBLESHOOTING.md](IDE_TROUBLESHOOTING.md) |
 | **Secure Secrets** | See [SECURITY.md](SECURITY.md) | [SECURITY.md](SECURITY.md) |
@@ -137,61 +137,53 @@ chmod +x setup.sh && ./setup.sh
 ### File Structure
 
 ```
-ksef-invoice-monitor/
+KSeF_Monitor/
 ├── 📄 Documentation
 │   ├── README.md                    # Main documentation
-│   ├── QUICKSTART.md               # Quick setup guide
-│   ├── KSEF_TOKEN.md               # KSeF token creation guide
-│   ├── NOTIFICATIONS.md            # Notification channels guide
-│   ├── TEMPLATES.md                # Jinja2 templates guide (v0.3)
-│   ├── SECURITY.md                 # Security practices
-│   ├── PDF_GENERATION.md           # PDF generation guide
-│   ├── PDF_TEMPLATES.md            # Custom PDF templates guide (v0.3)
-│   ├── PROJECT_STRUCTURE.md        # Architecture
-│   ├── IDE_TROUBLESHOOTING.md      # IDE fixes
-│   ├── TESTING.md                  # Test guide
-│   ├── ROADMAP.md                  # Project roadmap
-│   └── INDEX.md                    # This file
+│   ├── docs/QUICKSTART.md          # Quick setup guide
+│   ├── docs/KSEF_TOKEN.md          # KSeF token creation guide
+│   ├── docs/NOTIFICATIONS.md       # Notification channels guide
+│   ├── docs/TEMPLATES.md           # Jinja2 templates guide
+│   ├── docs/SECURITY.md            # Security practices
+│   ├── docs/PDF_GENERATION.md      # PDF generation guide
+│   ├── docs/PDF_TEMPLATES.md       # Custom PDF templates guide
+│   ├── docs/PROJECT_STRUCTURE.md   # Architecture
+│   ├── docs/ROADMAP.md             # Project roadmap
+│   ├── docs/TESTING.md             # Test guide
+│   ├── docs/IDE_TROUBLESHOOTING.md # IDE fixes
+│   └── docs/INDEX.md               # This file
 │
 ├── 🚀 Application
 │   ├── main.py                     # Entry point
-│   ├── test_invoice_pdf.py         # PDF test script
 │   └── app/                        # Application package
-│       ├── __init__.py
-│       ├── secrets_manager.py      # Secrets handling
 │       ├── config_manager.py       # Configuration
-│       ├── ksef_client.py          # KSeF API client
+│       ├── secrets_manager.py      # Secrets handling
+│       ├── ksef_client.py          # KSeF API v2.1/v2.2 client
 │       ├── invoice_monitor.py      # Main monitoring logic
-│       ├── invoice_pdf_generator.py # PDF generator (ReportLab fallback)
-│       ├── invoice_pdf_template.py # PDF template renderer (xhtml2pdf)
+│       ├── invoice_pdf_generator.py # XML parser + ReportLab PDF (fallback)
+│       ├── invoice_pdf_template.py  # HTML/CSS → PDF via xhtml2pdf (primary)
+│       ├── template_renderer.py    # Jinja2 template engine
 │       ├── prometheus_metrics.py   # Prometheus metrics
-│       ├── scheduler.py            # Flexible scheduling
-│       ├── template_renderer.py    # Jinja2 template engine (v0.3)
-│       ├── templates/              # Built-in templates
-│       │   ├── invoice_pdf.html.j2 # Invoice PDF (HTML/CSS)
-│       │   ├── pushover.txt.j2
-│       │   ├── email.html.j2
-│       │   ├── slack.json.j2
-│       │   ├── discord.json.j2
-│       │   └── webhook.json.j2
-│       └── notifiers/              # Multi-channel notifications
-│           ├── base_notifier.py
-│           ├── notification_manager.py
-│           ├── pushover_notifier.py
-│           ├── discord_notifier.py
-│           ├── slack_notifier.py
-│           ├── email_notifier.py
-│           └── webhook_notifier.py
+│       ├── scheduler.py            # Flexible scheduling (5 modes)
+│       ├── logging_config.py       # Logging with timezone
+│       ├── templates/              # Built-in Jinja2 templates (6 files)
+│       └── notifiers/              # Multi-channel notifications (5 channels)
 │
-├── ⚙️ Configuration
-│   ├── config.example.json         # Config template (with secrets)
-│   ├── config.secure.json          # Config template (without secrets)
-│   ├── config.json                 # Your config (git-ignored)
-│   ├── .env.example                # Environment template
-│   └── .env                        # Your secrets (git-ignored)
+├── ⚙️ Configuration & Examples
+│   ├── examples/config.example.json # Config template (with secrets)
+│   ├── examples/config.secure.json  # Config template (without secrets)
+│   ├── examples/.env.example        # Environment template
+│   ├── examples/test_invoice_pdf.py # CLI test script for PDF
+│   ├── config.json                  # Your config (git-ignored)
+│   └── .env                         # Your secrets (git-ignored)
+│
+├── 📋 Specs
+│   ├── spec/openapi.json           # KSeF API v2.2.0 OpenAPI spec
+│   └── spec/schemat_FA(3)_v1-0E.xsd # FA(3) invoice XSD schema
 │
 ├── 🐳 Docker
-│   ├── Dockerfile                  # Image definition (OCI labels)
+│   ├── Dockerfile                  # Image definition (OCI labels, healthcheck)
+│   ├── entrypoint.sh               # Docker entrypoint (gosu, ownership fix)
 │   ├── docker-compose.yml          # Standard compose
 │   ├── docker-compose.env.yml      # With env vars
 │   ├── docker-compose.secrets.yml  # With Docker secrets
