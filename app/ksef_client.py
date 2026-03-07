@@ -392,6 +392,12 @@ class KSeFClient:
                 processing_code = data.get("status", {}).get("code")
 
                 if processing_code == 200:
+                    # Log authentication method info (replaces deprecated authenticationMethod, removed 2026-11-16)
+                    method_info = data.get("authenticationMethodInfo")
+                    if method_info:
+                        logger.debug("Authentication method: category=%s, code=%s, name=%s",
+                                     method_info.get("category"), method_info.get("code"),
+                                     method_info.get("displayName"))
                     logger.info("Authentication completed successfully")
                     return True
                 elif processing_code == 100:
@@ -655,8 +661,15 @@ class KSeFClient:
             response.raise_for_status()
 
             data = response.json()
-            return data.get('sessions', [])
-            
+            sessions = data.get('sessions', [])
+            # Log authentication method info per session (replaces deprecated authenticationMethod, removed 2026-11-16)
+            for session in sessions:
+                method_info = session.get("authenticationMethodInfo")
+                if method_info:
+                    logger.debug("Session auth method: category=%s, code=%s",
+                                 method_info.get("category"), method_info.get("code"))
+            return sessions
+
         except Exception as e:
             logger.warning(f"Failed to get sessions: {e}")
             return []
