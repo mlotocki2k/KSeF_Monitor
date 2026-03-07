@@ -47,3 +47,9 @@ examples/test_output_*.pdf
 
 #TODO
 TODO.md
+
+# Claude Code conversation starter
+CLAUDE.md
+
+# scripts 
+*.sh

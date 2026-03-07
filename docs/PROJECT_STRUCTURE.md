@@ -14,7 +14,7 @@ ksef-invoice-monitor/
 │   ├── __init__.py             # Makes app a Python package
 │   ├── config_manager.py       # Configuration management
 │   ├── secrets_manager.py      # Secrets from env / Docker secrets / config
-│   ├── ksef_client.py          # KSeF API v2.1 client
+│   ├── ksef_client.py          # KSeF API v2.1/v2.2 client
 │   ├── invoice_monitor.py      # Main monitoring logic + template context
 │   ├── invoice_pdf_generator.py # XML parser + ReportLab PDF generator (fallback)
 │   ├── invoice_pdf_template.py # HTML/CSS template PDF renderer (xhtml2pdf)
@@ -57,7 +57,7 @@ ksef-invoice-monitor/
 │   └── .env.example            # Environment variables template
 │
 ├── spec/                        # API specifications
-│   └── openapi.json            # KSeF API v2.1 OpenAPI spec
+│   └── openapi.json            # KSeF API v2.1/v2.2 OpenAPI spec
 │
 ├── config.json                  # Your configuration (git-ignored)
 ├── .env                         # Your secrets (git-ignored)
@@ -98,7 +98,7 @@ ksef-invoice-monitor/
 - Supports all 7 secret types (KSeF token + 6 notification channels)
 
 ### `app/ksef_client.py`
-**KSeF API v2.1 integration**
+**KSeF API v2.1/v2.2 integration**
 
 Implements the full KSeF authentication flow:
 1. Challenge request
@@ -109,16 +109,20 @@ Implements the full KSeF authentication flow:
 
 **Key methods:**
 - `authenticate()` - Complete auth flow
-- `get_invoices_metadata()` - Query invoice metadata
+- `get_invoices_metadata()` - Query invoice metadata with full pagination (handles `hasMore`/`isTruncated`, max 250/page, safety limit 10,000 records)
 - `get_invoice_xml()` - Fetch invoice XML by KSeF number
 - `refresh_access_token()` - Refresh expired tokens
 - `revoke_current_session()` - Clean session termination
+- `_extract_api_error_details()` - Parse KSeF error responses (`problem+json` / `ExceptionResponse`)
+- `_handle_401_refresh()` - Token expiry recovery with detailed logging
 
 ### `app/invoice_monitor.py`
 **Core monitoring logic**
 
 - Polls KSeF API at configured intervals
-- Tracks seen invoices to prevent duplicates (MD5 hash deduplication)
+- Tracks seen invoices to prevent duplicates (SHA-256 hash deduplication)
+- Caps `dateRange` to 90 days (KSeF API 3-month limit) with warning
+- Normalizes naive datetimes in state file with warning
 - Builds template context for notifications (v0.3)
 - Manages persistent state (`last_check.json`)
 - Saves invoice artifacts (XML, PDF, UPO) with configurable folder structure (v0.3)

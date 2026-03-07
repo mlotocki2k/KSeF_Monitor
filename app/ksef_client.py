@@ -27,6 +27,17 @@ class KSeFClient:
     # Rate limit retry settings
     MAX_429_RETRIES = 3
     DEFAULT_RETRY_AFTER = 30  # seconds
+
+    # Pagination settings for metadata queries
+    PAGINATION_PAGE_SIZE = 250  # max allowed by KSeF API spec (min=10, max=250)
+    PAGINATION_MAX_RECORDS = 10_000  # safety limit (matches KSeF truncation limit)
+
+    # Mapping from dateType config value to InvoiceMetadata field name
+    _DATE_TYPE_TO_FIELD = {
+        "Invoicing": "invoicingDate",
+        "Issue": "issueDate",
+        "PermanentStorage": "permanentStorageDate",
+    }
     
     def __init__(self, config):
         """
@@ -118,6 +129,76 @@ class KSeFClient:
             time.sleep(retry_after)
         return response  # unreachable, but satisfies type checker
 
+    @staticmethod
+    def _extract_api_error_details(response: requests.Response) -> str:
+        """
+        Extract human-readable error details from KSeF API error response.
+
+        Tries formats in order:
+        1. application/problem+json (KSeF v2.2.0): reasonCode, detail, title
+        2. KSeF ExceptionResponse: exceptionCode, exceptionDescription
+        3. Fallback: status=XXX
+        """
+        status = response.status_code
+        content_type = response.headers.get("Content-Type", "")
+
+        try:
+            body = response.json()
+        except (ValueError, AttributeError):
+            return f"status={status}"
+
+        # Format 1: application/problem+json (KSeF v2.2.0 for 401/403)
+        if "problem+json" in content_type:
+            reason = body.get("reasonCode", "")
+            detail = body.get("detail", "")
+            title = body.get("title", "")
+            parts = [f"status={status}"]
+            if reason:
+                parts.append(f"reason={reason}")
+            if title:
+                parts.append(f"title={title}")
+            if detail:
+                parts.append(f"detail={detail}")
+            return ", ".join(parts)
+
+        # Format 2: KSeF ExceptionResponse (standard for 400/4xx)
+        exception = body.get("exception")
+        if isinstance(exception, dict):
+            details_list = exception.get("exceptionDetailList", [])
+            if details_list:
+                parts = []
+                for d in details_list[:3]:
+                    code = d.get("exceptionCode", "")
+                    desc = d.get("exceptionDescription", "")
+                    extra = d.get("details", [])
+                    entry = f"[{code}] {desc}"
+                    if extra:
+                        entry += f" ({'; '.join(str(x) for x in extra[:2])})"
+                    parts.append(entry)
+                return f"status={status}, KSeF: {' | '.join(parts)}"
+            service_name = exception.get("serviceName", "")
+            ref = exception.get("referenceNumber", "")
+            return f"status={status}, service={service_name}, ref={ref}"
+
+        # Format 3: fallback
+        return f"status={status}"
+
+    def _handle_401_refresh(self, response: requests.Response) -> bool:
+        """
+        Handle 401 Unauthorized by refreshing or re-authenticating.
+
+        Returns:
+            True if token was successfully refreshed, False otherwise
+        """
+        logger.warning("Access token expired (%s), refreshing...",
+                        self._extract_api_error_details(response))
+        if self.refresh_access_token():
+            return True
+        if self.authenticate():
+            return True
+        logger.error("Re-authentication failed")
+        return False
+
     def authenticate(self) -> bool:
         """
         Authenticate with KSeF API using authorization token
@@ -195,9 +276,9 @@ class KSeFClient:
         except Exception as e:
             logger.error(f"Failed to get challenge: {e}")
             if hasattr(e, 'response') and e.response is not None:
-                logger.error(f"Response status: {e.response.status_code}")
+                logger.error(f"API error: {self._extract_api_error_details(e.response)}")
             return None
-    
+
     def _fetch_public_key(self):
         """
         Fetch KSeF public key for token encryption
@@ -277,9 +358,9 @@ class KSeFClient:
         except Exception as e:
             logger.error(f"Token authentication failed: {e}")
             if hasattr(e, 'response') and e.response is not None:
-                logger.error(f"Response status: {e.response.status_code}")
+                logger.error(f"API error: {self._extract_api_error_details(e.response)}")
             return None
-    
+
     def _wait_for_auth_status(self, reference_number: str, authentication_token: str, max_attempts: int = 15) -> bool:
         """
         Wait for authentication to complete with exponential backoff.
@@ -371,9 +452,9 @@ class KSeFClient:
         except Exception as e:
             logger.error(f"Token redemption failed: {e}")
             if hasattr(e, 'response') and e.response is not None:
-                logger.error(f"Response status: {e.response.status_code}")
+                logger.error(f"API error: {self._extract_api_error_details(e.response)}")
             return False
-    
+
     def refresh_access_token(self) -> bool:
         """
         Refresh access token using refresh token
@@ -408,8 +489,14 @@ class KSeFClient:
     
     def get_invoices_metadata(self, date_from: datetime, date_to: datetime, subject_type: str) -> List[Dict]:
         """
-        Get invoice metadata from KSeF
+        Get invoice metadata from KSeF with full pagination support.
         Endpoint: POST /v2/invoices/query/metadata
+
+        Pagination algorithm (per KSeF API spec):
+        - hasMore=false: done
+        - hasMore=true, isTruncated=false: increment pageOffset
+        - hasMore=true, isTruncated=true: narrow dateRange.from to last
+          invoice's date, reset pageOffset=0 (10,000 record limit hit)
 
         Args:
             date_from: Start date for invoice search
@@ -428,68 +515,123 @@ class KSeFClient:
 
             url = f"{self.base_url}/{self.API_VERSION}/invoices/query/metadata"
 
-            headers = {
-                "Content-Type": "application/json",
-                "Authorization": f"Bearer {self.access_token}"
-            }
-
             # Format dates for KSeF API (ISO 8601 in UTC)
-            # Convert timezone-aware datetimes to UTC if needed
             if date_from.tzinfo is not None:
                 from datetime import timezone
                 date_from_utc = date_from.astimezone(timezone.utc)
                 date_to_utc = date_to.astimezone(timezone.utc)
             else:
-                # Naive datetime - assume it's already in the correct timezone
                 date_from_utc = date_from
                 date_to_utc = date_to
 
             date_from_str = date_from_utc.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
             date_to_str = date_to_utc.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
 
+            # Request body contains filters (pageSize/pageOffset are query params per spec)
             payload = {
                 "subjectType": subject_type,
                 "dateRange": {
                     "dateType": self.date_type,
-                    "From": date_from_str,
-                    "To": date_to_str
-                },
-                "pageSize": 100,
-                "pageOffset": 0
+                    "from": date_from_str,
+                    "to": date_to_str
+                }
             }
 
-            logger.info(f"Querying invoices [{subject_type}] from {date_from_str} to {date_to_str}")
-            
-            response = self._request_with_retry("POST", url, json=payload, headers=headers, timeout=30)
+            logger.info("Querying invoices [%s] from %s to %s", subject_type, date_from_str, date_to_str)
 
-            # Handle token expiration
-            if response.status_code == 401:
-                logger.warning("Access token expired, refreshing...")
-                if self.refresh_access_token():
+            all_invoices: List[Dict] = []
+            page_offset = 0
+            current_from_str = date_from_str
+            date_field = self._DATE_TYPE_TO_FIELD.get(self.date_type, "invoicingDate")
+
+            while len(all_invoices) < self.PAGINATION_MAX_RECORDS:
+                headers = {
+                    "Content-Type": "application/json",
+                    "Authorization": f"Bearer {self.access_token}"
+                }
+
+                params = {
+                    "pageSize": self.PAGINATION_PAGE_SIZE,
+                    "pageOffset": page_offset,
+                    "sortOrder": "Asc"
+                }
+
+                # Update dateRange.from for truncation narrowing
+                payload["dateRange"]["from"] = current_from_str
+
+                response = self._request_with_retry(
+                    "POST", url, json=payload, headers=headers,
+                    params=params, timeout=30
+                )
+
+                # Handle token expiration inside pagination loop
+                if response.status_code == 401:
+                    if not self._handle_401_refresh(response):
+                        return all_invoices  # return what we have so far
                     headers["Authorization"] = f"Bearer {self.access_token}"
-                    response = self._request_with_retry("POST", url, json=payload, headers=headers, timeout=30)
-                elif self.authenticate():
-                    headers["Authorization"] = f"Bearer {self.access_token}"
-                    response = self._request_with_retry("POST", url, json=payload, headers=headers, timeout=30)
+                    response = self._request_with_retry(
+                        "POST", url, json=payload, headers=headers,
+                        params=params, timeout=30
+                    )
+
+                response.raise_for_status()
+
+                data = response.json()
+                page_invoices = data.get("invoices", [])
+                has_more = data.get("hasMore", False)
+                is_truncated = data.get("isTruncated", False)
+
+                all_invoices.extend(page_invoices)
+
+                logger.info(
+                    "Page %d: %d invoices (total: %d, hasMore: %s, isTruncated: %s)",
+                    page_offset, len(page_invoices), len(all_invoices),
+                    has_more, is_truncated
+                )
+
+                if not has_more:
+                    break
+
+                if is_truncated:
+                    # Hit 10,000 record limit — narrow dateRange using last record's date
+                    if not page_invoices:
+                        logger.error("isTruncated=true but no invoices returned — aborting pagination")
+                        break
+                    last_invoice = page_invoices[-1]
+                    last_date = last_invoice.get(date_field)
+                    if not last_date:
+                        logger.error(
+                            "Cannot narrow dateRange: field '%s' missing in last invoice — aborting",
+                            date_field
+                        )
+                        break
+                    logger.info(
+                        "Truncation limit reached — narrowing dateRange.from to %s (field: %s)",
+                        last_date, date_field
+                    )
+                    current_from_str = last_date
+                    page_offset = 0
                 else:
-                    logger.error("Re-authentication failed")
-                    return []
-            
-            response.raise_for_status()
-            
-            data = response.json()
-            invoices = data.get('invoices', [])
-            
-            logger.info(f"Found {len(invoices)} invoice(s)")
-            return invoices
-            
+                    # More pages available — increment pageOffset
+                    page_offset += 1
+
+            if len(all_invoices) >= self.PAGINATION_MAX_RECORDS:
+                logger.warning(
+                    "Safety limit reached: %d records fetched (max: %d). "
+                    "Some invoices may be missing.",
+                    len(all_invoices), self.PAGINATION_MAX_RECORDS
+                )
+
+            logger.info("Found %d invoice(s) total", len(all_invoices))
+            return all_invoices
+
         except requests.exceptions.RequestException as e:
-            logger.error(f"Failed to get invoices: {e}")
+            logger.error("Failed to get invoices: %s", e)
             if hasattr(e, 'response') and e.response is not None:
-                logger.error(f"Response status: {e.response.status_code}")
+                logger.error("API error: %s", self._extract_api_error_details(e.response))
             return []
         except Exception as e:
-            logger.error(f"Unexpected error while getting invoices: {e}")
+            logger.error("Unexpected error while getting invoices: %s", e)
             return []
     
     def get_current_sessions(self) -> List[Dict]:
@@ -589,16 +731,10 @@ class KSeFClient:
 
             # Handle token expiration
             if response.status_code == 401:
-                logger.warning("Access token expired, refreshing...")
-                if self.refresh_access_token():
-                    headers["Authorization"] = f"Bearer {self.access_token}"
-                    response = self._request_with_retry("GET", url, headers=headers, timeout=30)
-                elif self.authenticate():
-                    headers["Authorization"] = f"Bearer {self.access_token}"
-                    response = self._request_with_retry("GET", url, headers=headers, timeout=30)
-                else:
-                    logger.error("Re-authentication failed")
+                if not self._handle_401_refresh(response):
                     return None
+                headers["Authorization"] = f"Bearer {self.access_token}"
+                response = self._request_with_retry("GET", url, headers=headers, timeout=30)
 
             response.raise_for_status()
 
@@ -619,7 +755,7 @@ class KSeFClient:
         except requests.exceptions.RequestException as e:
             logger.error(f"Failed to get invoice XML: {e}")
             if hasattr(e, 'response') and e.response is not None:
-                logger.error(f"Response status: {e.response.status_code}")
+                logger.error(f"API error: {self._extract_api_error_details(e.response)}")
             return None
         except Exception as e:
             logger.error(f"Unexpected error while getting invoice XML: {e}")
@@ -655,16 +791,10 @@ class KSeFClient:
 
             # Handle token expiration
             if response.status_code == 401:
-                logger.warning("Access token expired, refreshing...")
-                if self.refresh_access_token():
-                    headers["Authorization"] = f"Bearer {self.access_token}"
-                    response = self._request_with_retry("GET", url, headers=headers, timeout=30)
-                elif self.authenticate():
-                    headers["Authorization"] = f"Bearer {self.access_token}"
-                    response = self._request_with_retry("GET", url, headers=headers, timeout=30)
-                else:
-                    logger.error("Re-authentication failed")
+                if not self._handle_401_refresh(response):
                     return None
+                headers["Authorization"] = f"Bearer {self.access_token}"
+                response = self._request_with_retry("GET", url, headers=headers, timeout=30)
 
             if response.status_code == 404:
                 logger.info(f"No UPO available for {ksef_number}")
@@ -683,7 +813,7 @@ class KSeFClient:
         except requests.exceptions.RequestException as e:
             logger.error(f"Failed to get UPO: {e}")
             if hasattr(e, 'response') and e.response is not None:
-                logger.error(f"Response status: {e.response.status_code}")
+                logger.error(f"API error: {self._extract_api_error_details(e.response)}")
             return None
         except Exception as e:
             logger.error(f"Unexpected error while getting UPO: {e}")
