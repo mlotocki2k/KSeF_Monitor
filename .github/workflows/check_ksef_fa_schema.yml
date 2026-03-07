@@ -1,0 +1,336 @@
+name: "Check KSeF FA invoice schema changes"
+
+on:
+  schedule:
+    - cron: "10 22 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: check-ksef-fa-schema
+  cancel-in-progress: true
+
+jobs:
+  check-schema:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - schema_name: "FA(3)_v1-0E"
+            source_url: "http://crd.gov.pl/wzor/2025/06/25/13775/schemat.xsd"
+            github_url: "https://raw.githubusercontent.com/CIRFMF/ksef-docs/main/faktury/schemy/FA/schemat_FA(3)_v1-0E.xsd"
+            local_file: "spec/schemat_FA(3)_v1-0E.xsd"
+          - schema_name: "FA(2)_v1-0E"
+            source_url: "http://crd.gov.pl/wzor/2023/06/29/12648/schemat.xsd"
+            github_url: "https://raw.githubusercontent.com/CIRFMF/ksef-docs/main/faktury/schemy/FA/schemat_FA(2)_v1-0E.xsd"
+            local_file: ""
+
+    steps:
+      - name: Checkout test branch
+        uses: actions/checkout@v4
+        with:
+          ref: test
+
+      - name: Fetch schema from CRD (${{ matrix.schema_name }})
+        id: fetch_crd
+        shell: bash
+        run: |
+          set -euo pipefail
+          HTTP_CODE=$(curl -fsSL -w '%{http_code}' "${{ matrix.source_url }}" -o crd-schema.xsd 2>/dev/null || true)
+
+          if [ ! -s crd-schema.xsd ]; then
+            echo "fetch_ok=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Failed to fetch schema from CRD (HTTP $HTTP_CODE)"
+            exit 0
+          fi
+
+          echo "fetch_ok=true" >> "$GITHUB_OUTPUT"
+          echo "crd_sha=$(sha256sum crd-schema.xsd | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+
+      - name: Fetch schema from CIRFMF/ksef-docs (${{ matrix.schema_name }})
+        id: fetch_github
+        shell: bash
+        run: |
+          set -euo pipefail
+          HTTP_CODE=$(curl -fsSL -w '%{http_code}' "${{ matrix.github_url }}" -o github-schema.xsd 2>/dev/null || true)
+
+          if [ ! -s github-schema.xsd ]; then
+            echo "fetch_ok=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Failed to fetch schema from CIRFMF/ksef-docs (HTTP $HTTP_CODE)"
+            exit 0
+          fi
+
+          echo "fetch_ok=true" >> "$GITHUB_OUTPUT"
+          echo "github_sha=$(sha256sum github-schema.xsd | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+
+      - name: Compute local schema hash
+        id: local
+        shell: bash
+        run: |
+          set -euo pipefail
+          FILE="${{ matrix.local_file }}"
+          if [ -z "$FILE" ] || [ ! -f "$FILE" ]; then
+            echo "local_exists=false" >> "$GITHUB_OUTPUT"
+            echo "local_sha=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "local_exists=true" >> "$GITHUB_OUTPUT"
+          echo "local_sha=$(sha256sum "$FILE" | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+
+      - name: Compare schemas
+        id: cmp
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          CRD_OK="${{ steps.fetch_crd.outputs.fetch_ok }}"
+          CRD_SHA="${{ steps.fetch_crd.outputs.crd_sha }}"
+          GH_OK="${{ steps.fetch_github.outputs.fetch_ok }}"
+          GH_SHA="${{ steps.fetch_github.outputs.github_sha }}"
+          LOCAL_EXISTS="${{ steps.local.outputs.local_exists }}"
+          LOCAL_SHA="${{ steps.local.outputs.local_sha }}"
+
+          CHANGED="false"
+          REASONS=""
+
+          # Check CRD vs local
+          if [ "$CRD_OK" = "true" ] && [ "$LOCAL_EXISTS" = "true" ]; then
+            if [ "$CRD_SHA" != "$LOCAL_SHA" ]; then
+              CHANGED="true"
+              REASONS="${REASONS}crd_differs "
+            fi
+          elif [ "$CRD_OK" = "true" ] && [ "$LOCAL_EXISTS" != "true" ]; then
+            CHANGED="true"
+            REASONS="${REASONS}local_missing "
+          fi
+
+          # Check GitHub vs local
+          if [ "$GH_OK" = "true" ] && [ "$LOCAL_EXISTS" = "true" ]; then
+            if [ "$GH_SHA" != "$LOCAL_SHA" ]; then
+              CHANGED="true"
+              REASONS="${REASONS}github_differs "
+            fi
+          fi
+
+          # Check CRD vs GitHub (cross-source discrepancy)
+          if [ "$CRD_OK" = "true" ] && [ "$GH_OK" = "true" ]; then
+            if [ "$CRD_SHA" != "$GH_SHA" ]; then
+              REASONS="${REASONS}sources_differ "
+            fi
+          fi
+
+          echo "changed=$CHANGED" >> "$GITHUB_OUTPUT"
+          echo "reasons=${REASONS:-same}" >> "$GITHUB_OUTPUT"
+
+      - name: Create or update issue if changed
+        if: steps.cmp.outputs.changed == 'true'
+        uses: actions/github-script@v7
+        env:
+          SCHEMA_NAME: ${{ matrix.schema_name }}
+          SOURCE_URL: ${{ matrix.source_url }}
+          GITHUB_SCHEMA_URL: ${{ matrix.github_url }}
+          LOCAL_FILE: ${{ matrix.local_file }}
+          CRD_SHA: ${{ steps.fetch_crd.outputs.crd_sha }}
+          GH_SHA: ${{ steps.fetch_github.outputs.github_sha }}
+          LOCAL_EXISTS: ${{ steps.local.outputs.local_exists }}
+          LOCAL_SHA: ${{ steps.local.outputs.local_sha }}
+          REASONS: ${{ steps.cmp.outputs.reasons }}
+        with:
+          script: |
+            const schemaName = process.env.SCHEMA_NAME;
+            const sourceUrl = process.env.SOURCE_URL;
+            const githubUrl = process.env.GITHUB_SCHEMA_URL;
+            const localFile = process.env.LOCAL_FILE;
+            const crdSha = process.env.CRD_SHA || "(fetch failed)";
+            const ghSha = process.env.GH_SHA || "(fetch failed)";
+            const localExists = process.env.LOCAL_EXISTS;
+            const localSha = process.env.LOCAL_SHA || "(brak pliku)";
+            const reasons = process.env.REASONS;
+
+            const title = `KSeF FA schema changed — ${schemaName}`;
+
+            const body = [
+              `Wykryto zmianę w schemacie faktury **${schemaName}** względem \`${localFile || "(brak lokalnego pliku)"}\`.`,
+              "",
+              `| Source | SHA256 |`,
+              `|---|---|`,
+              `| **Local** | \`${localSha}\` |`,
+              `| **CRD (gov.pl)** | \`${crdSha}\` |`,
+              `| **CIRFMF/ksef-docs** | \`${ghSha}\` |`,
+              "",
+              `- **CRD URL:** ${sourceUrl}`,
+              `- **GitHub URL:** ${githubUrl}`,
+              `- **Powód:** ${reasons}`,
+              "",
+              "Sugestia:",
+              `- pobierz aktualny schemat i zaktualizuj \`${localFile || "spec/"}\`.`,
+              "- sprawdź czy zmiany wpływają na parser XML w `invoice_pdf_generator.py`.",
+              "- jeśli zmienił się namespace, zaktualizuj odwołania w kodzie."
+            ].join("\n");
+
+            const searchTitle = `KSeF FA schema changed — ${schemaName}`;
+            const { data: issues } = await github.rest.search.issuesAndPullRequests({
+              q: `repo:${context.repo.owner}/${context.repo.repo} is:issue is:open in:title "${searchTitle}"`
+            });
+
+            if (issues.items.length > 0) {
+              const issue_number = issues.items[0].number;
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number,
+                body
+              });
+            } else {
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title,
+                body,
+                labels: ["ksef-api"]
+              });
+            }
+
+      - name: Send Pushover notification if changed
+        if: steps.cmp.outputs.changed == 'true'
+        shell: bash
+        env:
+          PUSHOVER_TOKEN: ${{ secrets.PUSHOVER_APP_TOKEN }}
+          PUSHOVER_USER: ${{ secrets.PUSHOVER_USER_KEY }}
+        run: |
+          if [ -z "$PUSHOVER_TOKEN" ] || [ -z "$PUSHOVER_USER" ]; then
+            echo "::warning::Pushover secrets not configured — skipping notification"
+            exit 0
+          fi
+
+          SCHEMA="${{ matrix.schema_name }}"
+          REASONS="${{ steps.cmp.outputs.reasons }}"
+
+          TITLE="KSeF FA schema changed — ${SCHEMA}"
+          MESSAGE="Schemat faktury ${SCHEMA} zmienił się. Powód: ${REASONS}. Sprawdź wpływ na parser XML i namespace."
+
+          curl -s \
+            --form-string "token=$PUSHOVER_TOKEN" \
+            --form-string "user=$PUSHOVER_USER" \
+            --form-string "title=$TITLE" \
+            --form-string "message=$MESSAGE" \
+            --form-string "priority=0" \
+            --form-string "url=https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            --form-string "url_title=GitHub Actions run" \
+            https://api.pushover.net/1/messages.json
+
+      - name: Check for new schema versions in CIRFMF/ksef-docs
+        id: new_versions
+        if: matrix.schema_name == 'FA(3)_v1-0E'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # List all FA schemas in CIRFMF/ksef-docs
+          SCHEMAS=$(curl -fsSL "https://api.github.com/repos/CIRFMF/ksef-docs/contents/faktury/schemy/FA" 2>/dev/null \
+            | python3 -c "
+          import sys, json
+          items = json.load(sys.stdin)
+          for item in items:
+              if item['name'].endswith('.xsd'):
+                  print(item['name'])
+          " 2>/dev/null || echo "")
+
+          KNOWN_SCHEMAS="schemat_FA(2)_v1-0E.xsd schemat_FA(3)_v1-0E.xsd"
+          NEW_FOUND=""
+
+          for schema in $SCHEMAS; do
+            IS_KNOWN=false
+            for known in $KNOWN_SCHEMAS; do
+              if [ "$schema" = "$known" ]; then
+                IS_KNOWN=true
+                break
+              fi
+            done
+            if [ "$IS_KNOWN" = "false" ]; then
+              NEW_FOUND="${NEW_FOUND}${schema} "
+            fi
+          done
+
+          if [ -n "$NEW_FOUND" ]; then
+            echo "found=true" >> "$GITHUB_OUTPUT"
+            echo "schemas=$NEW_FOUND" >> "$GITHUB_OUTPUT"
+            echo "::warning::New FA schemas found: $NEW_FOUND"
+          else
+            echo "found=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create issue for new schema version
+        if: steps.new_versions.outputs.found == 'true'
+        uses: actions/github-script@v7
+        env:
+          NEW_SCHEMAS: ${{ steps.new_versions.outputs.schemas }}
+        with:
+          script: |
+            const newSchemas = process.env.NEW_SCHEMAS.trim();
+            const title = "New KSeF FA schema version detected";
+
+            const body = [
+              "Wykryto nową wersję schematu faktury w repozytorium CIRFMF/ksef-docs:",
+              "",
+              `\`${newSchemas}\``,
+              "",
+              "- Repo: https://github.com/CIRFMF/ksef-docs/tree/main/faktury/schemy/FA",
+              "",
+              "Sugestia:",
+              "- pobierz nowy schemat do `spec/`",
+              "- sprawdź zmiany namespace i wpływ na `invoice_pdf_generator.py`",
+              "- zaktualizuj workflow `check_ksef_fa_schema.yml` o nową wersję"
+            ].join("\n");
+
+            const { data: issues } = await github.rest.search.issuesAndPullRequests({
+              q: `repo:${context.repo.owner}/${context.repo.repo} is:issue is:open in:title "${title}"`
+            });
+
+            if (issues.items.length === 0) {
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title,
+                body,
+                labels: ["ksef-api"]
+              });
+            }
+
+      - name: Notify Pushover about new schema version
+        if: steps.new_versions.outputs.found == 'true'
+        shell: bash
+        env:
+          PUSHOVER_TOKEN: ${{ secrets.PUSHOVER_APP_TOKEN }}
+          PUSHOVER_USER: ${{ secrets.PUSHOVER_USER_KEY }}
+        run: |
+          if [ -z "$PUSHOVER_TOKEN" ] || [ -z "$PUSHOVER_USER" ]; then
+            exit 0
+          fi
+
+          curl -s \
+            --form-string "token=$PUSHOVER_TOKEN" \
+            --form-string "user=$PUSHOVER_USER" \
+            --form-string "title=New KSeF FA schema version" \
+            --form-string "message=Nowa wersja schematu FA w CIRFMF/ksef-docs: ${{ steps.new_versions.outputs.schemas }}" \
+            --form-string "priority=1" \
+            --form-string "url=https://github.com/CIRFMF/ksef-docs/tree/main/faktury/schemy/FA" \
+            --form-string "url_title=CIRFMF schemas" \
+            https://api.pushover.net/1/messages.json
+
+      - name: Summary
+        if: always()
+        run: |
+          SCHEMA="${{ matrix.schema_name }}"
+          CHANGED="${{ steps.cmp.outputs.changed }}"
+          REASONS="${{ steps.cmp.outputs.reasons }}"
+          echo "### $SCHEMA" >> $GITHUB_STEP_SUMMARY
+          echo "- Changed: ${CHANGED:-skipped}" >> $GITHUB_STEP_SUMMARY
+          echo "- Reasons: ${REASONS:-n/a}" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ steps.new_versions.outputs.found }}" = "true" ]; then
+            echo "- **New schemas found:** ${{ steps.new_versions.outputs.schemas }}" >> $GITHUB_STEP_SUMMARY
+          fi

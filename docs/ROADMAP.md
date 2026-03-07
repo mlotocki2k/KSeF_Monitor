@@ -37,8 +37,12 @@
 - [x] Path traversal guard na wynikowej ścieżce
 - [x] Backward compatible: pusty string = flat directory (zachowanie domyślne)
 
-### 4) Przeniesienie informacji o fakturach do bazy
-- model danych rozdzielony “per subject, per NIP”
+### 4) Safecheck na overwrite plików
+- [ ] Sprawdzanie czy plik (XML/PDF/UPO) już istnieje przed zapisem
+- [ ] Strategia: skip / rename / overwrite (konfiguracja)
+
+### 5) Przeniesienie informacji o fakturach do bazy
+- model danych rozdzielony "per subject, per NIP"
 - indeksy pod najczęstsze zapytania (np. subject + nip + timestamp)
 - migracja: zapis przy pobraniu/detekcji faktury
 
@@ -47,25 +51,60 @@
 
 ---
 
+## Infrastruktura i jakość ✅ (zrobione w ramach v0.3)
+Poprawki niezwiązane z konkretnymi feature'ami, ale krytyczne dla stabilności:
+
+### Bezpieczeństwo
+- [x] Security audit: 22 findings (C1-C2, H1-H5, M1-M8, L1-L3) — naprawione
+- [x] Re-audit: Docker hardening (M7, L1, N1-N5)
+- [x] SHA-256 deduplication (zamiast MD5) w `seen_invoices`
+- [x] Atomic state write (`last_check.json` — tmp + rename + fsync)
+- [x] Path traversal guards w `_resolve_output_dir()` i `_save_invoice_artifacts()`
+- [x] Input sanitization (`_sanitize_field()`) w template context
+
+### KSeF API client (#13-#17)
+- [x] **#13** Pełna paginacja `get_invoices_metadata()` — `hasMore`/`isTruncated`, max 250/page, safety limit 10 000
+- [x] **#14** Cap `dateRange` do 90 dni (KSeF API 3-month limit) z WARNING
+- [x] **#15** `_extract_api_error_details()` — parsowanie `problem+json` i `ExceptionResponse`
+- [x] **#15** `_handle_401_refresh()` — deduplikacja obsługi wygasłego tokena
+- [x] **#16** Aktualizacja `spec/openapi.json` → KSeF API v2.2.0
+- [x] **#17** Logowanie `authenticationMethodInfo` na DEBUG (zastępuje deprecated `authenticationMethod`)
+- [x] Fix: `pageSize`/`pageOffset` jako query params (nie body) — zgodność ze specyfikacją
+- [x] Fix: `dateRange` lowercase `from`/`to` (nie `From`/`To`)
+- [x] Warning przy naive datetime w state file
+
+### Docker i CI
+- [x] Entrypoint z dynamicznym ownership (`gosu`)
+- [x] Named volume + config mount separation (`/config` vs `/data`)
+- [x] 429 retry z backoff + parsowanie `Retry-After` (HTTP-date i sekundy)
+- [x] KSeF number validation regex
+- [x] CI: build & push Docker image (test + main)
+- [x] CI: automatyczne sprawdzanie outdated Python packages → issue + PR
+- [x] CI: sprawdzanie zmian OpenAPI spec KSeF (3 środowiska: test, demo, production) z Pushover notification
+- [x] Deprecated `datetime.utcnow()` → `datetime.now(timezone.utc)`
+- [x] `prometheus-client` 0.23.1 → 0.24.1
+
+---
+
 ## v0.4 (Stabilizacja + API pod UI) — propozycja
 **Cel:** przygotować solidne backend API i jakość pod web UI + initial load
 
-- Warstwa API dla UI  
-  - endpointy: statystyki / lista / szczegóły / podgląd  
+- Warstwa API dla UI
+  - endpointy: statystyki / lista / szczegóły / podgląd
   - paginacja, sortowanie, filtrowanie (subject, nip, role: sprzedawca/kupujący, daty)
-- Idempotencja i deduplikacja  
+- Idempotencja i deduplikacja
   - klucz unikalny faktury, retry-safe zapisy
-- Obsługa błędów i retry  
+- Obsługa błędów i retry
   - polityka retry dla KSeF, timeouts, backoff
-- Metryki + logi “operacyjne”  
+- Metryki + logi "operacyjne"
   - liczba nowych faktur/okno czasowe, błędy API, czasy odpowiedzi
-- Testy i CI  
-  - testy jednostkowe logiki DB + templating  
+- Testy i CI
+  - testy jednostkowe logiki DB + templating
   - testy integracyjne (mock KSeF / sandbox)
-- Szkielet uprawnień  
+- Szkielet uprawnień
   - podstawowe auth (np. token) dla web UI/admin
 
-**Zależności:** v0.3  
+**Zależności:** v0.3
 **DoD:** UI może bazować na stabilnym API; system jest odporny na retry i ma podstawową telemetrię operacyjną.
 
 ---
@@ -82,9 +121,17 @@
 - pokazywanie ile ogólnie faktur: **per subject, per NIP** (sprzedawcy i kupującego)
 - lista wszystkich faktur (z bazy): filtry/sort/paginacja
 - podgląd wybranej faktury: pobranie po API z KSeF konkretnej faktury (z cache, jeśli już jest)
+- możliwość zaznaczenia jednej lub wielu faktur do wygenerowania PDF
 
-**Zależności:** v0.4  
+**Zależności:** v0.4
 **DoD:** użytkownik widzi dashboard + listę + podgląd; initial load działa powtarzalnie bez duplikatów.
+
+---
+
+## v0.7 (Auto-update)
+**Cel:** wbudowany mechanizm aktualizacji bez potrzeby aktualizowania całego obrazu Docker
+
+**Zależności:** v0.5
 
 ---
 
@@ -92,12 +139,14 @@
 **Cel:** samodzielna konfiguracja bez grzebania w plikach
 
 **Panel konfiguracji:**
-- konfiguracja schedulera (częstotliwość, okna czasowe, tryb “catch-up”)
+- konfiguracja schedulera (częstotliwość, okna czasowe, tryb "catch-up")
 - konfiguracja notifiera (kanały, template, routing per subject/NIP)
 - konfiguracja Prometheusa (enable/disable, port, ścieżka, metryki)
 - konfiguracja MQ (połączenie, retry policy, DLQ jeśli używacie)
+- konfiguracja nazw plików (pattern, prefix)
+- konfiguracja folderów (folder_structure, output_dir)
 
-**Zależności:** v0.5  
+**Zależności:** v0.5
 **DoD:** wszystko da się skonfigurować z UI, a zmiany wchodzą w życie bez ręcznych edycji configów (lub z kontrolowanym restartem usługi).
 
 ---
@@ -111,12 +160,20 @@
 - notifier: routing per NIP
 - monitoring: metryki per NIP
 
-**Zależności:** v1.0  
+**Zależności:** v1.0
 **DoD:** można dodać drugi NIP i wszystko (import, lista, powiadomienia, metryki) działa niezależnie.
+
+---
+
+## Do rozważenia
+- GUI do pobierania faktur przed v0.5?
+- Wystawienie endpointu dla Message Queue (MQ)
+- Moduł sprawdzania `schemat_FA` — czy istnieje nowa wersja XSD i czy wpływa na aplikację
+- ~~Moduł sprawdzania `openapi.json` czy jest nowy~~ → zrobione (CI workflow, 3 środowiska + Pushover)
 
 ---
 
 ## Kluczowe zależności (krótko)
 - **DB (v0.3)** jest krytyczne przed sensownym UI (v0.5)
-- **API + stabilizacja (v0.4)** minimalizuje “dług” zanim dojdzie UI
+- **API + stabilizacja (v0.4)** minimalizuje "dług" zanim dojdzie UI
 - **Initial load (v0.5)** najlepiej robić dopiero gdy masz deduplikację/idempotencję (v0.4)
