@@ -93,10 +93,13 @@ KSeF_Monitor/
 ├── docker-compose.env.yml       # Docker Compose with .env
 ├── docker-compose.secrets.yml   # Docker Compose with secrets
 ├── LICENSE                      # MIT License
-└── README.md                    # This file
+├── README.md                    # This file
+└── data/                        # Runtime data (auto-created, gitignored)
+    ├── last_check.json          # Application state
+    └── invoices/                # Saved invoices (XML, PDF, UPO)
 ```
 
-Katalog `data/` powstaje w runtime i zawiera plik stanu `last_check.json`.
+Katalog `data/` powstaje w runtime i zawiera plik stanu `last_check.json` oraz zapisane faktury (jeśli `storage.save_xml` lub `storage.save_pdf` jest włączone).
 
 ---
 
@@ -311,11 +314,12 @@ Pełna dokumentacja: [docs/NOTIFICATIONS.md](docs/NOTIFICATIONS.md)
 
 | Pole | Default | Opis |
 |---|---|---|
-| `subject_types` | `["Subject1", "Subject2"]` | Typy faktur do monitorowania. `Subject1` = sprzedażowe (Ty = sprzedawca), `Subject2` = zakupowe (Ty = nabywca). Jedno zapytanie API na każdy typ. |
+| `subject_types` | `["Subject1"]` | Typy faktur do monitorowania. `Subject1` = sprzedażowe (Ty = sprzedawca), `Subject2` = zakupowe (Ty = nabywca). Jedno zapytanie API na każdy typ. |
 | `date_type` | `"Invoicing"` | Typ daty w zakresie zapytania. Dozwolone wartości: `Issue` (data wystawienia), `Invoicing` (data przyjęcia w KSeF), `PermanentStorage` (data trwałego zapisu). Fallback na `Invoicing` przy niepoprawnej wartości. |
 | `timezone` | `"Europe/Warsaw"` | Strefa czasowa używana do wszystkich operacji z datami. Nazwa według standardu IANA (np. `Europe/Warsaw`, `America/New_York`). Zobacz [listę stref czasowych](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones). Fallback na `Europe/Warsaw` przy niepoprawnej wartości. |
-| `message_priority` | `0` | Priority powiadomień Pushover dla nowych faktur. `-2` cisza \| `-1` cicho \| `0` normalne \| `1` wysoka \| `2` pilne (wymaga potwierdzenia). Fallback na `0`. |
-| `test_notification` | `false` | Jeśli `true` — wysyła testowe powiadomienie przy starcie aplikacji. |
+| `logging_level` | `"INFO"` | Poziom logowania. Dozwolone wartości: `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`. |
+
+**Uwaga:** Pola `message_priority` i `test_notification` zostały przeniesione do sekcji `notifications`. Stary zapis w `monitoring` nadal działa (backwards compatibility), ale zalecana lokalizacja to `notifications`.
 
 ### Sekcja `schedule`
 
@@ -609,7 +613,8 @@ Autentykacja (metoda `KSeFClient.authenticate()`) składa się z 5 kroków:
 
 4.  GET   /v2/auth/{referenceNumber}
         header: Authorization: Bearer <authenticationToken.token>
-        → polling co 2s, aż status.code == 200  (max 10 prób)
+        → polling z eksponencjalnym backoff (1s, 2s, 4s, 8s, max 10s)
+          aż status.code == 200 (max 15 prób)
 
 5.  POST  /v2/auth/token/redeem
         header: Authorization: Bearer <authenticationToken.token>
@@ -647,7 +652,7 @@ Endpoint: `POST /v2/invoices/query/metadata`
 Przykładowy request:
 
 ```
-POST /v2/invoices/query/metadata?pageSize=250&pageOffset=0
+POST /v2/invoices/query/metadata?pageSize=250&pageOffset=0&sortOrder=Asc
 ```
 
 Body:
@@ -685,6 +690,7 @@ Wszystkie kanały otrzymują te same tytuły:
 Do: <nazwa nabywcy> - NIP <NIP>
 Nr Faktury: <numer faktury>
 Data: <data wystawienia>
+Brutto: <kwota brutto>
 Numer KSeF: <numer KSeF>
 ```
 
@@ -694,6 +700,7 @@ Numer KSeF: <numer KSeF>
 Od: <nazwa sprzedawcy> - NIP <NIP>
 Nr Faktury: ...
 Data: ...
+Brutto: ...
 Numer KSeF: ...
 ```
 
@@ -704,6 +711,7 @@ Od: <sprzedawca> - NIP ...
 Do: <nabywca>   - NIP ...
 Nr Faktury: ...
 Data: ...
+Brutto: ...
 Numer KSeF: ...
 ```
 
@@ -763,6 +771,7 @@ Plik `data/last_check.json` przechowuje stan między restartami:
 | `/v2/auth/sessions/current` | DELETE | Revoke sesji |
 | `/v2/invoices/query/metadata` | POST | Zapytanie o metadata faktur |
 | `/v2/invoices/ksef/{ksefNumber}` | GET | Pobranie XML faktury |
+| `/v2/invoices/upo/ksef/{ksefReferenceNumber}` | GET | Pobranie UPO (Urzędowe Poświadczenie Odbioru) |
 
 Dokumentacja API: https://api.ksef.mf.gov.pl/docs/v2/
 
@@ -799,6 +808,9 @@ python test_invoice_pdf.py 1234567890-20240101-ABCDEF123456-AB
 
 # Z własną nazwą pliku
 python test_invoice_pdf.py 1234567890-20240101-ABCDEF123456-AB -o moja_faktura.pdf
+
+# Z własnym plikiem konfiguracyjnym
+python test_invoice_pdf.py 1234567890-20240101-ABCDEF123456-AB -c /path/to/config.json
 
 # Tylko XML (bez PDF)
 python test_invoice_pdf.py 1234567890-20240101-ABCDEF123456-AB --xml-only
@@ -859,7 +871,7 @@ Przykład: `1234567890-20240101-ABCDEF123456-AB`
 - `NIP` - 10 cyfr
 - `YYYYMMDD` - data (8 cyfr)
 - `RANDOM` - identyfikator alfanumeryczny
-- `XX` - sufiks (2 wielkie litery)
+- `XX` - sufiks (2 znaki alfanumeryczne)
 
 ### Troubleshooting
 
@@ -891,13 +903,10 @@ python test_invoice_pdf.py 12345-20240101-ABCDEF123456-AB     # NIP za krótki
 ### Przyszłe funkcje (planowane)
 
 Funkcje które będą dodane w przyszłości:
-- 🔜 Automatyczne pobieranie PDF dla nowych faktur
-- 🔜 Katalog archiwum PDF (np. `invoices/2024/01/`)
+- 🔜 Katalog archiwum PDF z datową strukturą (np. `invoices/2024/01/`)
 - 🔜 Załączanie PDF do powiadomień email
 - 🔜 Batch download - pobieranie wielu faktur naraz
 - 🔜 CLI interaktywny do przeglądania i pobierania faktur
-- 🔜 Konfiguracja w config.json (auto-download, katalog docelowy)
-- 🔜 Metadane w PDF (QR kod KSeF, numer referencyjny)
 
 ---
 

@@ -13,29 +13,29 @@
 ## v0.3 (Fundament: templating + DB) — w trakcie
 **Cel:** ustandaryzować komunikację i zacząć trwale trzymać dane o fakturach
 
-### 1) Powiadomienia oparte o template ✅
-- [x] System szablonów Jinja2 z osobnym szablonem per kanał (5 szablonów)
-- [x] `TemplateRenderer` z custom filtrami (`money`, `money_raw`, `date`, `json_escape`)
-- [x] Możliwość podmiany szablonów przez użytkownika (`templates_dir` w config)
-- [x] Fallback na wbudowane domyślne szablony + plain text przy błędach
-- [x] Polskie formatowanie kwot (`,` separator dziesiętny, spacja tysięcy, kod waluty)
-- [x] Dokumentacja: [TEMPLATES.md](TEMPLATES.md) — zmienne, filtry, przykłady modyfikacji
+### 1) Powiadomienia oparte o template
+- [ ] System szablonów Jinja2 z osobnym szablonem per kanał (5 szablonów)
+- [ ] `TemplateRenderer` z custom filtrami (`money`, `money_raw`, `date`, `json_escape`)
+- [ ] Możliwość podmiany szablonów przez użytkownika (`templates_dir` w config)
+- [ ] Fallback na wbudowane domyślne szablony + plain text przy błędach
+- [ ] Polskie formatowanie kwot (`,` separator dziesiętny, spacja tysięcy, kod waluty)
+- [ ] Dokumentacja: [TEMPLATES.md](TEMPLATES.md) — zmienne, filtry, przykłady modyfikacji
 
-### 2) Template generowania obrazu faktury ✅
-- [x] HTML/CSS template (Jinja2) → render do PDF przez xhtml2pdf
-- [x] `InvoicePDFTemplateRenderer` z custom filtrami (`fmt_amt`, `vat_label`, `payment_method`)
-- [x] Możliwość podmiany szablonu przez użytkownika (`pdf_templates_dir` w config storage)
-- [x] Automatyczny fallback na ReportLab generator przy błędach lub braku xhtml2pdf
-- [x] Dynamiczne kolumny tabeli pozycji (warunkowe wyświetlanie)
-- [x] QR Code Type I jako base64 data URI w HTML
-- [x] Dokumentacja: [PDF_TEMPLATES.md](PDF_TEMPLATES.md) — zmienne, filtry, CSS customizacja
+### 2) Template generowania obrazu faktury
+- [ ] HTML/CSS template (Jinja2) → render do PDF przez xhtml2pdf
+- [ ] `InvoicePDFTemplateRenderer` z custom filtrami (`fmt_amt`, `vat_label`, `payment_method`)
+- [ ] Możliwość podmiany szablonu przez użytkownika (`pdf_templates_dir` w config storage)
+- [ ] Automatyczny fallback na ReportLab generator przy błędach lub braku xhtml2pdf
+- [ ] Dynamiczne kolumny tabeli pozycji (warunkowe wyświetlanie)
+- [ ] QR Code Type I jako base64 data URI w HTML
+- [ ] Dokumentacja: [PDF_TEMPLATES.md](PDF_TEMPLATES.md) — zmienne, filtry, CSS customizacja
 
-### 3) Formatowanie/zapisywanie (struktura folderów) ✅
-- [x] Konfigurowalna struktura folderów (`folder_structure` w config storage)
-- [x] Placeholdery: `{year}`, `{month}`, `{day}`, `{type}` (sprzedaz/zakup)
-- [x] Walidacja wzorca w config_manager (tylko dozwolone placeholdery)
-- [x] Path traversal guard na wynikowej ścieżce
-- [x] Backward compatible: pusty string = flat directory (zachowanie domyślne)
+### 3) Formatowanie/zapisywanie (struktura folderów)
+- [ ] Konfigurowalna struktura folderów (`folder_structure` w config storage)
+- [ ] Placeholdery: `{year}`, `{month}`, `{day}`, `{type}` (sprzedaz/zakup)
+- [ ] Walidacja wzorca w config_manager (tylko dozwolone placeholdery)
+- [ ] Path traversal guard na wynikowej ścieżce
+- [ ] Backward compatible: pusty string = flat directory (zachowanie domyślne)
 
 ### 4) Safecheck na overwrite plików
 - [ ] Sprawdzanie czy plik (XML/PDF/UPO) już istnieje przed zapisem
@@ -51,16 +51,15 @@
 
 ---
 
-## Infrastruktura i jakość ✅ (zrobione w ramach v0.3)
+## Infrastruktura i jakość (częściowo zrobione)
 Poprawki niezwiązane z konkretnymi feature'ami, ale krytyczne dla stabilności:
 
 ### Bezpieczeństwo
-- [x] Security audit: 22 findings (C1-C2, H1-H5, M1-M8, L1-L3) — naprawione
-- [x] Re-audit: Docker hardening (M7, L1, N1-N5)
-- [x] SHA-256 deduplication (zamiast MD5) w `seen_invoices`
-- [x] Atomic state write (`last_check.json` — tmp + rename + fsync)
-- [x] Path traversal guards w `_resolve_output_dir()` i `_save_invoice_artifacts()`
-- [x] Input sanitization (`_sanitize_field()`) w template context
+- [ ] Re-audit: Docker hardening (M7, L1, N1-N5)
+- [ ] SHA-256 deduplication (zamiast MD5) w `seen_invoices`
+- [ ] Atomic state write (`last_check.json` — tmp + rename + fsync)
+- [ ] Path traversal guards w `_resolve_output_dir()` i `_save_invoice_artifacts()`
+- [ ] Input sanitization (`_sanitize_field()`) w template context
 
 ### KSeF API client (#13-#17)
 - [x] **#13** Pełna paginacja `get_invoices_metadata()` — `hasMore`/`isTruncated`, max 250/page, safety limit 10 000
@@ -74,14 +73,14 @@ Poprawki niezwiązane z konkretnymi feature'ami, ale krytyczne dla stabilności:
 - [x] Warning przy naive datetime w state file
 
 ### Docker i CI
-- [x] Entrypoint z dynamicznym ownership (`gosu`)
-- [x] Named volume + config mount separation (`/config` vs `/data`)
+- [ ] Entrypoint z dynamicznym ownership (`gosu`)
+- [ ] Named volume + config mount separation (`/config` vs `/data`)
 - [x] 429 retry z backoff + parsowanie `Retry-After` (HTTP-date i sekundy)
 - [x] KSeF number validation regex
 - [x] CI: build & push Docker image (test + main)
 - [x] CI: automatyczne sprawdzanie outdated Python packages → issue + PR
 - [x] CI: sprawdzanie zmian OpenAPI spec KSeF (3 środowiska: test, demo, production) z Pushover notification
-- [x] Deprecated `datetime.utcnow()` → `datetime.now(timezone.utc)`
+- [ ] Deprecated `datetime.utcnow()` → `datetime.now(timezone.utc)`
 - [x] `prometheus-client` 0.23.1 → 0.24.1
 
 ### GitHub visibility & community
