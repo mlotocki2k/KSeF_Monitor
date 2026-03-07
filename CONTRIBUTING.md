@@ -1,4 +1,4 @@
-# Contributing to KSeF Invoice Monitor
+# Contributing to KSeF Monitor
 
 Thank you for your interest in contributing!
 
