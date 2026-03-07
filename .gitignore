@@ -42,8 +42,7 @@ faktura*.pdf
 faktura*.xml
 examples/test_output_*.pdf
 
-#workflows
-.github/
+# .github/ is tracked — workflows and community health files
 
 #TODO
 TODO.md

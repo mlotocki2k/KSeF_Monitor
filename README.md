@@ -2,6 +2,10 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
+[![Docker](https://img.shields.io/badge/Docker-ready-blue?logo=docker)](https://ghcr.io/mlotocki2k/ksef_monitor)
+[![KSeF API](https://img.shields.io/badge/KSeF_API-v2.1.2-green)](https://github.com/CIRFMF/ksef-docs)
+[![Prometheus](https://img.shields.io/badge/Prometheus-metrics-orange?logo=prometheus)](docs/PROJECT_STRUCTURE.md)
+[![GitHub Actions](https://img.shields.io/github/actions/workflow/status/mlotocki2k/KSeF_Monitor/docker-publish.yml?branch=test&label=build)](https://github.com/mlotocki2k/KSeF_Monitor/actions)
 
 Monitor faktur w Krajowym Systemie e-Faktur (KSeF). Aplikacja cyklicznie pobiera metadata faktur z API KSeF v2 i wysyła powiadomienia o nowych fakturach sprzedażowych i/lub zakupowych przez **5 kanałów notyfikacji** z **konfigurowalnym systemem szablonów Jinja2**.
 
@@ -13,6 +17,24 @@ Monitor faktur w Krajowym Systemie e-Faktur (KSeF). Aplikacja cyklicznie pobiera
 - 🔗 **Webhook** - generyczny HTTP endpoint
 
 Bazuje na oficjalnej specyfikacji API: https://github.com/CIRFMF/ksef-docs
+
+---
+
+## Quick Start
+
+```bash
+# 1. Pobierz obraz
+docker pull ghcr.io/mlotocki2k/ksef_monitor:latest
+
+# 2. Skopiuj i edytuj konfigurację
+cp examples/config.example.json config.json
+# Uzupełnij: NIP, token KSeF, kanały powiadomień
+
+# 3. Uruchom
+docker compose up -d
+```
+
+Szczegóły konfiguracji: [config.example.json](examples/config.example.json) | [README — Konfiguracja](#konfiguracja)
 
 ---
 

@@ -1,0 +1,23 @@
+[project]
+name = "ksef-monitor"
+version = "0.2.0"
+description = "Monitor faktur w Krajowym Systemie e-Faktur (KSeF) — polling API, powiadomienia multi-kanałowe, generowanie PDF"
+license = "MIT"
+requires-python = ">=3.9"
+keywords = ["ksef", "e-faktura", "invoice", "poland", "monitoring", "prometheus"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: System Administrators",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Office/Business :: Financial :: Accounting",
+]
+
+[project.urls]
+Homepage = "https://github.com/mlotocki2k/KSeF_Monitor"
+Repository = "https://github.com/mlotocki2k/KSeF_Monitor"
+Documentation = "https://github.com/mlotocki2k/KSeF_Monitor/tree/main/docs"
+Issues = "https://github.com/mlotocki2k/KSeF_Monitor/issues"
