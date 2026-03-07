@@ -21,3 +21,10 @@ Homepage = "https://github.com/mlotocki2k/KSeF_Monitor"
 Repository = "https://github.com/mlotocki2k/KSeF_Monitor"
 Documentation = "https://github.com/mlotocki2k/KSeF_Monitor/tree/main/docs"
 Issues = "https://github.com/mlotocki2k/KSeF_Monitor/issues"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "-v --tb=short"
