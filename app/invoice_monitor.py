@@ -34,6 +34,9 @@ class InvoiceMonitor:
     }
     DEFAULT_TITLE = "Nowa faktura w KSeF"
 
+    # KSeF API maximum dateRange is 3 months (90 days)
+    MAX_DATE_RANGE_DAYS = 90
+
     def __init__(self, config, ksef_client, notification_manager, prometheus_metrics=None):
         """
         Initialize invoice monitor
@@ -118,6 +121,11 @@ class InvoiceMonitor:
 
             # If datetime is naive, assume it's in configured timezone
             if dt.tzinfo is None and self.timezone:
+                logger.warning(
+                    "Naive datetime '%s' in state file — localizing to %s. "
+                    "KSeF API v2.1.2+ interprets naive dates as Europe/Warsaw.",
+                    date_string, self.timezone
+                )
                 dt = self.timezone.localize(dt)
             # If datetime has timezone info and we have a configured timezone, convert to it
             elif dt.tzinfo is not None and self.timezone:
@@ -127,6 +135,30 @@ class InvoiceMonitor:
         except (ValueError, TypeError) as e:
             logger.warning(f"Failed to parse datetime '{date_string}': {e}")
             raise
+
+    def _cap_date_from(self, date_from: datetime, now: datetime) -> datetime:
+        """
+        Cap date_from to now - MAX_DATE_RANGE_DAYS.
+
+        KSeF API v2.0.0+ limits dateRange to 3 months. If date_from is older,
+        cap it and log a warning about the skipped period.
+        """
+        max_lookback = now - timedelta(days=self.MAX_DATE_RANGE_DAYS)
+
+        if date_from < max_lookback:
+            skipped_days = (max_lookback - date_from).days
+            logger.warning(
+                "last_check is %d days old (%s) — exceeds KSeF API 3-month limit. "
+                "Capping date_from to %s. Invoices from the skipped period "
+                "(%d days) will NOT be fetched.",
+                (now - date_from).days,
+                date_from.isoformat(),
+                max_lookback.isoformat(),
+                skipped_days
+            )
+            return max_lookback
+
+        return date_from
 
     def load_state(self) -> Dict:
         """
@@ -202,6 +234,10 @@ class InvoiceMonitor:
             logger.info("First run - checking last 24 hours")
 
         date_to = now
+
+        # Cap date_from to max 90 days back (KSeF API 3-month limit)
+        date_from = self._cap_date_from(date_from, now)
+
         seen_invoices = set(state.get("seen_invoices", []))
         found_any = False
 

@@ -57,11 +57,11 @@ ksef-invoice-monitor/
 - `ConfigManager` - Manages application configuration
 
 ### `app/ksef_client.py`
-**KSeF API v2.0 integration**
+**KSeF API v2.1/v2.2 integration**
 
 Implements the full KSeF authentication flow:
 1. Challenge request
-2. Token authentication
+2. Token authentication (RSA-OAEP encryption)
 3. Status polling
 4. Token redemption
 5. Automatic token refresh
@@ -71,9 +71,12 @@ Implements the full KSeF authentication flow:
 
 **Key methods:**
 - `authenticate()` - Complete auth flow
-- `get_invoices_metadata()` - Query invoice metadata
+- `get_invoices_metadata()` - Query invoice metadata with full pagination (handles `hasMore`/`isTruncated`, max 250/page, safety limit 10,000 records)
+- `get_invoice_xml()` - Fetch invoice XML by KSeF number
 - `refresh_access_token()` - Refresh expired tokens
 - `revoke_current_session()` - Clean session termination
+- `_extract_api_error_details()` - Parse KSeF error responses (`problem+json` / `ExceptionResponse`)
+- `_handle_401_refresh()` - Token expiry recovery with detailed logging
 
 ### `app/pushover_notifier.py`
 **Push notification service**
@@ -95,8 +98,11 @@ Implements the full KSeF authentication flow:
 
 - Polls KSeF API at configured intervals
 - Tracks seen invoices to prevent duplicates
+- Caps `dateRange` to 90 days (KSeF API 3-month limit) with warning
+- Normalizes naive datetimes in state file with warning
 - Formats and sends notifications
-- Manages persistent state
+- Manages persistent state (`last_check.json`)
+- Saves invoice artifacts (XML, PDF, UPO)
 
 **Key class:**
 - `InvoiceMonitor` - Main monitoring service
@@ -104,7 +110,9 @@ Implements the full KSeF authentication flow:
 **Key methods:**
 - `run()` - Main monitoring loop
 - `check_for_new_invoices()` - Check and notify
+- `_cap_date_from()` - Cap date_from to 90 days (KSeF API limit)
 - `format_invoice_message()` - Format notification text
+- `_save_invoice_artifacts()` - Save PDF, XML, UPO
 - `shutdown()` - Graceful shutdown
 
 ## Data Flow
