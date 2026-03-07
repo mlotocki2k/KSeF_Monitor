@@ -41,8 +41,7 @@ invoice_*.xml
 faktura*.pdf
 faktura*.xml
 
-#workflows
-.github/
+# .github/ is tracked — workflows and community health files
 
 #TODO
 TODO.md

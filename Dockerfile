@@ -1,5 +1,11 @@
 FROM python:3.11-slim
 
+LABEL org.opencontainers.image.title="KSeF Invoice Monitor" \
+      org.opencontainers.image.description="Monitor faktur w Krajowym Systemie e-Faktur" \
+      org.opencontainers.image.source="https://github.com/mlotocki2k/KSeF_Monitor" \
+      org.opencontainers.image.licenses="MIT" \
+      org.opencontainers.image.vendor="mlotocki2k"
+
 # Set working directory
 WORKDIR /app
 
