@@ -1,6 +1,6 @@
 [project]
 name = "ksef-monitor"
-version = "0.2.0"
+version = "0.3.0"
 description = "Monitor faktur w Krajowym Systemie e-Faktur (KSeF) — polling API, powiadomienia multi-kanałowe, generowanie PDF"
 license = "MIT"
 requires-python = ">=3.9"
@@ -13,7 +13,27 @@ classifiers = [
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
     "Topic :: Office/Business :: Financial :: Accounting",
+]
+
+dependencies = [
+    "requests==2.32.5",
+    "python-dateutil==2.9.0.post0",
+    "cryptography==46.0.5",
+    "prometheus-client==0.24.1",
+    "pytz==2025.2",
+    "Jinja2>=3.1.0,<4.0.0",
+    "defusedxml>=0.7.1,<1.0.0",
+    "reportlab==4.4.10",
+    "qrcode==8.2",
+    "xhtml2pdf>=0.2.16,<1.0.0",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest>=7.0",
+    "pytest-mock>=3.10",
 ]
 
 [project.urls]
