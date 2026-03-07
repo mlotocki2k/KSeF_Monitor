@@ -59,10 +59,25 @@ ksef-invoice-monitor/
 ├── spec/                        # API specifications
 │   └── openapi.json            # KSeF API v2.1/v2.2 OpenAPI spec
 │
+├── .github/                     # GitHub community & CI
+│   ├── ISSUE_TEMPLATE/
+│   │   ├── bug_report.md        # Bug report template
+│   │   └── feature_request.md   # Feature request template
+│   ├── PULL_REQUEST_TEMPLATE.md # PR template
+│   └── workflows/               # GitHub Actions
+│       ├── docker-publish.yml          # Build & push Docker image to GHCR
+│       ├── check_ksef_openapi.yml      # Monitor KSeF OpenAPI spec (3 envs)
+│       ├── check_ksef_fa_schema.yml    # Monitor FA(3)/FA(2) XSD schemas
+│       ├── check-requirements-updates.yml  # Check outdated packages
+│       └── update-requirements.yml     # Auto-update requirements.txt
+│
+├── CONTRIBUTING.md              # How to contribute
+├── CODE_OF_CONDUCT.md           # Community guidelines (Contributor Covenant)
+├── pyproject.toml               # Python project metadata & keywords
 ├── config.json                  # Your configuration (git-ignored)
 ├── .env                         # Your secrets (git-ignored)
 ├── requirements.txt             # Python dependencies
-├── Dockerfile                   # Docker image definition
+├── Dockerfile                   # Docker image definition (OCI labels)
 ├── docker-compose.yml           # Standard Docker Compose
 ├── docker-compose.env.yml       # Docker Compose with .env
 ├── docker-compose.secrets.yml   # Docker Compose with Docker secrets
