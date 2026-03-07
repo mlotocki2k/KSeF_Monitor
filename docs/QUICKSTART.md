@@ -483,28 +483,36 @@ This is just an IDE issue - the code runs fine!
 ## File Structure
 
 ```
-ksef-invoice-monitor/
-├── main.py                    # Entry point
-├── app/                       # Application modules
+KSeF_Monitor/
+├── main.py                        # Entry point
+├── test_invoice_pdf.py            # Test script for PDF generation
+├── app/                           # Application modules
 │   ├── __init__.py
-│   ├── secrets_manager.py
-│   ├── config_manager.py
-│   ├── ksef_client.py
-│   ├── invoice_monitor.py
-│   ├── scheduler.py           # Flexible scheduling system
-│   └── notifiers/             # Multi-channel notification system
+│   ├── config_manager.py          # Configuration loading & validation
+│   ├── secrets_manager.py         # Secrets from env / Docker secrets / config
+│   ├── ksef_client.py             # KSeF API v2.1/v2.2 client
+│   ├── invoice_monitor.py         # Main monitoring loop
+│   ├── invoice_pdf_generator.py   # XML parser + PDF generator
+│   ├── logging_config.py          # Logging with timezone
+│   ├── prometheus_metrics.py      # /metrics endpoint
+│   ├── scheduler.py               # 5 scheduling modes
+│   └── notifiers/                 # Multi-channel notifications (5 channels)
+│       ├── __init__.py
+│       ├── base_notifier.py
 │       ├── notification_manager.py
 │       ├── pushover_notifier.py
 │       ├── discord_notifier.py
 │       ├── slack_notifier.py
 │       ├── email_notifier.py
 │       └── webhook_notifier.py
-├── config.json                # Configuration (git-ignored)
-├── .env                       # Secrets (git-ignored)
-├── docker-compose.yml         # Docker Compose config
-├── Dockerfile                 # Docker image
-└── data/                      # Persistent data (auto-created)
-    └── last_check.json        # State file
+├── spec/                          # API specifications
+│   └── openapi.json               # KSeF API v2.2.0 OpenAPI spec
+├── config.json                    # Configuration (git-ignored)
+├── .env                           # Secrets (git-ignored)
+├── docker-compose.yml             # Docker Compose config
+├── Dockerfile                     # Docker image definition
+└── data/                          # Persistent data (auto-created)
+    └── last_check.json            # State file
 ```
 
 ## Next Steps

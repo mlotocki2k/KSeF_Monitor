@@ -3,7 +3,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
 [![Docker](https://img.shields.io/badge/Docker-ready-blue?logo=docker)](https://ghcr.io/mlotocki2k/ksef_monitor)
-[![KSeF API](https://img.shields.io/badge/KSeF_API-v2.1.2-green)](https://github.com/CIRFMF/ksef-docs)
+[![KSeF API](https://img.shields.io/badge/KSeF_API-v2.2.0-green)](https://github.com/CIRFMF/ksef-docs)
 [![Prometheus](https://img.shields.io/badge/Prometheus-metrics-orange?logo=prometheus)](docs/PROJECT_STRUCTURE.md)
 [![GitHub Actions](https://img.shields.io/github/actions/workflow/status/mlotocki2k/KSeF_Monitor/docker-publish.yml?branch=test&label=build)](https://github.com/mlotocki2k/KSeF_Monitor/actions)
 
@@ -41,16 +41,17 @@ Szczegóły konfiguracji: [config.example.json](examples/config.example.json) | 
 ## Struktura projektu
 
 ```
-ksef_monitor_v0_1/
+KSeF_Monitor/
 ├── main.py                      # Entry point — logging, signal handling, bootstrap
 ├── test_invoice_pdf.py          # Test script for PDF generation
 ├── app/                         # Application modules
 │   ├── __init__.py
 │   ├── config_manager.py        # Wczytanie i walidacja config.json
 │   ├── secrets_manager.py       # Sekretne wartości z env / Docker secrets / config
-│   ├── ksef_client.py           # Klient API KSeF v2 (autentykacja + zapytania)
+│   ├── ksef_client.py           # Klient API KSeF v2.1/v2.2 (autentykacja + paginacja)
 │   ├── invoice_monitor.py       # Główna pętla monitorowania + formatowanie
 │   ├── invoice_pdf_generator.py # XML parser + PDF generator
+│   ├── logging_config.py        # Logging setup z timezone
 │   ├── prometheus_metrics.py    # Prometheus metrics endpoint
 │   ├── scheduler.py             # Elastyczny system schedulowania (5 trybów)
 │   └── notifiers/               # Multi-channel notification system
@@ -62,20 +63,30 @@ ksef_monitor_v0_1/
 │       ├── slack_notifier.py        # Webhook Slack z Block Kit
 │       ├── email_notifier.py        # SMTP email z HTML
 │       └── webhook_notifier.py      # Generyczny HTTP endpoint
+├── spec/                        # API specifications
+│   └── openapi.json             # KSeF API v2.2.0 OpenAPI spec
 ├── docs/                        # Documentation
+│   ├── INDEX.md                 # Documentation index
 │   ├── QUICKSTART.md            # Quick start guide
 │   ├── KSEF_TOKEN.md            # Tworzenie tokena KSeF (read-only)
 │   ├── NOTIFICATIONS.md         # Konfiguracja powiadomień (5 kanałów)
 │   ├── SECURITY.md              # Security best practices
 │   ├── TESTING.md               # Testing guide
 │   ├── PDF_GENERATION.md        # Generowanie PDF faktur
+│   ├── ROADMAP.md               # Project roadmap
 │   ├── PROJECT_STRUCTURE.md     # Project architecture
-│   ├── IDE_TROUBLESHOOTING.md   # IDE setup help
-│   └── INDEX.md                 # Documentation index
+│   └── IDE_TROUBLESHOOTING.md   # IDE setup help
+├── .github/                     # GitHub community & CI
+│   ├── ISSUE_TEMPLATE/          # Issue templates (bug, feature)
+│   ├── PULL_REQUEST_TEMPLATE.md # PR template
+│   └── workflows/               # GitHub Actions (CI/CD)
 ├── examples/                    # Example configuration files
 │   ├── config.example.json      # Configuration template
 │   ├── config.secure.json       # Config for Docker secrets
 │   └── .env.example             # Environment variables template
+├── CONTRIBUTING.md              # How to contribute
+├── CODE_OF_CONDUCT.md           # Community guidelines
+├── pyproject.toml               # Python project metadata
 ├── requirements.txt             # Python dependencies
 ├── Dockerfile                   # Docker image definition
 ├── docker-compose.yml           # Basic Docker Compose setup
@@ -121,7 +132,7 @@ Katalog `data/` powstaje w runtime i zawiera plik stanu `last_check.json`.
 | `python-dateutil` | 2.9.0 | Parsing dat w odpowiedziach API |
 | `cryptography` | 46.0.5 | RSA-OAEP encryption tokena w auth flow |
 | `pytz` | 2025.2 | Obsługa stref czasowych (timezone support) |
-| `prometheus-client` | 0.23.1 | Eksport metryk Prometheus |
+| `prometheus-client` | 0.24.1 | Eksport metryk Prometheus |
 | `reportlab` | 4.4.10 | Generowanie PDF faktur (włączane w sekcji `storage`) |
 | `qrcode` | 8.2 | Generowanie QR Code Type I na fakturach PDF |
 
@@ -629,20 +640,26 @@ Endpoint: `POST /v2/invoices/query/metadata`
 - `dateType` pochodzi z pola `date_type` w konfiguracji.
 - Daty w formacie ISO 8601 z sufixem `Z` (UTC).
 - Wszystkie daty są konwertowane z skonfigurowanej strefy czasowej (`timezone`) do UTC przed wysłaniem do API.
-- `pageSize: 100`, `pageOffset: 0`.
+- `dateRange` jest ograniczony do max 90 dni (limit KSeF API — 3 miesiące).
+- `pageSize` i `pageOffset` są wysyłane jako query parameters (nie w body).
+- Paginacja: max 250 rekordów na stronę, safety limit 10 000 rekordów.
 
-Przykładowy payload:
+Przykładowy request:
+
+```
+POST /v2/invoices/query/metadata?pageSize=250&pageOffset=0
+```
+
+Body:
 
 ```json
 {
   "subjectType": "Subject1",
   "dateRange": {
     "dateType": "Invoicing",
-    "From": "2026-02-04T00:00:00.000Z",
-    "To":   "2026-02-05T12:00:00.000Z"
-  },
-  "pageSize": 100,
-  "pageOffset": 0
+    "from": "2026-02-04T00:00:00.000Z",
+    "to":   "2026-02-05T12:00:00.000Z"
+  }
 }
 ```
 

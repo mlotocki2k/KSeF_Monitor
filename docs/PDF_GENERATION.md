@@ -156,13 +156,11 @@ class InvoicePDFGenerator:
 
 ### 1. Zainstaluj reportlab
 
-```bash
-# Odkomentuj w requirements.txt
-nano requirements.txt
-# Usuń komentarz z linii: # reportlab==4.0.7
+Pakiet `reportlab` jest już w `requirements.txt` i instaluje się automatycznie w Docker.
 
-# Zainstaluj
-pip install reportlab==4.0.7
+Dla instalacji lokalnej:
+```bash
+pip install reportlab==4.4.10
 ```
 
 ### 2. Zweryfikuj instalację
@@ -331,8 +329,8 @@ Przykład: 1234567890-20240115-ABCDEF123456-AB
 - **Format:** A4 (210mm x 297mm)
 - **Orientacja:** Portrait (pionowa)
 - **Marginesy:** 15mm wszystkie strony
-- **Czcionka:** Helvetica (sans-serif)
-- **Biblioteka:** reportlab 4.0.7
+- **Czcionka:** DejaVu Sans (Docker/Linux), Arial (macOS), Helvetica (fallback)
+- **Biblioteka:** reportlab 4.4.10
 
 ### Sekcje dokumentu
 
@@ -443,7 +441,7 @@ Przykład: 1234567890-20240115-ABCDEF123456-AB
 
 **Rozwiązanie:**
 ```bash
-pip install reportlab==4.0.7
+pip install reportlab==4.4.10
 ```
 
 ### Authentication failed

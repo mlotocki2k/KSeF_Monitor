@@ -47,7 +47,8 @@ docker-compose build
 ```bash
 # Test imports work
 docker-compose run --rm ksef-monitor python3 -c "
-from app import ConfigManager, KSeFClient, PushoverNotifier, InvoiceMonitor
+from app import ConfigManager, KSeFClient, InvoiceMonitor
+from app.notifiers.pushover_notifier import PushoverNotifier
 print('✓ All imports successful')
 "
 ```
@@ -68,7 +69,7 @@ config = ConfigManager('/data/config.json')
 print('✓ Config loaded')
 print('Environment:', config.get('ksef', 'environment'))
 print('NIP:', config.get('ksef', 'nip'))
-print('Interval:', config.get('monitoring', 'check_interval'))
+print('Schedule mode:', config.get('schedule', 'mode'))
 "
 ```
 
@@ -77,7 +78,7 @@ print('Interval:', config.get('monitoring', 'check_interval'))
 ✓ Config loaded
 Environment: test
 NIP: 1234567890
-Interval: 300
+Schedule mode: minutes
 ```
 
 **On Error:** Check config.json and secrets
@@ -89,23 +90,22 @@ docker-compose run --rm ksef-monitor python3 -c "
 from app import ConfigManager
 config = ConfigManager('/data/config.json')
 has_ksef = bool(config.get('ksef', 'token'))
-has_pushover_user = bool(config.get('pushover', 'user_key'))
-has_pushover_api = bool(config.get('pushover', 'api_token'))
+channels = config.get('notifications', 'channels') or []
 print('✓ Secrets check')
 print(f'KSeF token present: {has_ksef}')
-print(f'Pushover user key present: {has_pushover_user}')
-print(f'Pushover API token present: {has_pushover_api}')
+print(f'Enabled channels: {channels}')
 "
 ```
 
-**Expected:** All three should be True
+**Expected:** KSeF token present, channels list matches config
 **On Error:** Check .env file or Docker secrets
 
 ### Test 7: Pushover Connection
 
 ```bash
 docker-compose run --rm ksef-monitor python3 -c "
-from app import ConfigManager, PushoverNotifier
+from app import ConfigManager
+from app.notifiers.pushover_notifier import PushoverNotifier
 config = ConfigManager('/data/config.json')
 notifier = PushoverNotifier(config)
 result = notifier.test_connection()
@@ -386,8 +386,8 @@ grep "restart:" docker-compose.yml
 # 4. Production environment
 grep '"environment"' config.json
 
-# 5. Appropriate check interval
-grep '"check_interval"' config.json
+# 5. Appropriate schedule
+grep -A 2 '"schedule"' config.json
 
 # 6. Security measures
 chmod 600 config.json

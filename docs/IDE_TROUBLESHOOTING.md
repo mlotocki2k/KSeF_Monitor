@@ -74,15 +74,27 @@ Add to `settings.json`:
 Ensure your project structure is correct:
 
 ```
-ksef-invoice-monitor/
+KSeF_Monitor/
 ├── main.py
 ├── app/
 │   ├── __init__.py          ← Must exist!
-│   ├── secrets_manager.py   ← Check this exists
+│   ├── secrets_manager.py
 │   ├── config_manager.py
 │   ├── ksef_client.py
-│   ├── pushover_notifier.py
-│   └── invoice_monitor.py
+│   ├── invoice_monitor.py
+│   ├── invoice_pdf_generator.py
+│   ├── logging_config.py
+│   ├── prometheus_metrics.py
+│   ├── scheduler.py
+│   └── notifiers/
+│       ├── __init__.py        ← Must exist!
+│       ├── base_notifier.py
+│       ├── notification_manager.py
+│       ├── pushover_notifier.py
+│       ├── discord_notifier.py
+│       ├── slack_notifier.py
+│       ├── email_notifier.py
+│       └── webhook_notifier.py
 └── ...
 ```
 
@@ -234,17 +246,17 @@ cd app/
 rm __init__.py
 
 cat > __init__.py << 'EOF'
-from app.secrets_manager import SecretsManager
-from app.config_manager import ConfigManager
-from app.ksef_client import KSeFClient
-from app.pushover_notifier import PushoverNotifier
-from app.invoice_monitor import InvoiceMonitor
+from .secrets_manager import SecretsManager
+from .config_manager import ConfigManager
+from .ksef_client import KSeFClient
+from .notifiers import NotificationManager
+from .invoice_monitor import InvoiceMonitor
 
 __all__ = [
     'SecretsManager',
     'ConfigManager',
     'KSeFClient',
-    'PushoverNotifier',
+    'NotificationManager',
     'InvoiceMonitor'
 ]
 EOF

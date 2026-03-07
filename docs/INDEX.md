@@ -1,7 +1,7 @@
 # KSeF Invoice Monitor - Documentation Index
 
-**Version:** 2.0.0  
-**Based on:** KSeF API v2.0  
+**Version:** v0.2
+**Based on:** KSeF API v2.2.0
 **License:** MIT
 
 ---
@@ -133,31 +133,37 @@ chmod +x setup.sh && ./setup.sh
 ### File Structure
 
 ```
-ksef-invoice-monitor/
+KSeF_Monitor/
 ├── 📄 Documentation
 │   ├── README.md                    # Main documentation
-│   ├── QUICKSTART.md               # Quick setup guide
-│   ├── KSEF_TOKEN.md               # KSeF token creation guide
-│   ├── NOTIFICATIONS.md            # Notification channels guide
-│   ├── SECURITY.md                 # Security practices
-│   ├── PDF_GENERATION.md           # PDF generation guide
-│   ├── PROJECT_STRUCTURE.md        # Architecture
-│   ├── IDE_TROUBLESHOOTING.md      # IDE fixes
-│   ├── TESTING.md                  # Test guide
-│   └── INDEX.md                    # This file
+│   └── docs/
+│       ├── INDEX.md                 # This file
+│       ├── QUICKSTART.md            # Quick setup guide
+│       ├── KSEF_TOKEN.md            # KSeF token creation guide
+│       ├── NOTIFICATIONS.md         # Notification channels guide
+│       ├── SECURITY.md              # Security practices
+│       ├── TESTING.md               # Test guide
+│       ├── PDF_GENERATION.md        # PDF generation guide
+│       ├── ROADMAP.md               # Project roadmap
+│       ├── PROJECT_STRUCTURE.md     # Architecture
+│       └── IDE_TROUBLESHOOTING.md   # IDE fixes
 │
 ├── 🚀 Application
 │   ├── main.py                     # Entry point
-│   ├── test_invoice_pdf.py         # [IN DEV] PDF test script
+│   ├── test_invoice_pdf.py         # PDF test script (CLI)
 │   └── app/                        # Application package
 │       ├── __init__.py
-│       ├── secrets_manager.py      # Secrets handling
 │       ├── config_manager.py       # Configuration
-│       ├── ksef_client.py          # KSeF API client
-│       ├── invoice_pdf_generator.py # [IN DEV] PDF generator
+│       ├── secrets_manager.py      # Secrets handling
+│       ├── ksef_client.py          # KSeF API v2.1/v2.2 client
+│       ├── invoice_monitor.py      # Main monitoring loop
+│       ├── invoice_pdf_generator.py # XML parser + PDF generator
+│       ├── logging_config.py       # Logging with timezone
 │       ├── prometheus_metrics.py   # Prometheus metrics
-│       ├── scheduler.py            # Flexible scheduling
+│       ├── scheduler.py            # Flexible scheduling (5 modes)
 │       └── notifiers/              # Multi-channel notifications
+│           ├── __init__.py
+│           ├── base_notifier.py
 │           ├── notification_manager.py
 │           ├── pushover_notifier.py
 │           ├── discord_notifier.py
@@ -165,12 +171,15 @@ ksef-invoice-monitor/
 │           ├── email_notifier.py
 │           └── webhook_notifier.py
 │
-├── ⚙️ Configuration
-│   ├── config.example.json         # Config template (with secrets)
-│   ├── config.secure.json          # Config template (without secrets)
-│   ├── config.json                 # Your config (git-ignored)
-│   ├── .env.example                # Environment template
-│   └── .env                        # Your secrets (git-ignored)
+├── ⚙️ Configuration & Examples
+│   ├── examples/config.example.json # Config template (with secrets)
+│   ├── examples/config.secure.json  # Config template (without secrets)
+│   ├── examples/.env.example        # Environment template
+│   ├── config.json                  # Your config (git-ignored)
+│   └── .env                         # Your secrets (git-ignored)
+│
+├── 📋 Specs
+│   └── spec/openapi.json           # KSeF API v2.2.0 OpenAPI spec
 │
 ├── 🐳 Docker
 │   ├── Dockerfile                  # Image definition (OCI labels)
@@ -187,10 +196,6 @@ ksef-invoice-monitor/
 │       ├── ISSUE_TEMPLATE/         # Issue templates (bug, feature)
 │       ├── PULL_REQUEST_TEMPLATE.md # PR template
 │       └── workflows/              # GitHub Actions (5 workflows)
-│
-├── 🔧 Scripts
-│   ├── setup.sh                    # Setup wizard
-│   └── .gitignore                  # Git exclusions
 │
 └── 💾 Data (created at runtime)
     └── data/
