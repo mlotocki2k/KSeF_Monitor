@@ -1147,6 +1147,16 @@ Jeśli problem nie został rozwiązany:
 
 ---
 
+## Contributing
+
+Chcesz pomóc w rozwoju projektu? Zobacz [CONTRIBUTING.md](CONTRIBUTING.md) — znajdziesz tam instrukcje konfiguracji środowiska, konwencje commitów i proces PR.
+
+- **Bug?** [Zgłoś issue](https://github.com/mlotocki2k/KSeF_Monitor/issues/new?template=bug_report.md)
+- **Pomysł?** [Zaproponuj feature](https://github.com/mlotocki2k/KSeF_Monitor/issues/new?template=feature_request.md)
+- **Code of Conduct:** [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)
+
+---
+
 ## Licencja
 
 Projekt udostępniony na licencji MIT License. Zobacz plik [LICENSE](LICENSE) po szczegóły.

@@ -279,6 +279,28 @@ client = SecretClient(vault_url="https://myvault.vault.azure.net",
 token = client.get_secret("ksef-token").value
 ```
 
+## Method 5: GitHub Actions Secrets (CI/CD)
+
+GitHub Actions workflows use **repository secrets** for automated notifications (e.g., Pushover alerts on API spec changes).
+
+### Setup
+
+1. Go to **Settings → Secrets and variables → Actions** in your GitHub repository
+2. Click **New repository secret**
+3. Add required secrets:
+
+| Secret | Used By | Purpose |
+|--------|---------|---------|
+| `PUSHOVER_APP_TOKEN` | `check_ksef_openapi.yml`, `check_ksef_fa_schema.yml` | Pushover app token for CI notifications |
+| `PUSHOVER_USER_KEY` | `check_ksef_openapi.yml`, `check_ksef_fa_schema.yml` | Pushover user key for CI notifications |
+
+### Security Notes
+- Repository secrets are encrypted and only exposed to workflows
+- Secrets are not passed to workflows triggered from forks
+- Use separate Pushover app tokens for CI vs application (principle of least privilege)
+
+---
+
 ## All Available Secrets
 
 | Secret | Environment Variable | Docker Secret | Required For | Notes |

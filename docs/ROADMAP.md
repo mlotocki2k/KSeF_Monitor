@@ -84,6 +84,16 @@ Poprawki niezwiązane z konkretnymi feature'ami, ale krytyczne dla stabilności:
 - [x] Deprecated `datetime.utcnow()` → `datetime.now(timezone.utc)`
 - [x] `prometheus-client` 0.23.1 → 0.24.1
 
+### GitHub visibility & community
+- [x] README: badge'e (Docker, KSeF API, Prometheus, CI status) + sekcja Quick Start
+- [x] Dockerfile: OCI image labels (title, description, source, license, vendor)
+- [x] Community health files: CONTRIBUTING.md, CODE_OF_CONDUCT.md
+- [x] Issue templates (bug report, feature request) + PR template
+- [x] `pyproject.toml` — metadane projektu Python
+- [x] Repo metadata: description + topics (ksef, e-faktura, invoice, python, docker, etc.)
+- [x] CI: sprawdzanie zmian FA(3)/FA(2) XSD schema z Pushover notification
+- [x] Fix `.gitignore`: `.github/` nie jest już ignorowane
+
 ---
 
 ## v0.4 (Stabilizacja + API pod UI) — propozycja
@@ -168,7 +178,7 @@ Poprawki niezwiązane z konkretnymi feature'ami, ale krytyczne dla stabilności:
 ## Do rozważenia
 - GUI do pobierania faktur przed v0.5?
 - Wystawienie endpointu dla Message Queue (MQ)
-- Moduł sprawdzania `schemat_FA` — czy istnieje nowa wersja XSD i czy wpływa na aplikację
+- ~~Moduł sprawdzania `schemat_FA` — czy istnieje nowa wersja XSD i czy wpływa na aplikację~~ → zrobione (CI workflow, CRD + GitHub, FA(2)/FA(3) + Pushover)
 - ~~Moduł sprawdzania `openapi.json` czy jest nowy~~ → zrobione (CI workflow, 3 środowiska + Pushover)
 
 ---

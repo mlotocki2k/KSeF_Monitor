@@ -48,6 +48,14 @@ chmod +x setup.sh && ./setup.sh
 - ✅ Docker Secrets - Production
 - ❌ Config file only - Testing only
 
+### 🤝 Contributing & Community
+
+| Document | Description | Read When |
+|----------|-------------|-----------|
+| **[CONTRIBUTING.md](../CONTRIBUTING.md)** | Development setup & workflow | Want to contribute |
+| **[CODE_OF_CONDUCT.md](../CODE_OF_CONDUCT.md)** | Community guidelines | Before contributing |
+| **[Issues](https://github.com/mlotocki2k/KSeF_Monitor/issues)** | Report bugs or request features | Found an issue |
+
 ### 🏗️ Architecture & Development
 
 | Document | Description | Read When |
@@ -165,11 +173,20 @@ ksef-invoice-monitor/
 │   └── .env                        # Your secrets (git-ignored)
 │
 ├── 🐳 Docker
-│   ├── Dockerfile                  # Image definition
+│   ├── Dockerfile                  # Image definition (OCI labels)
 │   ├── docker-compose.yml          # Standard compose
 │   ├── docker-compose.env.yml      # With env vars
 │   ├── docker-compose.secrets.yml  # With Docker secrets
 │   └── requirements.txt            # Python dependencies
+│
+├── 🤝 Community & CI
+│   ├── CONTRIBUTING.md             # How to contribute
+│   ├── CODE_OF_CONDUCT.md          # Community guidelines
+│   ├── pyproject.toml              # Python project metadata
+│   └── .github/
+│       ├── ISSUE_TEMPLATE/         # Issue templates (bug, feature)
+│       ├── PULL_REQUEST_TEMPLATE.md # PR template
+│       └── workflows/              # GitHub Actions (5 workflows)
 │
 ├── 🔧 Scripts
 │   ├── setup.sh                    # Setup wizard
