@@ -144,27 +144,59 @@ CREATE TABLE invoices (
 
 ### Tabela `monitor_state`
 
-Zastępuje obecny plik `last_check.json`. Przechowuje stan monitoringu per subject_type — szybki odczyt bez skanowania tabeli faktur.
+Zastępuje obecny plik `last_check.json`. Przechowuje stan monitoringu per NIP + subject_type — szybki odczyt bez skanowania tabeli faktur. Klucz unikalności `(nip, subject_type)` przygotowuje pod multi-NIP (v2.0).
 
 ```sql
 CREATE TABLE monitor_state (
-    id              INTEGER PRIMARY KEY AUTOINCREMENT,
-    subject_type    TEXT    UNIQUE NOT NULL,  -- Subject1 / Subject2
-    last_check      DATETIME NOT NULL,       -- timestamp ostatniego sprawdzenia (UTC)
-    last_invoice_at DATETIME,                -- timestamp najnowszej wykrytej faktury
-    invoices_count  INTEGER DEFAULT 0,       -- licznik faktur (cache, opcjonalny)
-    updated_at      DATETIME DEFAULT (datetime('now'))
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+
+    -- Klucz: NIP + subject_type (unique pair)
+    nip               TEXT    NOT NULL,          -- NIP podmiotu (future-proof: multi-NIP v2.0)
+    subject_type      TEXT    NOT NULL,           -- Subject1 / Subject2
+
+    -- Timestamps
+    last_check        DATETIME NOT NULL,         -- timestamp ostatniego sprawdzenia (UTC)
+    last_invoice_at   DATETIME,                  -- timestamp najnowszej wykrytej faktury
+
+    -- Resume support
+    last_ksef_number  TEXT,                       -- ostatni przetworzony numer KSeF (resume po restart)
+
+    -- Statystyki (cache)
+    invoices_count    INTEGER DEFAULT 0,         -- licznik faktur (aktualizowany przy insercie)
+
+    -- Error tracking
+    consecutive_errors INTEGER DEFAULT 0,        -- licznik kolejnych błędów (reset po sukcesie)
+    last_error         TEXT,                      -- ostatni komunikat błędu (nullable)
+    last_error_at      DATETIME,                 -- timestamp ostatniego błędu
+
+    -- Status
+    status            TEXT    DEFAULT 'active',  -- active / paused / error
+    updated_at        DATETIME DEFAULT (datetime('now')),
+
+    UNIQUE(nip, subject_type)
 );
 ```
 
+**Kolumny — uzasadnienie:**
+
+| Kolumna | Po co |
+|---|---|
+| `nip` | Multi-NIP (v2.0) — osobny stan per NIP. W v0.3 jeden wiersz per subject_type z aktualnym NIP z config |
+| `last_ksef_number` | Resume po restarcie — wiadomo do którego numeru KSeF pobrano artefakty |
+| `consecutive_errors` | Backoff — jeśli odpytywanie danego NIP+subject ciągle failuje (np. wygasły token), można zwiększyć interwał |
+| `last_error` / `last_error_at` | Diagnostyka — szybki podgląd co i kiedy poszło nie tak, bez grzebania w logach |
+| `status` | Kontrola — `active` (normalny monitoring), `paused` (wstrzymany przez użytkownika), `error` (auto-zatrzymany po N błędach) |
+
 **Zalety vs `last_check.json`:**
 - Atomowy zapis (SQLite transaction) zamiast tmp + rename + fsync
-- Per-subject tracking — każdy subject_type ma swój `last_check` (przygotowanie pod multi-NIP)
+- Per-NIP, per-subject tracking — każda kombinacja NIP + subject_type ma swój stan
 - `last_invoice_at` — szybki odczyt "kiedy była ostatnia faktura" bez `MAX(issue_date)` na tabeli faktur
-- `invoices_count` — opcjonalny cache do dashboardu, aktualizowany przy insercie
+- `last_ksef_number` — resumable processing po restarcie aplikacji
+- `consecutive_errors` — automatyczny backoff przy powtarzających się błędach
+- `status` — możliwość wstrzymania monitoringu per NIP bez usuwania konfiguracji
 
 **Migracja z `last_check.json`:**
-Przy starcie aplikacji: jeśli istnieje `last_check.json` a tabela `monitor_state` jest pusta → import `last_check` timestamp do DB, potem rename pliku na `.json.migrated`.
+Przy starcie aplikacji: jeśli istnieje `last_check.json` a tabela `monitor_state` jest pusta → import `last_check` timestamp do DB z aktualnym NIP z config, potem rename pliku na `.json.migrated`.
 
 ### Indeksy
 
