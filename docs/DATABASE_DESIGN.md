@@ -142,6 +142,30 @@ CREATE TABLE invoices (
 );
 ```
 
+### Tabela `monitor_state`
+
+Zastępuje obecny plik `last_check.json`. Przechowuje stan monitoringu per subject_type — szybki odczyt bez skanowania tabeli faktur.
+
+```sql
+CREATE TABLE monitor_state (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    subject_type    TEXT    UNIQUE NOT NULL,  -- Subject1 / Subject2
+    last_check      DATETIME NOT NULL,       -- timestamp ostatniego sprawdzenia (UTC)
+    last_invoice_at DATETIME,                -- timestamp najnowszej wykrytej faktury
+    invoices_count  INTEGER DEFAULT 0,       -- licznik faktur (cache, opcjonalny)
+    updated_at      DATETIME DEFAULT (datetime('now'))
+);
+```
+
+**Zalety vs `last_check.json`:**
+- Atomowy zapis (SQLite transaction) zamiast tmp + rename + fsync
+- Per-subject tracking — każdy subject_type ma swój `last_check` (przygotowanie pod multi-NIP)
+- `last_invoice_at` — szybki odczyt "kiedy była ostatnia faktura" bez `MAX(issue_date)` na tabeli faktur
+- `invoices_count` — opcjonalny cache do dashboardu, aktualizowany przy insercie
+
+**Migracja z `last_check.json`:**
+Przy starcie aplikacji: jeśli istnieje `last_check.json` a tabela `monitor_state` jest pusta → import `last_check` timestamp do DB, potem rename pliku na `.json.migrated`.
+
 ### Indeksy
 
 ```sql
@@ -259,7 +283,7 @@ SQLite jest wbudowany w Python — brak dodatkowych zależności systemowych.
 3. **Zainicjować Alembic** — `alembic init`, konfiguracja `env.py` z batch mode
 4. **Pierwsza migracja** — utworzenie tabeli `invoices` z indeksami
 5. **Integracja z `invoice_monitor.py`** — zapis metadanych przy detekcji nowej faktury
-6. **Migracja `seen_invoices`** — przy starcie: jeśli istnieje `last_check.json` z hashami, zaimportować do DB
+6. **Migracja `last_check.json`** — przy starcie: import `last_check` do `monitor_state`, `seen_invoices` hashe do `invoices` (jeśli możliwe), rename na `.json.migrated`
 7. **Config** — nowa sekcja `database` w `config_manager.py` z defaults
 8. **Testy** — unit testy dla warstwy DB (CRUD, deduplikacja, indeksy)
 
