@@ -550,7 +550,9 @@ class InvoiceMonitor:
         logger.info("KSeF Invoice Monitor started")
         logger.info("=" * 60)
         logger.info(f"Environment: {self.ksef.environment}")
-        logger.info(f"NIP: {self.ksef.nip}")
+        nip = self.ksef.nip or ""
+        masked_nip = nip[:3] + "****" + nip[-3:] if len(nip) >= 6 else "***"
+        logger.info(f"NIP: {masked_nip}")
         logger.info(f"Save XML: {self.save_xml}, Save PDF: {self.save_pdf}")
         if self.save_xml or self.save_pdf:
             logger.info(f"Output directory: {self.output_dir}")
