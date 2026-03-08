@@ -406,6 +406,7 @@ Konfiguracja zapisywania plików faktur (XML, PDF). Domyślnie wyłączone.
 | `save_pdf` | `false` | Generuj i zapisuj pliki PDF faktur (wymaga `reportlab`). |
 | `output_dir` | `"/data/invoices"` | Katalog docelowy dla zapisanych plików. Tworzony automatycznie jeśli nie istnieje. |
 | `folder_structure` | `""` | Wzorzec podfolderów z placeholderami: `{year}`, `{month}`, `{day}`, `{type}`. Pusty = płaski katalog. |
+| `file_exists_strategy` | `"skip"` | Co zrobić gdy plik już istnieje: `skip` (pomiń), `rename` (dodaj suffix `_1`, `_2`...), `overwrite` (nadpisz). |
 
 **Przykład konfiguracji:**
 

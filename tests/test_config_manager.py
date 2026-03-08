@@ -266,6 +266,45 @@ class TestConfigManagerStorageDefaults:
             assert cm.config["storage"]["folder_structure"] == ""
 
 
+class TestConfigManagerFileExistsStrategy:
+    """Tests for file_exists_strategy validation."""
+
+    def test_default_strategy_is_skip(self, config_file, minimal_config):
+        """Default file_exists_strategy is 'skip'."""
+        with patch("app.config_manager.SecretsManager") as MockSM:
+            MockSM.return_value.load_config_with_secrets.return_value = minimal_config
+            from app.config_manager import ConfigManager
+            cm = ConfigManager(config_file)
+            assert cm.config["storage"]["file_exists_strategy"] == "skip"
+
+    def test_valid_strategy_rename(self, config_file, minimal_config):
+        """Valid strategy 'rename' is accepted."""
+        minimal_config["storage"]["file_exists_strategy"] = "rename"
+        with patch("app.config_manager.SecretsManager") as MockSM:
+            MockSM.return_value.load_config_with_secrets.return_value = minimal_config
+            from app.config_manager import ConfigManager
+            cm = ConfigManager(config_file)
+            assert cm.config["storage"]["file_exists_strategy"] == "rename"
+
+    def test_valid_strategy_overwrite(self, config_file, minimal_config):
+        """Valid strategy 'overwrite' is accepted."""
+        minimal_config["storage"]["file_exists_strategy"] = "overwrite"
+        with patch("app.config_manager.SecretsManager") as MockSM:
+            MockSM.return_value.load_config_with_secrets.return_value = minimal_config
+            from app.config_manager import ConfigManager
+            cm = ConfigManager(config_file)
+            assert cm.config["storage"]["file_exists_strategy"] == "overwrite"
+
+    def test_invalid_strategy_falls_back_to_skip(self, config_file, minimal_config):
+        """Invalid strategy falls back to 'skip'."""
+        minimal_config["storage"]["file_exists_strategy"] = "delete"
+        with patch("app.config_manager.SecretsManager") as MockSM:
+            MockSM.return_value.load_config_with_secrets.return_value = minimal_config
+            from app.config_manager import ConfigManager
+            cm = ConfigManager(config_file)
+            assert cm.config["storage"]["file_exists_strategy"] == "skip"
+
+
 class TestConfigManagerTimezone:
     """Tests for timezone validation."""
 

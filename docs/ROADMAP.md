@@ -37,9 +37,9 @@
 - [x] Path traversal guard na wynikowej ścieżce
 - [x] Backward compatible: pusty string = flat directory (zachowanie domyślne)
 
-### 4) Safecheck na overwrite plików
-- [ ] Sprawdzanie czy plik (XML/PDF/UPO) już istnieje przed zapisem
-- [ ] Strategia: skip / rename / overwrite (konfiguracja)
+### 4) Safecheck na overwrite plików ✅
+- [x] Sprawdzanie czy plik (XML/PDF/UPO) już istnieje przed zapisem
+- [x] Strategia: skip / rename / overwrite (`file_exists_strategy` w config storage)
 
 ### 5) Przeniesienie informacji o fakturach do bazy
 - model danych rozdzielony "per subject, per NIP"

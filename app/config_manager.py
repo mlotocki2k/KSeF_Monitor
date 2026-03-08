@@ -364,6 +364,16 @@ class ConfigManager:
         if "output_dir" not in storage:
             storage["output_dir"] = "/data/invoices"
 
+        # Validate file_exists_strategy
+        valid_strategies = ("skip", "rename", "overwrite")
+        strategy = storage.setdefault("file_exists_strategy", "skip")
+        if strategy not in valid_strategies:
+            logger.warning(
+                f"Invalid file_exists_strategy '{strategy}' - "
+                f"allowed values: {', '.join(valid_strategies)}. Falling back to 'skip'."
+            )
+            storage["file_exists_strategy"] = "skip"
+
         # Validate and default folder_structure
         storage.setdefault("folder_structure", "")
         folder_structure = storage["folder_structure"]

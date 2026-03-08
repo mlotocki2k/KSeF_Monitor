@@ -283,6 +283,60 @@ class TestInvoiceMonitorResolveOutputDir:
         assert result == monitor.output_dir
 
 
+class TestInvoiceMonitorResolveSafePath:
+    """Tests for _resolve_safe_path() file exists strategy."""
+
+    def test_new_file_returns_path(self, monitor, tmp_path):
+        """Non-existing file returns the path as-is."""
+        path = tmp_path / "new_file.xml"
+        assert monitor._resolve_safe_path(path) == path
+
+    def test_skip_existing_returns_none(self, monitor, tmp_path):
+        """Strategy 'skip' returns None for existing file."""
+        monitor.file_exists_strategy = "skip"
+        path = tmp_path / "existing.xml"
+        path.write_text("content")
+        assert monitor._resolve_safe_path(path) is None
+
+    def test_overwrite_existing_returns_same_path(self, monitor, tmp_path):
+        """Strategy 'overwrite' returns the same path."""
+        monitor.file_exists_strategy = "overwrite"
+        path = tmp_path / "existing.xml"
+        path.write_text("content")
+        assert monitor._resolve_safe_path(path) == path
+
+    def test_rename_existing_adds_suffix(self, monitor, tmp_path):
+        """Strategy 'rename' adds _1 suffix."""
+        monitor.file_exists_strategy = "rename"
+        path = tmp_path / "invoice.xml"
+        path.write_text("content")
+        result = monitor._resolve_safe_path(path)
+        assert result == tmp_path / "invoice_1.xml"
+
+    def test_rename_increments_suffix(self, monitor, tmp_path):
+        """Strategy 'rename' increments suffix when _1 also exists."""
+        monitor.file_exists_strategy = "rename"
+        path = tmp_path / "invoice.pdf"
+        path.write_text("content")
+        (tmp_path / "invoice_1.pdf").write_text("content")
+        (tmp_path / "invoice_2.pdf").write_text("content")
+        result = monitor._resolve_safe_path(path)
+        assert result == tmp_path / "invoice_3.pdf"
+
+    def test_rename_preserves_extension(self, monitor, tmp_path):
+        """Strategy 'rename' preserves original file extension."""
+        monitor.file_exists_strategy = "rename"
+        path = tmp_path / "UPO_sprz_123.xml"
+        path.write_text("content")
+        result = monitor._resolve_safe_path(path)
+        assert result.suffix == ".xml"
+        assert result.name == "UPO_sprz_123_1.xml"
+
+    def test_default_strategy_is_skip(self, monitor):
+        """Default file_exists_strategy from config is 'skip'."""
+        assert monitor.file_exists_strategy == "skip"
+
+
 class TestInvoiceMonitorFormatDateForFilename:
     """Tests for _format_date_for_filename()."""
 

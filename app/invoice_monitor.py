@@ -10,7 +10,7 @@ import os
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from .scheduler import Scheduler
 from .notifiers import NotificationManager
@@ -61,6 +61,7 @@ class InvoiceMonitor:
         output_dir = config.get("storage", "output_dir", default="/data/invoices")
         self.output_dir = Path(output_dir)
         self.folder_structure = config.get("storage", "folder_structure", default="")
+        self.file_exists_strategy = config.get("storage", "file_exists_strategy", default="skip")
 
         # Get timezone from config
         if PYTZ_AVAILABLE:
@@ -414,6 +415,37 @@ class InvoiceMonitor:
 
         return target
 
+    def _resolve_safe_path(self, path: Path) -> Optional[Path]:
+        """Check if file exists and apply configured file_exists_strategy.
+
+        Returns:
+            Path to write to, or None if file should be skipped.
+        """
+        if not path.exists():
+            return path
+
+        strategy = self.file_exists_strategy
+
+        if strategy == "skip":
+            logger.info(f"File already exists, skipping: {path}")
+            return None
+        elif strategy == "overwrite":
+            logger.warning(f"Overwriting existing file: {path}")
+            return path
+        elif strategy == "rename":
+            stem, suffix = path.stem, path.suffix
+            counter = 1
+            while counter < 1000:
+                new_path = path.parent / f"{stem}_{counter}{suffix}"
+                if not new_path.exists():
+                    logger.info(f"File exists, saving as: {new_path}")
+                    return new_path
+                counter += 1
+            logger.error(f"Too many renamed copies for {path} - skipping")
+            return None
+
+        return path
+
     def _save_invoice_artifacts(self, invoice: Dict, subject_type: str):
         """
         Save PDF, XML and UPO for a new invoice (if enabled in config).
@@ -468,27 +500,29 @@ class InvoiceMonitor:
 
         # Save XML
         if self.save_xml:
-            xml_path = target_dir / f"{base_name}.xml"
-            try:
-                with open(xml_path, 'w', encoding='utf-8') as f:
-                    f.write(xml_content)
-                logger.info(f"Invoice XML saved: {xml_path}")
-            except Exception as e:
-                logger.error(f"Failed to save XML for {ksef_number}: {e}")
+            xml_path = self._resolve_safe_path(target_dir / f"{base_name}.xml")
+            if xml_path:
+                try:
+                    with open(xml_path, 'w', encoding='utf-8') as f:
+                        f.write(xml_content)
+                    logger.info(f"Invoice XML saved: {xml_path}")
+                except Exception as e:
+                    logger.error(f"Failed to save XML for {ksef_number}: {e}")
 
         # Generate and save PDF
         if self.save_pdf:
             if REPORTLAB_AVAILABLE:
-                try:
-                    pdf_path = str(target_dir / f"{base_name}.pdf")
-                    tz_name = self.config.get_timezone() if hasattr(self.config, 'get_timezone') else ''
-                    template_dir = self.config.get("storage", "pdf_templates_dir", default=None)
-                    generate_invoice_pdf(xml_content, ksef_number=ksef_number,
-                                         output_path=pdf_path, environment=self.ksef.environment,
-                                         timezone=tz_name, template_dir=template_dir)
-                    logger.info(f"Invoice PDF saved: {pdf_path}")
-                except Exception as e:
-                    logger.error(f"Failed to generate PDF for {ksef_number}: {e}")
+                pdf_path = self._resolve_safe_path(target_dir / f"{base_name}.pdf")
+                if pdf_path:
+                    try:
+                        tz_name = self.config.get_timezone() if hasattr(self.config, 'get_timezone') else ''
+                        template_dir = self.config.get("storage", "pdf_templates_dir", default=None)
+                        generate_invoice_pdf(xml_content, ksef_number=ksef_number,
+                                             output_path=str(pdf_path), environment=self.ksef.environment,
+                                             timezone=tz_name, template_dir=template_dir)
+                        logger.info(f"Invoice PDF saved: {pdf_path}")
+                    except Exception as e:
+                        logger.error(f"Failed to generate PDF for {ksef_number}: {e}")
             else:
                 logger.warning("reportlab not available - skipping PDF generation")
 
@@ -497,10 +531,11 @@ class InvoiceMonitor:
             try:
                 upo_result = self.ksef.get_invoice_upo(ksef_number)
                 if upo_result:
-                    upo_path = target_dir / f"UPO_{base_name}.xml"
-                    with open(upo_path, 'w', encoding='utf-8') as f:
-                        f.write(upo_result['xml_content'])
-                    logger.info(f"UPO saved: {upo_path}")
+                    upo_path = self._resolve_safe_path(target_dir / f"UPO_{base_name}.xml")
+                    if upo_path:
+                        with open(upo_path, 'w', encoding='utf-8') as f:
+                            f.write(upo_result['xml_content'])
+                        logger.info(f"UPO saved: {upo_path}")
                 else:
                     logger.info(f"No UPO available yet for {ksef_number}")
             except Exception as e:

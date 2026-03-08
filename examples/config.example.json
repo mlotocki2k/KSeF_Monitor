@@ -75,8 +75,9 @@
     "save_pdf": false,
     "output_dir": "/data/invoices",
     "folder_structure": "",
+    "file_exists_strategy": "skip",
     "pdf_templates_dir": "/data/pdf_templates",
-    "description": "File storage settings. save_xml/save_pdf: enable saving invoice XML/PDF files (default: false). output_dir: base directory for saved files (auto-created). folder_structure: subfolder pattern using placeholders {year}, {month}, {day}, {type}. Examples: '{year}/{month}' -> 2026/02/, '{type}/{year}/{month}/{day}' -> sprzedaz/2026/02/27/. Empty string = flat directory (default). pdf_templates_dir: optional custom HTML/CSS template directory for PDF generation."
+    "description": "File storage settings. save_xml/save_pdf: enable saving invoice XML/PDF files (default: false). output_dir: base directory for saved files (auto-created). folder_structure: subfolder pattern using placeholders {year}, {month}, {day}, {type}. Examples: '{year}/{month}' -> 2026/02/, '{type}/{year}/{month}/{day}' -> sprzedaz/2026/02/27/. Empty string = flat directory (default). file_exists_strategy: what to do when file already exists - 'skip' (default, log and skip), 'rename' (add _1, _2 suffix), 'overwrite' (replace existing). pdf_templates_dir: optional custom HTML/CSS template directory for PDF generation."
   },
   "prometheus": {
     "enabled": true,
