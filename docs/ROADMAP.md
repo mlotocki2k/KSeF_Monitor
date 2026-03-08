@@ -121,9 +121,14 @@ Poprawki niezwiązane z konkretnymi feature'ami, ale krytyczne dla stabilności:
 ## v0.5 (Initial load + Web UI: odczyt)
 **Cel:** pierwszy sensowny produkt dla użytkownika: dane + podgląd
 
-### 1) Initial load
-- od `2026-02-01` albo data definiowana w config
+### 1) Initial load (dane historyczne)
+- od `2026-02-01` albo data definiowana w config (`initial_load.start_date`)
 - tryb: jednorazowy import + zapis do DB + raport (ile pobrano, ile pominięto)
+- **Moving window** — obejście limitu 90 dni (3 miesiące) API KSeF:
+  - automatyczne dzielenie zakresu dat na okna ≤90 dni
+  - sekwencyjne pobieranie okno po oknie z paginacją w każdym
+  - progress tracking: zapis postępu (ostatnie zakończone okno) → resume po przerwaniu
+  - rate limiting / backoff między oknami (unikanie throttlingu API)
 
 ### 2) Interfejs webowy (odczyt)
 - pokazywanie ile nowych faktur od ostatniego sprawdzenia: **per subject, per NIP**
@@ -131,6 +136,7 @@ Poprawki niezwiązane z konkretnymi feature'ami, ale krytyczne dla stabilności:
 - lista wszystkich faktur (z bazy): filtry/sort/paginacja
 - podgląd wybranej faktury: pobranie po API z KSeF konkretnej faktury (z cache, jeśli już jest)
 - możliwość zaznaczenia jednej lub wielu faktur do wygenerowania PDF
+- integracja z oficjalną biblioteką CIRFMF do wizualizacji PDF ([ksef-pdf-generator](https://github.com/CIRFMF/ksef-pdf-generator)) jako opcjonalny mikroserwis Docker (REST API: XML → PDF), obok wbudowanego generatora (xhtml2pdf/ReportLab)
 
 **Zależności:** v0.4
 **DoD:** użytkownik widzi dashboard + listę + podgląd; initial load działa powtarzalnie bez duplikatów.
