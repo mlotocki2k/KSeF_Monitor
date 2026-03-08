@@ -24,10 +24,6 @@ jobs:
             source_url: "http://crd.gov.pl/wzor/2025/06/25/13775/schemat.xsd"
             github_url: "https://raw.githubusercontent.com/CIRFMF/ksef-docs/main/faktury/schemy/FA/schemat_FA(3)_v1-0E.xsd"
             local_file: "spec/schemat_FA(3)_v1-0E.xsd"
-          - schema_name: "FA(2)_v1-0E"
-            source_url: "http://crd.gov.pl/wzor/2023/06/29/12648/schemat.xsd"
-            github_url: "https://raw.githubusercontent.com/CIRFMF/ksef-docs/main/faktury/schemy/FA/schemat_FA(2)_v1-0E.xsd"
-            local_file: ""
 
     steps:
       - name: Checkout test branch
@@ -240,7 +236,7 @@ jobs:
                   print(item['name'])
           " 2>/dev/null || echo "")
 
-          KNOWN_SCHEMAS="schemat_FA(2)_v1-0E.xsd schemat_FA(3)_v1-0E.xsd"
+          KNOWN_SCHEMAS="schemat_FA(3)_v1-0E.xsd"
           NEW_FOUND=""
 
           for schema in $SCHEMAS; do

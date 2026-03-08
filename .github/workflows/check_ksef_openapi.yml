@@ -22,10 +22,13 @@ jobs:
         include:
           - env_name: test
             url: "https://api-test.ksef.mf.gov.pl/docs/v2/openapi.json"
+            local_file: "spec/openapi-test.json"
           - env_name: demo
             url: "https://api-demo.ksef.mf.gov.pl/docs/v2/openapi.json"
+            local_file: "spec/openapi-demo.json"
           - env_name: production
             url: "https://api.ksef.mf.gov.pl/docs/v2/openapi.json"
+            local_file: "spec/openapi.json"
 
     steps:
       - name: Checkout test branch
@@ -60,7 +63,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          FILE="spec/openapi.json"
+          FILE="${{ matrix.local_file }}"
           if [ ! -f "$FILE" ]; then
             echo "local_exists=false" >> "$GITHUB_OUTPUT"
             echo "local_sha=" >> "$GITHUB_OUTPUT"
@@ -109,6 +112,7 @@ jobs:
           LOCAL_SHA: ${{ steps.local.outputs.local_sha }}
           LOCAL_VERSION: ${{ steps.local.outputs.local_version }}
           REASON: ${{ steps.cmp.outputs.reason }}
+          LOCAL_FILE: ${{ matrix.local_file }}
         with:
           script: |
             const envName = process.env.ENV_NAME;
@@ -123,7 +127,7 @@ jobs:
             const title = `KSeF OpenAPI changed — ${envName} environment`;
 
             const body = [
-              `Wykryto zmianę w specu OpenAPI KSeF na środowisku **${envName}** względem \`spec/openapi.json\`.`,
+              `Wykryto zmianę w specu OpenAPI KSeF na środowisku **${envName}** względem \`${process.env.LOCAL_FILE}\`.`,
               "",
               `| | Local | Remote (${envName}) |`,
               "|---|---|---|",
@@ -134,7 +138,7 @@ jobs:
               `- **Powód:** ${reason}`,
               "",
               "Sugestia:",
-              "- pobierz aktualny spec i zaktualizuj `spec/openapi.json`.",
+              `- pobierz aktualny spec i zaktualizuj \`${process.env.LOCAL_FILE}\`.`,
               `- jeśli zmiana na **${envName}** — przygotuj się na update produkcji.`
             ].join("\n");
 

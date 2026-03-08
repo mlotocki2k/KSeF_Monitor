@@ -146,7 +146,7 @@ Katalog `data/` powstaje w runtime i zawiera plik stanu `last_check.json`.
 | `requests` | 2.32.5 | HTTP calls do KSeF API i webhook notifiers |
 | `python-dateutil` | 2.9.0 | Parsing dat w odpowiedziach API |
 | `cryptography` | 46.0.5 | RSA-OAEP encryption tokena w auth flow |
-| `pytz` | 2025.2 | Obsługa stref czasowych (timezone support) |
+| `pytz` | 2026.1.post1 | Obsługa stref czasowych (timezone support) |
 | `prometheus-client` | 0.24.1 | Eksport metryk Prometheus |
 | `Jinja2` | >=3.1.0 | Silnik szablonów powiadomień i PDF |
 | `defusedxml` | >=0.7.1 | Bezpieczne parsowanie XML faktur (ochrona przed XXE) |
