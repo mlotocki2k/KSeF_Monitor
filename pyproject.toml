@@ -16,6 +16,7 @@ classifiers = [
     "Topic :: Office/Business :: Financial :: Accounting",
 ]
 
+
 [project.urls]
 Homepage = "https://github.com/mlotocki2k/KSeF_Monitor"
 Repository = "https://github.com/mlotocki2k/KSeF_Monitor"
