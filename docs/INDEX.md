@@ -83,6 +83,7 @@ chmod +x setup.sh && ./setup.sh
 - ✅ Two rendering engines: xhtml2pdf (primary) + ReportLab (fallback)
 - ✅ Integrated with main app (config: `storage.save_pdf`)
 - ✅ Configurable output directory with folder structure patterns (v0.3)
+- ✅ Safe file writing: skip/rename/overwrite strategy (v0.3)
 - ✅ Custom HTML/CSS templates for PDF appearance (v0.3)
 
 ### 🧪 Testing & Quality
@@ -178,7 +179,9 @@ KSeF_Monitor/
 │   └── .env                         # Your secrets (git-ignored)
 │
 ├── 📋 Specs
-│   ├── spec/openapi.json           # KSeF API v2.2.0 OpenAPI spec
+│   ├── spec/openapi.json           # KSeF API v2.2.0 OpenAPI spec (production)
+│   ├── spec/openapi-test.json      # KSeF API OpenAPI spec (test)
+│   ├── spec/openapi-demo.json      # KSeF API OpenAPI spec (demo)
 │   └── spec/schemat_FA(3)_v1-0E.xsd # FA(3) invoice XSD schema
 │
 ├── 🐳 Docker

@@ -299,7 +299,9 @@ Edit `config.json` to customize:
   "storage": {
     "save_xml": false,            // Save invoice XML files
     "save_pdf": false,            // Generate and save PDF files
-    "output_dir": "/data/invoices" // Output directory (auto-created)
+    "output_dir": "/data/invoices", // Output directory (auto-created)
+    "folder_structure": "",       // Subfolder pattern: {year}/{month}/{day}/{type}
+    "file_exists_strategy": "skip" // skip / rename / overwrite
   },
   "schedule": {
     "mode": "minutes",          // Scheduling mode

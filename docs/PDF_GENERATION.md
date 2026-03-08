@@ -12,7 +12,8 @@ Aby automatycznie generować PDF dla nowych faktur, ustaw w `config.json`:
     "save_pdf": true,
     "save_xml": true,
     "output_dir": "/data/invoices",
-    "folder_structure": "{year}/{month}"
+    "folder_structure": "{year}/{month}",
+    "file_exists_strategy": "skip"
   }
 }
 ```
@@ -618,6 +619,24 @@ Klucz `folder_structure` w sekcji `storage` pozwala organizować pliki w podfold
 | `"{type}/{year}/{month}/{day}"` | `/data/invoices/sprzedaz/2026/02/27/sprz_<ksef>_20260227.pdf` |
 
 Podfoldery tworzone automatycznie. Pusty string = płaski katalog (zachowanie domyślne).
+
+## Strategia zapisu plików (file_exists_strategy)
+
+Klucz `file_exists_strategy` w sekcji `storage` kontroluje zachowanie gdy plik (XML/PDF/UPO) już istnieje:
+
+| Strategia | Zachowanie |
+|---|---|
+| `"skip"` (domyślnie) | Pomija zapis, loguje INFO |
+| `"rename"` | Dodaje sufiks `_1`, `_2`, ... do nazwy pliku |
+| `"overwrite"` | Nadpisuje istniejący plik, loguje WARNING |
+
+```json
+{
+  "storage": {
+    "file_exists_strategy": "skip"
+  }
+}
+```
 
 ---
 

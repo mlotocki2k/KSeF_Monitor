@@ -6,7 +6,7 @@ KSeF API jest aktywnie rozwijane przez Ministerstwo Finansów. Zmiany mogą doty
 - **OpenAPI spec** — nowe/zmienione endpointy, parametry, formaty odpowiedzi → łamie `ksef_client.py`
 - **Schemat FA (XSD)** — nowa struktura faktur → łamie parsowanie XML w `invoice_pdf_generator.py` i szablony
 
-Aktualna wersja w repo: API `2.1.1` (build `2.1.1-pr-20260213.1`), schemat `FA(3)_v1-0E`.
+Aktualna wersja w repo: API `2.2.0`, schemat `FA(3)_v1-0E`.
 
 ## Trzy możliwe podejścia
 

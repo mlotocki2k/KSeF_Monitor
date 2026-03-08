@@ -2,6 +2,42 @@
 
 Complete guide for testing your KSeF Invoice Monitor installation.
 
+## Unit Tests (pytest)
+
+The project includes a comprehensive unit test suite (229 tests) covering configuration validation, invoice monitoring logic, template rendering, and more.
+
+### Running unit tests
+
+```bash
+# Install test dependencies
+pip install -e ".[test]"
+
+# Run all tests
+pytest tests/ -v
+
+# Run specific test file
+pytest tests/test_config_manager.py -v
+pytest tests/test_invoice_monitor.py -v
+
+# Run with coverage
+pytest tests/ --cov=app --cov-report=term-missing
+```
+
+### Test structure
+
+```
+tests/
+├── conftest.py                 # Shared fixtures (mock_config, sample_invoice, etc.)
+├── test_config_manager.py      # Config validation, defaults, file_exists_strategy
+└── test_invoice_monitor.py     # Monitor logic, deduplication, safe path resolution
+```
+
+### CI
+
+Unit tests run automatically on push via GitHub Actions (`.github/workflows/test.yml`).
+
+---
+
 ## Pre-Deployment Tests
 
 Run these tests BEFORE deploying to production.

@@ -51,6 +51,8 @@ KSeF_Monitor/
 │   ├── PDF_TEMPLATES.md        # PDF template customization
 │   ├── ROADMAP.md              # Project roadmap
 │   ├── PROJECT_STRUCTURE.md    # This file
+│   ├── SPEC_CHECK_DESIGN.md    # Spec monitoring design analysis
+│   ├── OPTIMIZATION_FINDINGS.md # Performance optimization notes
 │   └── IDE_TROUBLESHOOTING.md  # IDE setup help
 │
 ├── examples/                    # Example configs & test scripts
@@ -62,7 +64,9 @@ KSeF_Monitor/
 │   └── test_dummy_pdf.py       # Test script with dummy data
 │
 ├── spec/                        # API specifications
-│   ├── openapi.json            # KSeF API v2.2.0 OpenAPI spec
+│   ├── openapi.json            # KSeF API v2.2.0 OpenAPI spec (production)
+│   ├── openapi-test.json       # KSeF API OpenAPI spec (test environment)
+│   ├── openapi-demo.json       # KSeF API OpenAPI spec (demo environment)
 │   └── schemat_FA(3)_v1-0E.xsd # FA(3) invoice XSD schema
 │
 ├── .github/                     # GitHub community & CI
@@ -73,9 +77,14 @@ KSeF_Monitor/
 │   └── workflows/               # GitHub Actions
 │       ├── docker-publish.yml          # Build & push Docker image to GHCR
 │       ├── check_ksef_openapi.yml      # Monitor KSeF OpenAPI spec (3 envs)
-│       ├── check_ksef_fa_schema.yml    # Monitor FA(3)/FA(2) XSD schemas
+│       ├── check_ksef_fa_schema.yml    # Monitor FA(3) XSD schema
 │       ├── check-requirements-updates.yml  # Check outdated packages
 │       └── update-requirements.yml     # Auto-update requirements.txt
+│
+├── tests/                       # Unit tests (pytest)
+│   ├── conftest.py             # Shared test fixtures
+│   ├── test_config_manager.py  # Configuration validation tests
+│   └── test_invoice_monitor.py # Invoice monitor tests
 │
 ├── CONTRIBUTING.md              # How to contribute
 ├── CODE_OF_CONDUCT.md           # Community guidelines (Contributor Covenant)
@@ -148,12 +157,14 @@ Implements the full KSeF authentication flow:
 - Builds template context for notifications (v0.3)
 - Manages persistent state (`last_check.json`)
 - Saves invoice artifacts (XML, PDF, UPO) with configurable folder structure (v0.3)
+- Safe file writing with configurable `file_exists_strategy` (skip/rename/overwrite) (v0.3)
 
 **Key methods:**
 - `run()` - Main monitoring loop
 - `check_for_new_invoices()` - Check and notify
 - `build_template_context()` - Build context dict for Jinja2 templates (v0.3)
 - `_resolve_output_dir()` - Resolve target dir from `folder_structure` pattern (v0.3)
+- `_resolve_safe_path()` - Apply file_exists_strategy before writing (v0.3)
 - `_save_invoice_artifacts()` - Save PDF, XML, UPO to target dir
 - `shutdown()` - Graceful shutdown
 
