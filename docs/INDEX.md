@@ -62,6 +62,7 @@ chmod +x setup.sh && ./setup.sh
 | Document | Description | Read When |
 |----------|-------------|-----------|
 | **[PROJECT_STRUCTURE.md](PROJECT_STRUCTURE.md)** | Architecture details | Understanding code organization |
+| **[KSEF_API_LIMITATIONS.md](KSEF_API_LIMITATIONS.md)** | KSeF API limits & constraints | Understanding API boundaries |
 | **[IDE_TROUBLESHOOTING.md](IDE_TROUBLESHOOTING.md)** | Fix IDE import errors | Seeing import warnings in IDE |
 
 **For Developers:**

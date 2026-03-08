@@ -676,6 +676,7 @@ Endpoint: `POST /v2/invoices/query/metadata`
 - Wszystkie daty są konwertowane z skonfigurowanej strefy czasowej (`timezone`) do UTC przed wysłaniem do API.
 - `dateRange` ograniczony do max 90 dni (limit KSeF API).
 - `pageSize` i `pageOffset` przekazywane jako **query params** (nie w body) — zgodnie ze specyfikacją API.
+- Wszystkie zapytania podlegają rate limiting (10/s, 30/min, 120/h). Szczegóły: [docs/KSEF_API_LIMITATIONS.md](docs/KSEF_API_LIMITATIONS.md)
 
 **Paginacja:**
 - `pageSize: 250` (max dozwolone przez KSeF API, min 10).
@@ -806,6 +807,8 @@ Plik `data/last_check.json` przechowuje stan między restartami:
 | `/v2/invoices/ksef/{ksefNumber}` | GET | Pobranie XML faktury |
 
 Dokumentacja API: https://api.ksef.mf.gov.pl/docs/v2/
+
+> **Ograniczenia API:** Rate limiting (10/s, 30/min, 120/h), max 90 dni zakres dat, truncation przy 10k rekordów, brak batch download. Pełna lista: [docs/KSEF_API_LIMITATIONS.md](docs/KSEF_API_LIMITATIONS.md)
 
 ---
 

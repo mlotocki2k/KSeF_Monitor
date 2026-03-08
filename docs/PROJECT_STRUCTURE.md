@@ -51,7 +51,10 @@ KSeF_Monitor/
 │   ├── PDF_TEMPLATES.md        # PDF template customization
 │   ├── ROADMAP.md              # Project roadmap
 │   ├── PROJECT_STRUCTURE.md    # This file
+│   ├── KSEF_API_LIMITATIONS.md  # KSeF API limits & constraints
 │   ├── SPEC_CHECK_DESIGN.md    # Spec monitoring design analysis
+│   ├── DATABASE_DESIGN.md      # Database design (SQLite + SQLAlchemy)
+│   ├── RATE_LIMITING_DESIGN.md # Rate limiter implementation plan
 │   ├── OPTIMIZATION_FINDINGS.md # Performance optimization notes
 │   └── IDE_TROUBLESHOOTING.md  # IDE setup help
 │

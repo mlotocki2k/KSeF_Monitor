@@ -45,6 +45,11 @@
 - model danych rozdzielony "per subject, per NIP"
 - indeksy pod najczęstsze zapytania (np. subject + nip + timestamp)
 - migracja: zapis przy pobraniu/detekcji faktury
+- Design: [DATABASE_DESIGN.md](DATABASE_DESIGN.md)
+
+### 6) Dokumentacja ograniczeń API ✅
+- [x] Kompletna dokumentacja limitów KSeF API: [KSEF_API_LIMITATIONS.md](KSEF_API_LIMITATIONS.md)
+- [x] Plan globalnego rate limitera: [RATE_LIMITING_DESIGN.md](RATE_LIMITING_DESIGN.md)
 
 **Zależności:** v0.2
 **DoD:** powiadomienia i obraz faktury generują się wyłącznie z template; faktury lądują w DB i da się je filtrować per subject/NIP.
