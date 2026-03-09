@@ -236,7 +236,7 @@ jobs:
                   print(item['name'])
           " 2>/dev/null || echo "")
 
-          KNOWN_SCHEMAS="schemat_FA(3)_v1-0E.xsd"
+          KNOWN_SCHEMAS="schemat_FA(3)_v1-0E.xsd schemat_FA(2)_v1-0E.xsd"
           NEW_FOUND=""
 
           for schema in $SCHEMAS; do
