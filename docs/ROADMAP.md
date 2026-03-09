@@ -144,8 +144,35 @@ Poprawki niezwiązane z konkretnymi feature'ami, ale krytyczne dla stabilności:
 - możliwość zaznaczenia jednej lub wielu faktur do wygenerowania PDF
 - integracja z oficjalną biblioteką CIRFMF do wizualizacji PDF ([ksef-pdf-generator](https://github.com/CIRFMF/ksef-pdf-generator)) jako opcjonalny mikroserwis Docker (REST API: XML → PDF), obok wbudowanego generatora (xhtml2pdf/ReportLab)
 
+### 3) Push notyfikacje iOS — Monito KSeF (Cloudflare Worker)
+- nowy kanał powiadomień: natywne push notifications na iOS via aplikację **Monito KSeF**
+- Aplikacja iOS: [mlotocki2k/monitor_ksef_ios](https://github.com/mlotocki2k/monitor_ksef_ios) (repo prywatne, App Store review w toku)
+- Cloudflare Worker jako proxy do Apple Push Notification Service (APNs)
+  - Worker odbiera POST z KSeF Monitor (JSON payload) → wysyła do APNs
+  - Autentykacja Worker ↔ APNs via token-based auth (p8 key)
+  - Autentykacja Monitor → Worker via shared secret (header `Authorization`)
+- integracja z aplikacją Monito KSeF:
+  - rejestracja device token w Worker (KV storage: device tokens per user)
+  - rich push notifications z danymi faktury (numer, kwota, kontrahent)
+  - deep link do web UI (v0.5) z podglądem faktury
+  - push notification jest w roadmapie aplikacji iOS
+- konfiguracja w `config.json`:
+  ```json
+  {
+    "notifications": {
+      "channels": ["ios_push"],
+      "ios_push": {
+        "worker_url": "https://ksef-push.your-domain.workers.dev",
+        "worker_secret": "shared-secret"
+      }
+    }
+  }
+  ```
+- nowy notifier: `app/notifiers/ios_push_notifier.py` (POST JSON do Worker URL)
+- szablon Jinja2: `app/templates/ios_push.json.j2`
+
 **Zależności:** v0.4
-**DoD:** użytkownik widzi dashboard + listę + podgląd; initial load działa powtarzalnie bez duplikatów.
+**DoD:** użytkownik widzi dashboard + listę + podgląd; initial load działa powtarzalnie bez duplikatów; push notification dociera na iOS.
 
 ---
 
