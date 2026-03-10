@@ -24,7 +24,7 @@ class PrometheusMetrics:
     - ksef_monitor_up: Health check - 1 if monitor is running
     """
 
-    def __init__(self, port: int = 8000, bind_address: str = '0.0.0.0'):
+    def __init__(self, port: int = 8000, bind_address: str = '0.0.0.0'):  # nosec B104 - configurable, 0.0.0.0 needed for Docker
         """
         Initialize Prometheus metrics
 
