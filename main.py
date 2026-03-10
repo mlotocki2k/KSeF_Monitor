@@ -32,7 +32,7 @@ monitor = None
 def signal_handler(signum, frame):
     """
     Handle shutdown signals gracefully
-    
+
     Args:
         signum: Signal number
         frame: Current stack frame
@@ -41,6 +41,12 @@ def signal_handler(signum, frame):
     if monitor:
         monitor.shutdown()
     sys.exit(0)
+
+
+def trigger_handler(signum, frame):
+    """Handle SIGUSR1 — trigger immediate invoice check."""
+    if monitor:
+        monitor.trigger_check()
 
 
 def main():
@@ -155,9 +161,10 @@ def main():
         monitor = InvoiceMonitor(config, ksef_client, notification_manager, prometheus_metrics, database=database)
         logger.info("✓ Invoice monitor initialized")
         
-        # Register signal handlers for graceful shutdown
+        # Register signal handlers
         signal.signal(signal.SIGINT, signal_handler)
         signal.signal(signal.SIGTERM, signal_handler)
+        signal.signal(signal.SIGUSR1, trigger_handler)
         
         # Start monitoring
         monitor.run()

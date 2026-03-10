@@ -99,6 +99,7 @@ class InvoiceMonitor:
                 schedule_config = {"mode": "minutes", "interval": 5}
 
         self.scheduler = Scheduler(schedule_config)
+        self._manual_trigger = False
 
         logger.info(f"Invoice Monitor initialized, subject_types: {self.subject_types}, message_priority: {self.message_priority}")
 
@@ -785,7 +786,13 @@ class InvoiceMonitor:
 
         while True:
             try:
-                if self.scheduler.should_run():
+                if self._manual_trigger:
+                    self._manual_trigger = False
+                    logger.info("Manual trigger received — checking for new invoices...")
+                    self.check_for_new_invoices()
+                    logger.info(self.scheduler.get_next_run_info())
+                    logger.info("-" * 60)
+                elif self.scheduler.should_run():
                     logger.info("Checking for new invoices...")
                     self.check_for_new_invoices()
                     logger.info(self.scheduler.get_next_run_info())
@@ -818,7 +825,12 @@ class InvoiceMonitor:
 
             # Wait until next scheduled run
             self.scheduler.wait_until_next_run()
-    
+
+    def trigger_check(self):
+        """Set flag to run an immediate check on next loop iteration."""
+        logger.info("On-demand check requested (SIGUSR1)")
+        self._manual_trigger = True
+
     def shutdown(self):
         """
         Clean shutdown
