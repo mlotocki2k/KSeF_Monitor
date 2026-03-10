@@ -81,19 +81,22 @@ def main():
                 logger.info(f"Initializing database: {db_path}")
                 database = Database(db_path)
                 database.create_tables()
-
-                # Migrate last_check.json → DB (one-time, if needed)
-                from pathlib import Path
-                state_file = Path("/data/last_check.json")
-                nip = config.get("ksef", "nip") or ""
-                subject_types = config.get("monitoring", "subject_types") or ["Subject1"]
-                database.migrate_from_json(state_file, nip, subject_types)
-
                 logger.info("✓ Database initialized")
             except Exception as e:
                 logger.warning(f"Failed to initialize database: {e}")
                 logger.info("Continuing without database persistence")
                 database = None
+
+            # Migrate last_check.json → DB (one-time, if needed)
+            if database:
+                try:
+                    from pathlib import Path
+                    state_file = Path("/data/last_check.json")
+                    nip = config.get("ksef", "nip") or ""
+                    subject_types = config.get("monitoring", "subject_types") or ["Subject1"]
+                    database.migrate_from_json(state_file, nip, subject_types)
+                except Exception as e:
+                    logger.warning(f"JSON migration failed (non-fatal): {e}")
         else:
             logger.info("Database disabled in configuration")
 

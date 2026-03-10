@@ -99,6 +99,7 @@ class NotificationManager:
         """Log notification event to database (if available)."""
         if not self.db:
             return
+        session = None
         try:
             session = self.db.get_session()
             self.db.log_notification(
@@ -115,15 +116,17 @@ class NotificationManager:
             session.commit()
         except Exception as e:
             logger.debug(f"Failed to log notification to DB: {e}")
-            try:
-                session.rollback()
-            except Exception:
-                pass
+            if session:
+                try:
+                    session.rollback()
+                except Exception:
+                    pass
         finally:
-            try:
-                session.close()
-            except Exception:
-                pass
+            if session:
+                try:
+                    session.close()
+                except Exception:
+                    pass
 
     def send_invoice_notification(self, context: Dict[str, Any]) -> bool:
         """

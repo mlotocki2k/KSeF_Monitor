@@ -260,14 +260,14 @@ class InvoiceMonitor:
         use_db = self.db is not None
         db_session = self.db.get_session() if use_db else None
 
-        # Load state (DB preferred, fallback to JSON)
-        state = self.load_state()
+        # Load JSON state only when DB is not active (fallback mode)
+        state = {} if use_db else self.load_state()
         found_any = False
         new_invoices_count = {}
 
-        # For JSON-based dedup (kept for backward compat until fully migrated)
-        seen_entries = state.get("seen_invoices", [])
-        seen_hashes = {e["h"] for e in seen_entries if isinstance(e, dict)}
+        # JSON-based dedup — only used when DB is not available
+        seen_entries = state.get("seen_invoices", []) if not use_db else []
+        seen_hashes = {e["h"] for e in seen_entries if isinstance(e, dict)} if not use_db else set()
 
         try:
             for subject_type in self.subject_types:
@@ -285,23 +285,23 @@ class InvoiceMonitor:
                 for invoice in invoices:
                     ksef_number = invoice.get('ksefNumber', '')
 
-                    # Dedup: check DB first, then hash set
+                    # Dedup: DB-based or hash-based (mutually exclusive)
                     is_new = True
                     if use_db:
                         existing = db_session.query(Invoice).filter_by(ksef_number=ksef_number).first()
                         if existing:
                             is_new = False
-
-                    invoice_hash = self.get_invoice_id_hash(invoice)
-                    if invoice_hash in seen_hashes:
-                        is_new = False
+                    else:
+                        invoice_hash = self.get_invoice_id_hash(invoice)
+                        if invoice_hash in seen_hashes:
+                            is_new = False
+                        else:
+                            seen_hashes.add(invoice_hash)
+                            seen_entries.append({"h": invoice_hash, "ts": now.isoformat()})
 
                     if not is_new:
                         continue
 
-                    # Mark as seen (JSON)
-                    seen_hashes.add(invoice_hash)
-                    seen_entries.append({"h": invoice_hash, "ts": now.isoformat()})
                     found_any = True
                     new_count += 1
                     last_ksef_number = ksef_number
@@ -356,10 +356,11 @@ class InvoiceMonitor:
         if not found_any:
             logger.info("No new invoices found")
 
-        # Save JSON state (backward compat — kept until DB fully replaces it)
-        state["last_check"] = now.isoformat()
-        state["seen_invoices"] = seen_entries[-1000:]
-        self.save_state(state)
+        # Save JSON state only when DB is not active (fallback mode)
+        if not use_db:
+            state["last_check"] = now.isoformat()
+            state["seen_invoices"] = seen_entries[-1000:]
+            self.save_state(state)
 
         # Update Prometheus metrics
         if self.metrics:
