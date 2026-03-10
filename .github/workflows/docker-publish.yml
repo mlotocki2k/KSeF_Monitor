@@ -1,8 +1,8 @@
-name: Build and publish Docker image branch test
+name: Build and publish Docker image
 
 on:
   push:
-    branches: ["test"]
+    branches: ["main", "test"]
     tags: ["v*.*.*"]
   workflow_dispatch:
 
@@ -43,6 +43,7 @@ jobs:
         with:
           images: ghcr.io/${{ github.repository }}
           tags: |
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
             type=raw,value=test,enable=${{ github.ref == 'refs/heads/test' }}
             type=ref,event=tag
             type=sha
