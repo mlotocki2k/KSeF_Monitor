@@ -396,13 +396,16 @@ class InvoiceMonitor:
             ksef_number = invoice.get('ksefNumber', '')
             seller = invoice.get('seller', {})
             buyer = invoice.get('buyer', {})
+            # Buyer NIP is in buyer.identifier.value (API schema: InvoiceMetadataBuyer)
+            buyer_identifier = buyer.get("identifier", {})
+            buyer_nip = buyer_identifier.get("value")
 
             invoice_data = {
                 "ksef_number": ksef_number,
                 "invoice_number": invoice.get("invoiceNumber"),
                 "invoice_type": invoice.get("invoiceType"),
                 "subject_type": subject_type,
-                "form_code": invoice.get("schemaVersion"),
+                "form_code": invoice.get("formCode", {}).get("schemaVersion"),
                 "issue_date": invoice.get("issueDate"),
                 "invoicing_date": self._parse_optional_dt(invoice.get("invoicingDate")),
                 "acquisition_date": self._parse_optional_dt(invoice.get("acquisitionDate")),
@@ -412,7 +415,7 @@ class InvoiceMonitor:
                 "currency": invoice.get("currency", "PLN"),
                 "seller_nip": seller.get("nip", ""),
                 "seller_name": seller.get("name"),
-                "buyer_nip": buyer.get("nip"),
+                "buyer_nip": buyer_nip,
                 "buyer_name": buyer.get("name"),
                 "raw_metadata": json.dumps(invoice, ensure_ascii=False, default=str),
             }
@@ -474,7 +477,11 @@ class InvoiceMonitor:
             "seller_name": s(invoice.get("seller", {}).get("name", "N/A")),
             "seller_nip": s(invoice.get("seller", {}).get("nip", "N/A"), 20),
             "buyer_name": s(invoice.get("buyer", {}).get("name", "N/A")),
-            "buyer_nip": s(invoice.get("buyer", {}).get("nip", "N/A"), 20),
+            "buyer_nip": s(
+                invoice.get("buyer", {}).get("identifier", {}).get("value")
+                or invoice.get("buyer", {}).get("nip", "N/A"),
+                20
+            ),
             "subject_type": subject_type,
             "title": title,
             "priority": self.message_priority,
