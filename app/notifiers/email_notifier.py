@@ -3,6 +3,7 @@ Email Notification Service
 Sends notifications via SMTP with HTML formatting
 """
 
+import html as html_mod
 import logging
 import re
 import smtplib
@@ -105,8 +106,10 @@ class EmailNotifier(BaseNotifier):
         }
         badge_text, badge_color = priority_styles.get(priority, ("📋 Normal", "#36a64f"))
 
-        # Convert newlines to HTML breaks
-        html_message = message.replace("\n", "<br>")
+        # Escape HTML special characters to prevent injection
+        safe_title = html_mod.escape(title)
+        safe_message = html_mod.escape(message).replace("\n", "<br>")
+        safe_url = html_mod.escape(url) if url else None
 
         # Build HTML
         html = f"""
@@ -126,11 +129,11 @@ class EmailNotifier(BaseNotifier):
             <div class="container">
                 <div class="header">
                     <div class="priority">{badge_text}</div>
-                    <h2 style="margin: 10px 0 0 0;">{title}</h2>
+                    <h2 style="margin: 10px 0 0 0;">{safe_title}</h2>
                 </div>
                 <div class="content">
-                    <p>{html_message}</p>
-                    {f'<a href="{url}" class="button">View in KSeF</a>' if url else ''}
+                    <p>{safe_message}</p>
+                    {f'<a href="{safe_url}" class="button">View in KSeF</a>' if safe_url else ''}
                 </div>
                 <div class="footer">
                     <p>KSeF Invoice Monitor</p>

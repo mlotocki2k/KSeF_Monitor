@@ -56,6 +56,13 @@ class PrometheusMetrics:
             'KSeF Monitor health status (1 = running, 0 = stopped)'
         )
 
+        # Metric: Authentication failures (counter)
+        self.auth_failures_total = Counter(
+            'ksef_auth_failures_total',
+            'Total number of KSeF API authentication failures',
+            labelnames=['status_code']
+        )
+
         # Initialize as running
         self.monitor_up.set(1)
 
@@ -105,6 +112,16 @@ class PrometheusMetrics:
         if count > 0:
             self.new_invoices_total.labels(subject_type=subject_type).inc(count)
             logger.debug(f"Prometheus: Incremented new_invoices_total[{subject_type}] by {count}")
+
+    def increment_auth_failures(self, status_code: int = 0):
+        """
+        Increment authentication failure counter.
+
+        Args:
+            status_code: HTTP status code (401, 403, etc.)
+        """
+        self.auth_failures_total.labels(status_code=str(status_code)).inc()
+        logger.debug(f"Prometheus: Incremented auth_failures_total[{status_code}]")
 
     def set_monitor_up(self, is_up: bool):
         """

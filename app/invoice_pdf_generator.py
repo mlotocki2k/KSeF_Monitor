@@ -10,6 +10,7 @@ PDF contains ONLY data present in the source XML. No calculations, no defaults.
 
 import base64
 import hashlib
+import html
 import logging
 import os
 import re
@@ -208,13 +209,19 @@ class InvoiceXMLParser:
             logger.error(f"Failed to parse invoice XML: {e}")
             raise
 
+    @staticmethod
+    def _sanitize_text(value: str) -> str:
+        """Strip HTML tags and escape special characters to prevent injection in PDF rendering."""
+        stripped = re.sub(r'<[^>]+>', '', value)
+        return html.escape(stripped, quote=True)
+
     def _text(self, parent, *tags, default=''):
         if parent is None:
             return default
         for tag in tags:
             elem = parent.find(tag, self.NS)
             if elem is not None and elem.text:
-                return elem.text.strip()
+                return self._sanitize_text(elem.text.strip())
         return default
 
     def _parse_header(self) -> Dict:
@@ -437,7 +444,7 @@ class InvoiceXMLParser:
         # Batch numbers
         partie = wt.findall('fa:NrPartiiTowaru', self.NS)
         if partie:
-            result['nr_partii'] = [p.text.strip() for p in partie
+            result['nr_partii'] = [self._sanitize_text(p.text.strip()) for p in partie
                                     if p.text and p.text.strip()]
         # Delivery terms (Incoterms)
         result['warunki_dostawy'] = self._text(wt, 'fa:WarunkiDostawy')
@@ -712,7 +719,7 @@ class InvoiceXMLParser:
             if tekst is not None:
                 akapity = tekst.findall('fa:Akapit', self.NS)
                 if akapity:
-                    entry['akapity'] = [a.text.strip() for a in akapity
+                    entry['akapity'] = [self._sanitize_text(a.text.strip()) for a in akapity
                                         if a.text and a.text.strip()]
             if any(v for k, v in entry.items() if k != 'naglowek'):
                 result.append(entry)

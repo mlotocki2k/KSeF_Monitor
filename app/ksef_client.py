@@ -64,6 +64,7 @@ class KSeFClient:
         self.refresh_token = None
         self._ksef_public_key = None
         self.session = requests.Session()
+        self.session.verify = True  # Explicit TLS certificate verification
 
         date_type = config.get("monitoring", "date_type")
         if date_type not in self.VALID_DATE_TYPES:

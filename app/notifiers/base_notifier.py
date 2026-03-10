@@ -22,6 +22,7 @@ class BaseNotifier(ABC):
 
     def __init__(self):
         self.session = requests.Session()
+        self.session.verify = True  # Explicit TLS certificate verification
 
     @abstractmethod
     def send_notification(self, title: str, message: str, priority: int = 0, url: Optional[str] = None) -> bool:

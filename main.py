@@ -132,6 +132,11 @@ def main():
 
         prometheus_metrics = None
         if prometheus_enabled:
+            if prometheus_bind == "0.0.0.0" and config.get("ksef", "environment") == "prod":
+                logger.warning(
+                    "⚠ Prometheus metrics bound to 0.0.0.0 in production — "
+                    "consider setting prometheus.bind_address to '127.0.0.1'"
+                )
             try:
                 prometheus_metrics = PrometheusMetrics(port=prometheus_port, bind_address=prometheus_bind)
                 prometheus_metrics.start_server()

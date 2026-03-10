@@ -35,5 +35,8 @@ fi
 chown -R "$DATA_UID:$DATA_GID" /data 2>/dev/null || true
 chmod -R u+rwX /data 2>/dev/null || true
 
+# Restrict file creation permissions (owner-only)
+umask 077
+
 # Drop privileges to ksef user (now has host user's UID)
 exec gosu ksef python -u main.py

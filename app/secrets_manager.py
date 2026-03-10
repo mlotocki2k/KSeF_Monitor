@@ -117,6 +117,11 @@ class SecretsManager:
         if ksef_token:
             config.setdefault("ksef", {})["token"] = ksef_token
             logger.info("KSeF token loaded from secure source")
+        elif config.get("ksef", {}).get("token"):
+            logger.warning(
+                "KSeF token loaded from config file — consider using "
+                "KSEF_TOKEN env var or Docker secret for better security"
+            )
 
         # Pushover credentials (support both old and new structure)
         pushover_user = self.get_secret("PUSHOVER_USER_KEY")

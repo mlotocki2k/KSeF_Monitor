@@ -44,6 +44,8 @@ class WebhookNotifier(BaseNotifier):
 
         raw_url = webhook_config.get("url")
         self.url = raw_url if self._validate_webhook_url(raw_url) else None
+        # Disable redirects to prevent SSRF via redirect to internal IPs
+        self.session.max_redirects = 0
         self.method = webhook_config.get("method", "POST").upper()
         self.headers = webhook_config.get("headers", {})
         self.timeout = webhook_config.get("timeout", 10)
@@ -84,6 +86,10 @@ class WebhookNotifier(BaseNotifier):
         except Exception:
             return False
 
+    def _revalidate_url(self) -> bool:
+        """Re-validate webhook URL DNS at request time to prevent DNS rebinding SSRF."""
+        return self._validate_webhook_url(self.url)
+
     @property
     def is_configured(self) -> bool:
         """Check if webhook URL is configured"""
@@ -122,6 +128,10 @@ class WebhookNotifier(BaseNotifier):
             logger.error("Webhook not configured - notification not sent")
             return False
 
+        if not self._revalidate_url():
+            logger.error("Webhook URL failed DNS re-validation (possible DNS rebinding)")
+            return False
+
         try:
             # Build JSON payload
             payload = {
@@ -141,19 +151,22 @@ class WebhookNotifier(BaseNotifier):
             payload_bytes = json.dumps(payload, separators=(',', ':')).encode('utf-8')
             headers = {**self.headers, **self._sign_payload(payload_bytes)}
 
-            # Send request based on configured method
+            # Send request based on configured method (redirects disabled for SSRF protection)
             if self.method == "POST":
                 response = self.session.post(
-                    self.url, json=payload, headers=headers, timeout=self.timeout
+                    self.url, json=payload, headers=headers, timeout=self.timeout,
+                    allow_redirects=False
                 )
             elif self.method == "PUT":
                 response = self.session.put(
-                    self.url, json=payload, headers=headers, timeout=self.timeout
+                    self.url, json=payload, headers=headers, timeout=self.timeout,
+                    allow_redirects=False
                 )
             elif self.method == "GET":
                 # For GET, send as query parameters
                 response = self.session.get(
-                    self.url, params=payload, headers=headers, timeout=self.timeout
+                    self.url, params=payload, headers=headers, timeout=self.timeout,
+                    allow_redirects=False
                 )
             else:
                 logger.error(f"Unsupported HTTP method: {self.method}")
@@ -179,17 +192,21 @@ class WebhookNotifier(BaseNotifier):
             logger.error("Webhook not configured - notification not sent")
             return False
 
+        if not self._revalidate_url():
+            logger.error("Webhook URL failed DNS re-validation (possible DNS rebinding)")
+            return False
+
         try:
             payload = json.loads(rendered)
             payload_bytes = json.dumps(payload, separators=(',', ':')).encode('utf-8')
             headers = {**self.headers, **self._sign_payload(payload_bytes)}
 
             if self.method == "POST":
-                response = self.session.post(self.url, json=payload, headers=headers, timeout=self.timeout)
+                response = self.session.post(self.url, json=payload, headers=headers, timeout=self.timeout, allow_redirects=False)
             elif self.method == "PUT":
-                response = self.session.put(self.url, json=payload, headers=headers, timeout=self.timeout)
+                response = self.session.put(self.url, json=payload, headers=headers, timeout=self.timeout, allow_redirects=False)
             elif self.method == "GET":
-                response = self.session.get(self.url, params=payload, headers=headers, timeout=self.timeout)
+                response = self.session.get(self.url, params=payload, headers=headers, timeout=self.timeout, allow_redirects=False)
             else:
                 logger.error(f"Unsupported HTTP method: {self.method}")
                 return False
