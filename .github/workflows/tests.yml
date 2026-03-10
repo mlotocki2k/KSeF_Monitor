@@ -49,10 +49,9 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install dependencies
+      - name: Install tools
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
           pip install bandit pip-audit
 
       - name: Run bandit (SAST)
@@ -62,4 +61,4 @@ jobs:
 
       - name: Run pip-audit (CVE scanning)
         run: |
-          pip-audit --strict --desc
+          pip-audit --strict --desc -r requirements.txt
