@@ -91,19 +91,26 @@ def sample_invoice():
         "ksefReferenceNumber": "1234567890-20260301-ABC123-XY",
         "ksefNumber": "1234567890-20260301-ABC123-XY",
         "invoiceNumber": "FV/2026/03/001",
+        "invoiceType": "VAT",
         "issueDate": "2026-03-01T10:00:00",
         "invoicingDate": "2026-03-01T10:00:00",
         "grossAmount": 1230.00,
         "netAmount": 1000.00,
         "vatAmount": 230.00,
         "currency": "PLN",
+        "formCode": {
+            "schemaVersion": "FA(3)_v1-0E",
+            "systemCode": "FA (3)"
+        },
         "seller": {
             "name": "Firma ABC Sp. z o.o.",
             "nip": "9876543210"
         },
         "buyer": {
             "name": "Klient XYZ S.A.",
-            "nip": "1234567890"
+            "identifier": {
+                "value": "1234567890"
+            }
         }
     }
 

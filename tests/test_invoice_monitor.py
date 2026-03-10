@@ -125,6 +125,25 @@ class TestInvoiceMonitorBuildTemplateContext:
         ctx = monitor.build_template_context(sample_invoice, "Subject3")
         assert ctx["title"] == "Nowa faktura w KSeF"
 
+    def test_buyer_nip_from_identifier(self, monitor, sample_invoice):
+        """Buyer NIP extracted from buyer.identifier.value (API v2.1.2 schema)."""
+        ctx = monitor.build_template_context(sample_invoice, "Subject1")
+        assert ctx["buyer_nip"] == "1234567890"
+
+    def test_buyer_nip_fallback_to_nip(self, monitor):
+        """Buyer NIP falls back to buyer.nip when identifier not present."""
+        invoice = {
+            "ksefNumber": "test-123",
+            "invoiceNumber": "FV/001",
+            "issueDate": "2026-01-01",
+            "grossAmount": 100,
+            "currency": "PLN",
+            "seller": {"name": "Seller", "nip": "1234567890"},
+            "buyer": {"name": "Buyer", "nip": "0987654321"},
+        }
+        ctx = monitor.build_template_context(invoice, "Subject1")
+        assert ctx["buyer_nip"] == "0987654321"
+
     def test_sanitized_fields(self, monitor):
         """Fields with null bytes are sanitized."""
         invoice = {
@@ -134,7 +153,7 @@ class TestInvoiceMonitorBuildTemplateContext:
             "grossAmount": 100,
             "currency": "PLN",
             "seller": {"name": "Seller\x00Name", "nip": "1234567890"},
-            "buyer": {"name": "Buyer", "nip": "0987654321"},
+            "buyer": {"name": "Buyer", "identifier": {"value": "0987654321"}},
         }
         ctx = monitor.build_template_context(invoice, "Subject1")
         assert "\x00" not in ctx["ksef_number"]
@@ -450,3 +469,251 @@ class TestInvoiceMonitorShutdown:
         """Shutdown sends notification."""
         monitor.shutdown()
         monitor.notifier.send_notification.assert_called_once()
+
+
+class TestSanitizeFilenameValue:
+    """Tests for _sanitize_filename_value()."""
+
+    def test_replaces_path_separators(self):
+        """Path separators / and \\ are replaced with _."""
+        assert InvoiceMonitor._sanitize_filename_value("FV/2026/03") == "FV_2026_03"
+        assert InvoiceMonitor._sanitize_filename_value("path\\file") == "path_file"
+
+    def test_replaces_unsafe_chars(self):
+        """Characters :*?\"<>| are replaced with _."""
+        result = InvoiceMonitor._sanitize_filename_value('a:b*c?d"e<f>g|h')
+        assert "/" not in result
+        assert "*" not in result
+        assert "?" not in result
+
+    def test_strips_null_bytes(self):
+        """Null bytes are removed."""
+        assert InvoiceMonitor._sanitize_filename_value("abc\x00def") == "abcdef"
+
+    def test_strips_dots_and_spaces(self):
+        """Leading/trailing dots and spaces are stripped."""
+        assert InvoiceMonitor._sanitize_filename_value("..name..") == "name"
+        assert InvoiceMonitor._sanitize_filename_value("  name  ") == "name"
+
+    def test_limits_length(self):
+        """Values are truncated to 100 characters."""
+        result = InvoiceMonitor._sanitize_filename_value("a" * 200)
+        assert len(result) == 100
+
+    def test_empty_returns_unknown(self):
+        """Empty or None input returns 'unknown'."""
+        assert InvoiceMonitor._sanitize_filename_value("") == "unknown"
+        assert InvoiceMonitor._sanitize_filename_value(None) == "unknown"
+
+    def test_only_dots_returns_unknown(self):
+        """Value that is only dots returns 'unknown' after stripping."""
+        assert InvoiceMonitor._sanitize_filename_value("...") == "unknown"
+
+
+class TestBuildFileName:
+    """Tests for _build_file_name()."""
+
+    def test_default_pattern_subject1(self, monitor, sample_invoice):
+        """Default pattern produces {type}_{date}_{invoice_number}."""
+        result = monitor._build_file_name(sample_invoice, "Subject1")
+        assert result == "sprz_20260301_FV_2026_03_001"
+
+    def test_default_pattern_subject2(self, monitor, sample_invoice):
+        """Subject2 produces zak_ prefix."""
+        result = monitor._build_file_name(sample_invoice, "Subject2")
+        assert result.startswith("zak_")
+
+    def test_upo_type(self, monitor, sample_invoice):
+        """file_type='upo' produces upo_ prefix."""
+        result = monitor._build_file_name(sample_invoice, "Subject1", file_type="upo")
+        assert result.startswith("upo_")
+
+    def test_custom_pattern_with_ksef(self, monitor, sample_invoice):
+        """Custom pattern with {ksef} placeholder."""
+        monitor.file_name_pattern = "{type}_{ksef}"
+        result = monitor._build_file_name(sample_invoice, "Subject1")
+        assert result == "sprz_1234567890-20260301-ABC123-XY"
+
+    def test_custom_pattern_with_ksef_short(self, monitor, sample_invoice):
+        """Custom pattern with {ksef_short} — last 6 chars."""
+        monitor.file_name_pattern = "{type}_{ksef_short}"
+        result = monitor._build_file_name(sample_invoice, "Subject1")
+        assert result == "sprz_123-XY"
+
+    def test_custom_pattern_with_seller_nip(self, monitor, sample_invoice):
+        """Custom pattern with {seller_nip}."""
+        monitor.file_name_pattern = "{type}_{seller_nip}_{date}"
+        result = monitor._build_file_name(sample_invoice, "Subject1")
+        assert result == "sprz_9876543210_20260301"
+
+    def test_custom_pattern_with_buyer_nip(self, monitor, sample_invoice):
+        """Custom pattern with {buyer_nip} from identifier.value."""
+        monitor.file_name_pattern = "{type}_{buyer_nip}_{date}"
+        result = monitor._build_file_name(sample_invoice, "Subject1")
+        assert result == "sprz_1234567890_20260301"
+
+    def test_buyer_nip_fallback(self, monitor):
+        """Buyer NIP falls back to buyer.nip when identifier missing."""
+        invoice = {
+            "ksefNumber": "test-123",
+            "invoiceNumber": "FV/001",
+            "issueDate": "2026-03-01",
+            "seller": {"name": "S", "nip": "1111111111"},
+            "buyer": {"name": "B", "nip": "2222222222"},
+        }
+        monitor.file_name_pattern = "{buyer_nip}"
+        result = monitor._build_file_name(invoice, "Subject1")
+        assert result == "2222222222"
+
+    def test_fallback_on_bad_pattern(self, monitor, sample_invoice):
+        """Invalid pattern falls back to type_date_ksef."""
+        monitor.file_name_pattern = "{type}_{nonexistent}"
+        result = monitor._build_file_name(sample_invoice, "Subject1")
+        assert result.startswith("sprz_20260301_")
+
+    def test_missing_invoice_number(self, monitor):
+        """Missing invoiceNumber produces 'unknown' placeholder."""
+        invoice = {
+            "ksefNumber": "test-123",
+            "issueDate": "2026-03-01",
+            "seller": {"name": "S", "nip": "1111111111"},
+            "buyer": {"name": "B", "identifier": {"value": "2222222222"}},
+        }
+        result = monitor._build_file_name(invoice, "Subject1")
+        assert "unknown" in result
+
+
+class TestBuildFileNamePatternConfig:
+    """Tests for file_name_pattern config validation."""
+
+    def _make_cm(self, config_file, config):
+        with patch("app.config_manager.SecretsManager") as MockSM:
+            MockSM.return_value.load_config_with_secrets.return_value = config
+            from app.config_manager import ConfigManager
+            return ConfigManager(config_file)
+
+    def test_default_pattern(self, config_file, minimal_config):
+        """Default file_name_pattern is applied."""
+        cm = self._make_cm(config_file, minimal_config)
+        assert cm.config["storage"]["file_name_pattern"] == "{type}_{date}_{invoice_number}"
+
+    def test_valid_pattern_accepted(self, config_file, minimal_config):
+        """Valid custom pattern is accepted."""
+        minimal_config["storage"]["file_name_pattern"] = "{type}_{seller_nip}_{date}_{ksef_short}"
+        cm = self._make_cm(config_file, minimal_config)
+        assert cm.config["storage"]["file_name_pattern"] == "{type}_{seller_nip}_{date}_{ksef_short}"
+
+    def test_invalid_pattern_falls_back(self, config_file, minimal_config):
+        """Invalid placeholder resets to default."""
+        minimal_config["storage"]["file_name_pattern"] = "{type}_{invalid}"
+        cm = self._make_cm(config_file, minimal_config)
+        assert cm.config["storage"]["file_name_pattern"] == "{type}_{date}_{invoice_number}"
+
+    def test_all_placeholders_valid(self, config_file, minimal_config):
+        """Pattern using all 7 valid placeholders is accepted."""
+        pattern = "{type}_{date}_{invoice_number}_{ksef}_{ksef_short}_{seller_nip}_{buyer_nip}"
+        minimal_config["storage"]["file_name_pattern"] = pattern
+        cm = self._make_cm(config_file, minimal_config)
+        assert cm.config["storage"]["file_name_pattern"] == pattern
+
+
+class TestParseOptionalDt:
+    """Tests for _parse_optional_dt()."""
+
+    def test_valid_iso_datetime(self):
+        """Parses valid ISO datetime string."""
+        result = InvoiceMonitor._parse_optional_dt("2026-03-01T10:00:00")
+        assert isinstance(result, datetime)
+        assert result.tzinfo == timezone.utc
+
+    def test_timezone_aware_datetime(self):
+        """Parses timezone-aware datetime without converting to UTC."""
+        result = InvoiceMonitor._parse_optional_dt("2026-03-01T10:00:00+02:00")
+        assert result is not None
+        assert result.tzinfo is not None
+
+    def test_none_returns_none(self):
+        """None input returns None."""
+        assert InvoiceMonitor._parse_optional_dt(None) is None
+
+    def test_empty_string_returns_none(self):
+        """Empty string returns None."""
+        assert InvoiceMonitor._parse_optional_dt("") is None
+
+    def test_invalid_string_returns_none(self):
+        """Invalid date string returns None."""
+        assert InvoiceMonitor._parse_optional_dt("not-a-date") is None
+
+
+class TestSaveInvoiceToDb:
+    """Tests for _save_invoice_to_db()."""
+
+    def test_saves_new_invoice(self, monitor, sample_invoice):
+        """New invoice is saved and returns its id."""
+        mock_db = MagicMock()
+        mock_session = MagicMock()
+        mock_invoice = MagicMock()
+        mock_invoice.id = 42
+        mock_db.save_invoice.return_value = mock_invoice
+        monitor.db = mock_db
+
+        result = monitor._save_invoice_to_db(mock_session, sample_invoice, "Subject1")
+        assert result == 42
+        mock_db.save_invoice.assert_called_once()
+
+        # Verify correct buyer NIP extraction
+        call_data = mock_db.save_invoice.call_args[0][1]
+        assert call_data["buyer_nip"] == "1234567890"  # from identifier.value
+
+    def test_saves_form_code(self, monitor, sample_invoice):
+        """Form code extracted from formCode.schemaVersion."""
+        mock_db = MagicMock()
+        mock_invoice = MagicMock()
+        mock_invoice.id = 1
+        mock_db.save_invoice.return_value = mock_invoice
+        monitor.db = mock_db
+
+        monitor._save_invoice_to_db(MagicMock(), sample_invoice, "Subject1")
+        call_data = mock_db.save_invoice.call_args[0][1]
+        assert call_data["form_code"] == "FA(3)_v1-0E"
+
+    def test_duplicate_returns_existing_id(self, monitor, sample_invoice):
+        """Duplicate invoice returns existing record's id."""
+        from app.database import Invoice
+        mock_db = MagicMock()
+        mock_db.save_invoice.return_value = None  # duplicate
+        mock_session = MagicMock()
+        mock_existing = MagicMock()
+        mock_existing.id = 99
+        mock_session.query.return_value.filter_by.return_value.first.return_value = mock_existing
+        monitor.db = mock_db
+
+        result = monitor._save_invoice_to_db(mock_session, sample_invoice, "Subject1")
+        assert result == 99
+
+    def test_error_returns_none(self, monitor, sample_invoice):
+        """Exception during save returns None."""
+        mock_db = MagicMock()
+        mock_db.save_invoice.side_effect = Exception("DB error")
+        monitor.db = mock_db
+
+        result = monitor._save_invoice_to_db(MagicMock(), sample_invoice, "Subject1")
+        assert result is None
+
+    def test_buyer_nip_fallback(self, monitor):
+        """Buyer NIP falls back when identifier not present."""
+        invoice = {
+            "ksefNumber": "test-123",
+            "issueDate": "2026-03-01",
+            "seller": {"name": "S", "nip": "111"},
+            "buyer": {"name": "B"},
+        }
+        mock_db = MagicMock()
+        mock_invoice = MagicMock()
+        mock_invoice.id = 1
+        mock_db.save_invoice.return_value = mock_invoice
+        monitor.db = mock_db
+
+        monitor._save_invoice_to_db(MagicMock(), invoice, "Subject1")
+        call_data = mock_db.save_invoice.call_args[0][1]
+        assert call_data["buyer_nip"] is None  # no identifier, no nip
