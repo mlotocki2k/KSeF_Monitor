@@ -887,7 +887,7 @@ class InvoicePDFGenerator:
             if value:
                 rows.append([
                     Paragraph(label, self.styles['FieldLabel']),
-                    Paragraph(f'<b>{value}</b>', self.styles['FieldValue'])
+                    Paragraph(f'<b>{self._rl_escape(value)}</b>', self.styles['FieldValue'])
                 ])
 
         add_row('Kod waluty:', h.get('kod_waluty'))
@@ -929,32 +929,43 @@ class InvoicePDFGenerator:
         ]))
         return [t]
 
+    @staticmethod
+    def _rl_escape(value) -> str:
+        """Escape special chars for ReportLab Paragraph XML parser.
+
+        ReportLab Paragraph uses an internal XML/SAX parser that requires
+        &amp; for literal ampersands, &lt;/&gt; for angle brackets, etc.
+        Without this, raw '&' in company names causes SAXParseException.
+        """
+        return html.escape(str(value), quote=False) if value else ''
+
     def _party_html(self, title: str, p: Dict) -> 'Paragraph':
+        e = self._rl_escape
         h = f'<b>{title}</b><br/>'
         if p.get('nip'):
-            prefix = f"{p['prefiks']} " if p.get('prefiks') else ''
-            h += f'NIP: {prefix}<b>{p["nip"]}</b><br/>'
+            prefix = f"{e(p['prefiks'])} " if p.get('prefiks') else ''
+            h += f'NIP: {prefix}<b>{e(p["nip"])}</b><br/>'
         if p.get('kod_ue') and p.get('nr_vat_ue'):
-            h += f'VAT UE: {p["kod_ue"]} {p["nr_vat_ue"]}<br/>'
+            h += f'VAT UE: {e(p["kod_ue"])} {e(p["nr_vat_ue"])}<br/>'
         if p.get('nr_id'):
-            h += f'ID: {p.get("kod_kraju_id", "")} {p["nr_id"]}<br/>'
+            h += f'ID: {e(p.get("kod_kraju_id", ""))} {e(p["nr_id"])}<br/>'
         if p.get('nazwa'):
-            h += f'{p["nazwa"]}<br/>'
+            h += f'{e(p["nazwa"])}<br/>'
         if p.get('kod_kraju'):
-            h += f'Kod kraju: {p["kod_kraju"]}<br/>'
+            h += f'Kod kraju: {e(p["kod_kraju"])}<br/>'
         if p.get('adres_l1'):
-            h += f'{p["adres_l1"]}'
+            h += f'{e(p["adres_l1"])}'
             if p.get('adres_l2'):
-                h += f' {p["adres_l2"]}'
+                h += f' {e(p["adres_l2"])}'
             h += '<br/>'
         if p.get('nr_eori'):
-            h += f'EORI: {p["nr_eori"]}<br/>'
+            h += f'EORI: {e(p["nr_eori"])}<br/>'
         if p.get('gln'):
-            h += f'GLN: {p["gln"]}<br/>'
+            h += f'GLN: {e(p["gln"])}<br/>'
         if p.get('email'):
-            h += f'Email: {p["email"]}<br/>'
+            h += f'Email: {e(p["email"])}<br/>'
         if p.get('telefon'):
-            h += f'Tel: {p["telefon"]}<br/>'
+            h += f'Tel: {e(p["telefon"])}<br/>'
         return Paragraph(h, self.styles['PartyInfo'])
 
     def _items_table(self, data: Dict) -> List:
@@ -1013,7 +1024,7 @@ class InvoicePDFGenerator:
                     val = VAT_RATE_LABELS.get(val, val)
                 style = self.styles['TDR'] if align == 'r' else (
                     self.styles['TDC'] if align == 'c' else self.styles['TD'])
-                row.append(Paragraph(str(val), style))
+                row.append(Paragraph(self._rl_escape(val), style))
             tdata.append(row)
 
         t = Table(tdata, colWidths=widths)
@@ -1088,7 +1099,7 @@ class InvoicePDFGenerator:
         if not p15:
             return []
 
-        currency = h.get('kod_waluty', '')
+        currency = self._rl_escape(h.get('kod_waluty', ''))
         currency_suffix = f' {currency}' if currency else ''
 
         rodzaj = h.get('rodzaj', 'VAT')
@@ -1132,7 +1143,7 @@ class InvoicePDFGenerator:
             if value:
                 rows.append([
                     Paragraph(label, self.styles['SmallBold']),
-                    Paragraph(value, self.styles['Small'])
+                    Paragraph(self._rl_escape(value), self.styles['Small'])
                 ])
 
         # Paid flag
@@ -1216,7 +1227,7 @@ class InvoicePDFGenerator:
         for key, label in labels:
             val = ann.get(key)
             if val:
-                txt = 'Tak' if val == '1' else ('Nie' if val == '2' else val)
+                txt = 'Tak' if val == '1' else ('Nie' if val == '2' else self._rl_escape(val))
                 rows.append([
                     Paragraph(f'{label}:', self.styles['SmallBold']),
                     Paragraph(txt, self.styles['Small'])
@@ -1234,7 +1245,7 @@ class InvoicePDFGenerator:
                 if ann.get(key):
                     rows.append([
                         Paragraph(f'  {label}:', self.styles['Small']),
-                        Paragraph(ann[key], self.styles['Small'])
+                        Paragraph(self._rl_escape(ann[key]), self.styles['Small'])
                     ])
 
         # Margin scheme (PMarzy)
@@ -1284,7 +1295,7 @@ class InvoicePDFGenerator:
                 if parts:
                     rows.append([
                         Paragraph('  Pojazd:', self.styles['Small']),
-                        Paragraph(', '.join(parts), self.styles['Small'])
+                        Paragraph(self._rl_escape(', '.join(parts)), self.styles['Small'])
                     ])
 
         if not rows:
@@ -1308,12 +1319,12 @@ class InvoicePDFGenerator:
             return []
         elements = [Spacer(1, 3*mm)]
         for p in parties:
-            role = p.get('opis_roli') or p.get('rola_inna', '')
+            role = self._rl_escape(p.get('opis_roli') or p.get('rola_inna', ''))
             title = f'<b>PODMIOT TRZECI</b>{f" — {role}" if role else ""}'
             elements.append(self._party_html(title, p))
             if p.get('udzial'):
                 elements.append(Paragraph(
-                    f'Udział: {p["udzial"]}%', self.styles['Small']))
+                    f'Udział: {self._rl_escape(p["udzial"])}%', self.styles['Small']))
         return elements
 
     def _correction_info(self, data: Dict) -> List:
@@ -1328,19 +1339,19 @@ class InvoicePDFGenerator:
         if h.get('przyczyna_korekty'):
             rows.append([
                 Paragraph('Przyczyna korekty:', self.styles['SmallBold']),
-                Paragraph(h['przyczyna_korekty'], self.styles['Small'])
+                Paragraph(self._rl_escape(h['przyczyna_korekty']), self.styles['Small'])
             ])
         if h.get('typ_korekty'):
             typ_map = {'1': 'Korekta wartości', '2': 'Korekta danych',
                         '3': 'Korekta wartości i danych'}
             rows.append([
                 Paragraph('Typ korekty:', self.styles['SmallBold']),
-                Paragraph(typ_map.get(h['typ_korekty'], h['typ_korekty']),
+                Paragraph(self._rl_escape(typ_map.get(h['typ_korekty'], h['typ_korekty'])),
                            self.styles['Small'])
             ])
         for d in dane:
-            nr = d.get('nr_ksef') or d.get('nr_faktury', '')
-            data_txt = d.get('data_wyst', '')
+            nr = self._rl_escape(d.get('nr_ksef') or d.get('nr_faktury', ''))
+            data_txt = self._rl_escape(d.get('data_wyst', ''))
             rows.append([
                 Paragraph('Faktura korygowana:', self.styles['SmallBold']),
                 Paragraph(f'{nr} ({data_txt})' if data_txt else nr,
@@ -1369,7 +1380,7 @@ class InvoicePDFGenerator:
             if value:
                 rows.append([
                     Paragraph(label, self.styles['SmallBold']),
-                    Paragraph(value, self.styles['Small'])
+                    Paragraph(self._rl_escape(value), self.styles['Small'])
                 ])
 
         for o in roz.get('obciazenia', []):
@@ -1406,7 +1417,7 @@ class InvoicePDFGenerator:
             for fz in fz_list:
                 nr = fz.get('nr_ksef') or fz.get('nr_faktury', '')
                 if nr:
-                    elements.append(Paragraph(nr, self.styles['Small']))
+                    elements.append(Paragraph(self._rl_escape(nr), self.styles['Small']))
 
         # Partial advance payments
         zc_list = data.get('zaliczki_czesciowe', [])
@@ -1423,7 +1434,7 @@ class InvoicePDFGenerator:
                 if zc.get('kurs_waluty'):
                     parts.append(f'Kurs: {zc["kurs_waluty"]}')
                 if parts:
-                    elements.append(Paragraph(' | '.join(parts), self.styles['Small']))
+                    elements.append(Paragraph(self._rl_escape(' | '.join(parts)), self.styles['Small']))
 
         return elements
 
@@ -1440,8 +1451,8 @@ class InvoicePDFGenerator:
         ]]
         for o in opisy:
             tdata.append([
-                Paragraph(o.get('klucz', ''), self.styles['TD']),
-                Paragraph(o.get('wartosc', ''), self.styles['TD']),
+                Paragraph(self._rl_escape(o.get('klucz', '')), self.styles['TD']),
+                Paragraph(self._rl_escape(o.get('wartosc', '')), self.styles['TD']),
             ])
         t = Table(tdata, colWidths=[50*mm, 136*mm])
         t.setStyle(TableStyle([
@@ -1479,13 +1490,13 @@ class InvoicePDFGenerator:
             tdata = [header]
             for w in wiersze:
                 tdata.append([
-                    Paragraph(w.get('nr', ''), self.styles['TDC']),
-                    Paragraph(w.get('p7z', ''), self.styles['TD']),
-                    Paragraph(w.get('p8az', ''), self.styles['TDC']),
-                    Paragraph(self._fmt_amt(w.get('p8bz', '')), self.styles['TDR']),
-                    Paragraph(self._fmt_amt(w.get('p9az', '')), self.styles['TDR']),
-                    Paragraph(self._fmt_amt(w.get('p11z', '')), self.styles['TDR']),
-                    Paragraph(VAT_RATE_LABELS.get(w.get('p12z', ''), w.get('p12z', '')),
+                    Paragraph(self._rl_escape(w.get('nr', '')), self.styles['TDC']),
+                    Paragraph(self._rl_escape(w.get('p7z', '')), self.styles['TD']),
+                    Paragraph(self._rl_escape(w.get('p8az', '')), self.styles['TDC']),
+                    Paragraph(self._rl_escape(self._fmt_amt(w.get('p8bz', ''))), self.styles['TDR']),
+                    Paragraph(self._rl_escape(self._fmt_amt(w.get('p9az', ''))), self.styles['TDR']),
+                    Paragraph(self._rl_escape(self._fmt_amt(w.get('p11z', ''))), self.styles['TDR']),
+                    Paragraph(self._rl_escape(VAT_RATE_LABELS.get(w.get('p12z', ''), w.get('p12z', ''))),
                               self.styles['TDC']),
                 ])
             t = Table(tdata, colWidths=[10*mm, 60*mm, 15*mm, 20*mm, 27*mm, 27*mm, 20*mm])
@@ -1508,13 +1519,13 @@ class InvoicePDFGenerator:
                      Paragraph('Załączniki', self.styles['Section'])]
         for blok in bloki:
             if blok.get('naglowek'):
-                elements.append(Paragraph(blok['naglowek'], self.styles['SmallBold']))
+                elements.append(Paragraph(self._rl_escape(blok['naglowek']), self.styles['SmallBold']))
             for m in blok.get('metadane', []):
                 elements.append(Paragraph(
-                    f'{m.get("klucz", "")}: {m.get("wartosc", "")}',
+                    f'{self._rl_escape(m.get("klucz", ""))}: {self._rl_escape(m.get("wartosc", ""))}',
                     self.styles['Small']))
             for a in blok.get('akapity', []):
-                elements.append(Paragraph(a, self.styles['Small']))
+                elements.append(Paragraph(self._rl_escape(a), self.styles['Small']))
             elements.append(Spacer(1, 2*mm))
         return elements
 
@@ -1531,7 +1542,7 @@ class InvoicePDFGenerator:
             if value:
                 rows.append([
                     Paragraph(label, self.styles['SmallBold']),
-                    Paragraph(value, self.styles['Small'])
+                    Paragraph(self._rl_escape(value), self.styles['Small'])
                 ])
 
         for u in wt.get('umowy', []):
@@ -1589,7 +1600,7 @@ class InvoicePDFGenerator:
         if ft.get('informacje'):
             elements.append(Spacer(1, 3*mm))
             for info in ft['informacje']:
-                elements.append(Paragraph(info, self.styles['Small']))
+                elements.append(Paragraph(self._rl_escape(info), self.styles['Small']))
 
         # Registries
         if ft.get('rejestry'):
@@ -1605,7 +1616,7 @@ class InvoicePDFGenerator:
                 if r.get('bdo'):
                     parts.append(f'BDO: {r["bdo"]}')
                 if parts:
-                    elements.append(Paragraph(' | '.join(parts), self.styles['Small']))
+                    elements.append(Paragraph(self._rl_escape(' | '.join(parts)), self.styles['Small']))
 
         # Creation timestamp
         if h.get('data_wytworzenia'):

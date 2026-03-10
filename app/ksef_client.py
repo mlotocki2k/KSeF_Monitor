@@ -251,6 +251,8 @@ class KSeFClient:
 
         except Exception as e:
             logger.error(f"Authentication failed: {e}")
+            if self.on_auth_failure:
+                self.on_auth_failure(0)
             return False
     
     def _get_challenge(self) -> Optional[Dict]:

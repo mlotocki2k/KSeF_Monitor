@@ -225,3 +225,27 @@ class TestAuthFailureCallback:
 
         assert result is True
         callback.assert_not_called()
+
+    def test_on_auth_failure_called_on_initial_auth_exception(self):
+        """Callback fires when authenticate() raises an exception."""
+        from app.ksef_client import KSeFClient
+
+        config = MagicMock()
+        config.get.side_effect = lambda *a, **kw: {
+            ("ksef", "environment"): "test",
+            ("ksef", "nip"): "1234567890",
+            ("ksef", "token"): "test-token",
+            ("monitoring", "date_type"): "Invoicing",
+        }.get(a, kw.get("default"))
+
+        client = KSeFClient(config)
+        callback = MagicMock()
+        client.on_auth_failure = callback
+
+        # Mock _get_challenge to raise an exception (simulating initial auth failure)
+        client._get_challenge = MagicMock(side_effect=Exception("connection refused"))
+
+        result = client.authenticate()
+
+        assert result is False
+        callback.assert_called_once_with(0)
