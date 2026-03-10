@@ -83,5 +83,10 @@
     "enabled": true,
     "port": 8000,
     "description": "Prometheus metrics endpoint. Exposes /metrics on specified port. Metrics: ksef_last_check_timestamp (last API check), ksef_new_invoices_total (new invoices by subject_type), ksef_monitor_up (health status)"
+  },
+  "database": {
+    "enabled": true,
+    "path": "/data/invoices.db",
+    "description": "SQLite database for invoice metadata persistence. path: location of DB file (auto-created). Set enabled: false to disable DB and use JSON state file only."
   }
 }

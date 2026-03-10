@@ -83,7 +83,7 @@ docker-compose build
 ```bash
 # Test imports work
 docker-compose run --rm ksef-monitor python3 -c "
-from app import ConfigManager, KSeFClient, NotificationManager, InvoiceMonitor
+from app import ConfigManager, KSeFClient, NotificationManager, InvoiceMonitor, Database
 from app.notifiers.pushover_notifier import PushoverNotifier
 print('✓ All imports successful')
 "
@@ -285,18 +285,37 @@ docker-compose logs -f
 **Expected:** Regular check cycles
 **On Error:** Check monitor configuration
 
-### Test 12: State Persistence
+### Test 12: State Persistence (Database)
 
 ```bash
-# Check state file created
-docker-compose exec ksef-monitor ls -la /data/last_check.json
+# Check database file created (v0.3+)
+docker-compose exec ksef-monitor ls -la /data/invoices.db
 
-# View state
-docker-compose exec ksef-monitor cat /data/last_check.json
+# Check database status
+docker-compose exec ksef-monitor python3 db_admin.py --db /data/invoices.db status
+
+# Check legacy state file (backward compatibility)
+docker-compose exec ksef-monitor ls -la /data/last_check.json
 ```
 
-**Expected:** JSON file with last_check and seen_invoices
-**On Error:** Check volume mounts
+**Expected:** Database file exists, tables created (invoices, monitor_state, notification_log)
+**On Error:** Check volume mounts, check `database.enabled` in config
+
+### Test 12b: Database Admin Tool
+
+```bash
+# Monitor state per NIP + subject_type
+docker-compose exec ksef-monitor python3 db_admin.py --db /data/invoices.db state
+
+# Invoice statistics
+docker-compose exec ksef-monitor python3 db_admin.py --db /data/invoices.db stats
+
+# Error tracking
+docker-compose exec ksef-monitor python3 db_admin.py --db /data/invoices.db errors
+```
+
+**Expected:** Tables with monitor state data after first check cycle
+**On Error:** Check database initialization in logs
 
 ### Test 13: Restart Persistence
 
@@ -307,11 +326,14 @@ docker-compose down
 # Start again
 docker-compose up -d
 
-# Check it remembers state
+# Check database remembers state
+docker-compose exec ksef-monitor python3 db_admin.py --db /data/invoices.db state
+
+# Check legacy state file (backward compatibility)
 docker-compose exec ksef-monitor cat /data/last_check.json
 ```
 
-**Expected:** Same state as before restart
+**Expected:** Same state as before restart (both DB and JSON)
 **On Error:** Check data volume mount
 
 ## Error Handling Tests

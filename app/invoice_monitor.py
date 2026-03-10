@@ -15,6 +15,7 @@ from typing import Any, Dict, List, Optional
 from .scheduler import Scheduler
 from .notifiers import NotificationManager
 from .invoice_pdf_generator import generate_invoice_pdf, REPORTLAB_AVAILABLE
+from .database import Database, Invoice
 
 # Optional timezone support
 try:
@@ -38,7 +39,7 @@ class InvoiceMonitor:
     # KSeF API maximum dateRange is 3 months (90 days)
     MAX_DATE_RANGE_DAYS = 90
 
-    def __init__(self, config, ksef_client, notification_manager, prometheus_metrics=None):
+    def __init__(self, config, ksef_client, notification_manager, prometheus_metrics=None, database=None):
         """
         Initialize invoice monitor
 
@@ -47,13 +48,16 @@ class InvoiceMonitor:
             ksef_client: KSeFClient instance
             notification_manager: NotificationManager instance
             prometheus_metrics: PrometheusMetrics instance (optional)
+            database: Database instance (optional, enables DB persistence)
         """
         self.config = config
         self.ksef = ksef_client
         self.notifier = notification_manager
         self.metrics = prometheus_metrics
+        self.db = database
         self.state_file = Path("/data/last_check.json")
         self.subject_types = config.get("monitoring", "subject_types") or ["Subject1"]
+        self.nip = config.get("ksef", "nip") or ""
 
         # Storage settings
         self.save_xml = config.get("storage", "save_xml", default=False)
@@ -245,69 +249,114 @@ class InvoiceMonitor:
         Check for new invoices and send notifications.
         Sends one query per subject_type (API accepts only one at a time).
         All dates use configured timezone (default: Europe/Warsaw).
+
+        When database is available:
+        - Reads last_check from monitor_state (per NIP + subject_type)
+        - Saves invoice metadata to invoices table (dedup by ksef_number)
+        - Updates monitor_state after each subject_type pass
+        Falls back to JSON state file when DB is not available.
         """
-        state = self.load_state()
-
         now = self._get_now()
-        if state.get("last_check"):
-            try:
-                date_from = self._parse_datetime(state["last_check"])
-            except (ValueError, TypeError):
-                logger.warning("Invalid last_check date, using 24h ago")
-                date_from = now - timedelta(hours=24)
-        else:
-            date_from = now - timedelta(hours=24)
-            logger.info("First run - checking last 24 hours")
+        use_db = self.db is not None
+        db_session = self.db.get_session() if use_db else None
 
-        date_to = now
-
-        # Cap date_from to max 90 days back (KSeF API 3-month limit)
-        date_from = self._cap_date_from(date_from, now)
-
-        seen_entries = state.get("seen_invoices", [])
-        seen_hashes = {e["h"] for e in seen_entries if isinstance(e, dict)}
+        # Load state (DB preferred, fallback to JSON)
+        state = self.load_state()
         found_any = False
-
-        # Track new invoices per subject type for Prometheus
         new_invoices_count = {}
 
-        for subject_type in self.subject_types:
-            invoices = self.ksef.get_invoices_metadata(date_from, date_to, subject_type)
-            title = self.SUBJECT_TYPE_TITLES.get(subject_type, self.DEFAULT_TITLE)
-            new_count = 0
+        # For JSON-based dedup (kept for backward compat until fully migrated)
+        seen_entries = state.get("seen_invoices", [])
+        seen_hashes = {e["h"] for e in seen_entries if isinstance(e, dict)}
 
-            for invoice in invoices:
-                invoice_hash = self.get_invoice_id_hash(invoice)
-                if invoice_hash in seen_hashes:
-                    continue
+        try:
+            for subject_type in self.subject_types:
+                # Determine date_from per subject_type
+                date_from = self._get_date_from(db_session, subject_type, state, now)
+                date_to = now
 
-                seen_hashes.add(invoice_hash)
-                seen_entries.append({"h": invoice_hash, "ts": now.isoformat()})
-                found_any = True
-                new_count += 1
+                # Cap date_from to max 90 days back (KSeF API 3-month limit)
+                date_from = self._cap_date_from(date_from, now)
 
-                context = self.build_template_context(invoice, subject_type)
-                success = self.notifier.send_invoice_notification(context)
+                invoices = self.ksef.get_invoices_metadata(date_from, date_to, subject_type)
+                new_count = 0
+                last_ksef_number = None
 
-                safe_ksef_log = str(invoice.get('ksefNumber', 'N/A')).replace('\n', ' ').replace('\r', ' ')
-                if success:
-                    logger.info(f"Notification sent [{subject_type}] invoice: {safe_ksef_log}")
-                else:
-                    logger.warning(f"Failed to send notification [{subject_type}] invoice: {safe_ksef_log}")
+                for invoice in invoices:
+                    ksef_number = invoice.get('ksefNumber', '')
 
-                # Save invoice artifacts (PDF, XML, UPO) with rate limit pause
-                self._save_invoice_artifacts(invoice, subject_type)
-                if self.save_xml or self.save_pdf:
-                    time.sleep(2)  # Rate limit: max 30 req/min API limit
+                    # Dedup: check DB first, then hash set
+                    is_new = True
+                    if use_db:
+                        existing = db_session.query(Invoice).filter_by(ksef_number=ksef_number).first()
+                        if existing:
+                            is_new = False
 
-            # Store count for this subject type
-            if new_count > 0:
-                new_invoices_count[subject_type] = new_count
+                    invoice_hash = self.get_invoice_id_hash(invoice)
+                    if invoice_hash in seen_hashes:
+                        is_new = False
+
+                    if not is_new:
+                        continue
+
+                    # Mark as seen (JSON)
+                    seen_hashes.add(invoice_hash)
+                    seen_entries.append({"h": invoice_hash, "ts": now.isoformat()})
+                    found_any = True
+                    new_count += 1
+                    last_ksef_number = ksef_number
+
+                    # Save to DB
+                    invoice_id = None
+                    if use_db:
+                        invoice_id = self._save_invoice_to_db(db_session, invoice, subject_type)
+
+                    # Send notification
+                    context = self.build_template_context(invoice, subject_type)
+                    context["_invoice_id"] = invoice_id  # for notification_log
+                    success = self.notifier.send_invoice_notification(context)
+
+                    safe_ksef_log = str(ksef_number or 'N/A').replace('\n', ' ').replace('\r', ' ')
+                    if success:
+                        logger.info(f"Notification sent [{subject_type}] invoice: {safe_ksef_log}")
+                    else:
+                        logger.warning(f"Failed to send notification [{subject_type}] invoice: {safe_ksef_log}")
+
+                    # Save invoice artifacts (PDF, XML, UPO) with rate limit pause
+                    self._save_invoice_artifacts(invoice, subject_type, invoice_id=invoice_id, db_session=db_session)
+                    if self.save_xml or self.save_pdf:
+                        time.sleep(2)  # Rate limit: max 30 req/min API limit
+
+                # Update monitor_state in DB
+                if use_db:
+                    self.db.update_monitor_state(
+                        session=db_session,
+                        nip=self.nip,
+                        subject_type=subject_type,
+                        last_check=now,
+                        last_ksef_number=last_ksef_number,
+                        new_invoices=new_count,
+                    )
+
+                if new_count > 0:
+                    new_invoices_count[subject_type] = new_count
+
+            # Commit DB transaction
+            if use_db:
+                db_session.commit()
+
+        except Exception:
+            if db_session:
+                db_session.rollback()
+            raise
+        finally:
+            if db_session:
+                db_session.close()
 
         if not found_any:
             logger.info("No new invoices found")
 
-        # Save timestamp in ISO format (includes timezone if available)
+        # Save JSON state (backward compat — kept until DB fully replaces it)
         state["last_check"] = now.isoformat()
         state["seen_invoices"] = seen_entries[-1000:]
         self.save_state(state)
@@ -318,6 +367,73 @@ class InvoiceMonitor:
             for subject_type, count in new_invoices_count.items():
                 self.metrics.increment_new_invoices(subject_type, count)
     
+    def _get_date_from(self, db_session, subject_type: str, json_state: Dict, now: datetime) -> datetime:
+        """Determine date_from for a subject_type. DB has priority over JSON state."""
+        if db_session is not None:
+            ms = self.db.get_monitor_state(db_session, self.nip, subject_type)
+            if ms and ms.last_check:
+                dt = ms.last_check
+                if dt.tzinfo is None and self.timezone:
+                    dt = self.timezone.localize(dt)
+                elif dt.tzinfo is not None and self.timezone:
+                    dt = dt.astimezone(self.timezone)
+                return dt
+
+        # Fallback to JSON state
+        if json_state.get("last_check"):
+            try:
+                return self._parse_datetime(json_state["last_check"])
+            except (ValueError, TypeError):
+                logger.warning("Invalid last_check date, using 24h ago")
+
+        logger.info("First run - checking last 24 hours")
+        return now - timedelta(hours=24)
+
+    def _save_invoice_to_db(self, session, invoice: Dict, subject_type: str) -> Optional[int]:
+        """Save invoice metadata to DB. Returns invoice.id or None."""
+        try:
+            ksef_number = invoice.get('ksefNumber', '')
+            seller = invoice.get('seller', {})
+            buyer = invoice.get('buyer', {})
+
+            invoice_data = {
+                "ksef_number": ksef_number,
+                "invoice_number": invoice.get("invoiceNumber"),
+                "invoice_type": invoice.get("invoiceType"),
+                "subject_type": subject_type,
+                "form_code": invoice.get("schemaVersion"),
+                "issue_date": invoice.get("issueDate"),
+                "invoicing_date": self._parse_optional_dt(invoice.get("invoicingDate")),
+                "acquisition_date": self._parse_optional_dt(invoice.get("acquisitionDate")),
+                "gross_amount": invoice.get("grossAmount"),
+                "net_amount": invoice.get("netAmount"),
+                "vat_amount": invoice.get("vatAmount"),
+                "currency": invoice.get("currency", "PLN"),
+                "seller_nip": seller.get("nip", ""),
+                "seller_name": seller.get("name"),
+                "buyer_nip": buyer.get("nip"),
+                "buyer_name": buyer.get("name"),
+                "raw_metadata": json.dumps(invoice, ensure_ascii=False, default=str),
+            }
+            inv = self.db.save_invoice(session, invoice_data)
+            return inv.id if inv else None
+        except Exception as e:
+            logger.error(f"Failed to save invoice to DB: {e}")
+            return None
+
+    @staticmethod
+    def _parse_optional_dt(value) -> Optional[datetime]:
+        """Parse optional ISO datetime string, return None on failure."""
+        if not value:
+            return None
+        try:
+            dt = datetime.fromisoformat(str(value))
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            return dt
+        except (ValueError, TypeError):
+            return None
+
     @staticmethod
     def _sanitize_field(value, max_length: int = 500) -> str:
         """Sanitize a string field from API: strip null bytes and limit length."""
@@ -446,7 +562,8 @@ class InvoiceMonitor:
 
         return path
 
-    def _save_invoice_artifacts(self, invoice: Dict, subject_type: str):
+    def _save_invoice_artifacts(self, invoice: Dict, subject_type: str,
+                                invoice_id: Optional[int] = None, db_session=None):
         """
         Save PDF, XML and UPO for a new invoice (if enabled in config).
 
@@ -458,6 +575,8 @@ class InvoiceMonitor:
         Args:
             invoice: Invoice metadata from KSeF API
             subject_type: Subject type (Subject1=sprzedażowa, Subject2=zakupowa)
+            invoice_id: DB invoice id (optional, for updating artifact paths)
+            db_session: DB session (optional)
         """
         if not self.save_xml and not self.save_pdf:
             return
@@ -506,6 +625,7 @@ class InvoiceMonitor:
                     with open(xml_path, 'w', encoding='utf-8') as f:
                         f.write(xml_content)
                     logger.info(f"Invoice XML saved: {xml_path}")
+                    self._update_artifact_in_db(db_session, invoice_id, "xml", xml_path)
                 except Exception as e:
                     logger.error(f"Failed to save XML for {ksef_number}: {e}")
 
@@ -521,6 +641,7 @@ class InvoiceMonitor:
                                              output_path=str(pdf_path), environment=self.ksef.environment,
                                              timezone=tz_name, template_dir=template_dir)
                         logger.info(f"Invoice PDF saved: {pdf_path}")
+                        self._update_artifact_in_db(db_session, invoice_id, "pdf", pdf_path)
                     except Exception as e:
                         logger.error(f"Failed to generate PDF for {ksef_number}: {e}")
             else:
@@ -536,10 +657,33 @@ class InvoiceMonitor:
                         with open(upo_path, 'w', encoding='utf-8') as f:
                             f.write(upo_result['xml_content'])
                         logger.info(f"UPO saved: {upo_path}")
+                        self._update_artifact_in_db(db_session, invoice_id, "upo", upo_path)
                 else:
                     logger.info(f"No UPO available yet for {ksef_number}")
             except Exception as e:
                 logger.error(f"Failed to fetch/save UPO for {ksef_number}: {e}")
+
+    def _update_artifact_in_db(self, db_session, invoice_id: Optional[int],
+                               artifact_type: str, file_path: Path):
+        """Update artifact flags and paths in DB for a saved file."""
+        if not db_session or not invoice_id:
+            return
+        try:
+            inv = db_session.query(Invoice).filter_by(id=invoice_id).first()
+            if not inv:
+                return
+            rel_path = str(file_path)
+            if artifact_type == "xml":
+                inv.has_xml = True
+                inv.xml_path = rel_path
+            elif artifact_type == "pdf":
+                inv.has_pdf = True
+                inv.pdf_path = rel_path
+            elif artifact_type == "upo":
+                inv.has_upo = True
+                inv.upo_path = rel_path
+        except Exception as e:
+            logger.error(f"Failed to update artifact in DB: {e}")
 
     def run(self):
         """
@@ -576,6 +720,24 @@ class InvoiceMonitor:
 
             except Exception as e:
                 logger.error(f"Error during check: {e}", exc_info=True)
+
+                # Record error in DB monitor_state
+                if self.db:
+                    try:
+                        err_session = self.db.get_session()
+                        for st in self.subject_types:
+                            self.db.update_monitor_state(
+                                session=err_session,
+                                nip=self.nip,
+                                subject_type=st,
+                                last_check=self._get_now(),
+                                error=str(e),
+                            )
+                        err_session.commit()
+                    except Exception as db_err:
+                        logger.error(f"Failed to record error in DB: {db_err}")
+                    finally:
+                        err_session.close()
 
                 # Send error notification
                 error_msg = f"Error occurred: {str(e)[:200]}"

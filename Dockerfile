@@ -29,7 +29,10 @@ RUN apt-get purge -y --auto-remove gcc pkg-config libcairo2-dev
 
 # Copy application structure
 COPY main.py .
+COPY db_admin.py .
 COPY app/ ./app/
+COPY alembic.ini .
+COPY alembic/ ./alembic/
 
 # Create non-root user for security
 RUN groupadd -g 1000 ksef && \

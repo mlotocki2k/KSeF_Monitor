@@ -60,6 +60,21 @@ python -m pytest tests/ -v
 
 Tests run automatically on push to `test`/`main` and on PRs (see `.github/workflows/tests.yml`).
 
+## Database Schema Changes
+
+If you modify SQLAlchemy models in `app/database.py`:
+
+```bash
+# Generate a new Alembic migration
+python -m alembic revision --autogenerate -m "description of change"
+
+# Review the generated migration in alembic/versions/
+# Apply the migration
+python -m alembic upgrade head
+```
+
+Note: SQLite uses `render_as_batch=True` in `alembic/env.py` for ALTER TABLE support.
+
 ## Reporting Issues
 
 Use [GitHub Issues](https://github.com/mlotocki2k/KSeF_Monitor/issues) with the provided templates.
@@ -125,6 +140,21 @@ python -m pytest tests/ -v
 ```
 
 Testy uruchamiają się automatycznie przy pushu na `test`/`main` oraz przy PR-ach (`.github/workflows/tests.yml`).
+
+## Zmiany schematu bazy danych
+
+Jeśli modyfikujesz modele SQLAlchemy w `app/database.py`:
+
+```bash
+# Wygeneruj nową migrację Alembic
+python -m alembic revision --autogenerate -m "opis zmiany"
+
+# Przejrzyj wygenerowaną migrację w alembic/versions/
+# Zastosuj migrację
+python -m alembic upgrade head
+```
+
+Uwaga: SQLite używa `render_as_batch=True` w `alembic/env.py` do obsługi ALTER TABLE.
 
 ## Zgłaszanie problemów
 

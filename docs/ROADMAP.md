@@ -41,11 +41,17 @@
 - [x] Sprawdzanie czy plik (XML/PDF/UPO) już istnieje przed zapisem
 - [x] Strategia: skip / rename / overwrite (`file_exists_strategy` w config storage)
 
-### 5) Przeniesienie informacji o fakturach do bazy
-- model danych rozdzielony "per subject, per NIP"
-- indeksy pod najczęstsze zapytania (np. subject + nip + timestamp)
-- migracja: zapis przy pobraniu/detekcji faktury
-- Design: [DATABASE_DESIGN.md](DATABASE_DESIGN.md)
+### 5) Przeniesienie informacji o fakturach do bazy ✅
+- [x] SQLite + WAL mode + SQLAlchemy 2.0 ORM + Alembic migracje
+- [x] Tabele: `invoices`, `monitor_state`, `notification_log` + indeksy
+- [x] Model danych rozdzielony "per subject, per NIP" (UNIQUE na `ksef_number`)
+- [x] Zapis metadanych przy detekcji faktury + ścieżki artefaktów
+- [x] Odczyt `last_check` z DB (monitor_state) z fallbackiem na JSON
+- [x] Automatyczna migracja `last_check.json` → DB (rename na `.json.migrated`)
+- [x] Notification log — dedup, diagnostyka, audyt powiadomień per kanał
+- [x] Error tracking w `monitor_state` (consecutive_errors, last_error)
+- [x] Konfiguracja: sekcja `database` w config (enabled, path)
+- [x] Design: [DATABASE_DESIGN.md](DATABASE_DESIGN.md)
 
 ### 6) Dokumentacja ograniczeń API ✅
 - [x] Kompletna dokumentacja limitów KSeF API: [KSEF_API_LIMITATIONS.md](KSEF_API_LIMITATIONS.md)
@@ -145,16 +151,15 @@ Poprawki niezwiązane z konkretnymi feature'ami, ale krytyczne dla stabilności:
 - integracja z oficjalną biblioteką CIRFMF do wizualizacji PDF ([ksef-pdf-generator](https://github.com/CIRFMF/ksef-pdf-generator)) jako opcjonalny mikroserwis Docker (REST API: XML → PDF), obok wbudowanego generatora (xhtml2pdf/ReportLab)
 
 ### 3) Push notyfikacje iOS — Monito KSeF (Cloudflare Worker)
-- nowy kanał powiadomień: natywne push notifications na iOS via aplikację **Monito KSeF**
-- Aplikacja iOS: [mlotocki2k/monitor_ksef_ios](https://github.com/mlotocki2k/monitor_ksef_ios) (repo prywatne, App Store review w toku)
+- nowy kanał powiadomień: natywne push notifications na iOS via aplikację **Monitor KSeF**
+- Aplikacja iOS: Monitor KSeF w trakcie review
 - Cloudflare Worker jako proxy do Apple Push Notification Service (APNs)
   - Worker odbiera POST z KSeF Monitor (JSON payload) → wysyła do APNs
   - Autentykacja Worker ↔ APNs via token-based auth (p8 key)
   - Autentykacja Monitor → Worker via shared secret (header `Authorization`)
-- integracja z aplikacją Monito KSeF:
+- integracja z aplikacją Monitor KSeF:
   - rejestracja device token w Worker (KV storage: device tokens per user)
   - rich push notifications z danymi faktury (numer, kwota, kontrahent)
-  - deep link do web UI (v0.5) z podglądem faktury
   - push notification jest w roadmapie aplikacji iOS
 - konfiguracja w `config.json`:
   ```json

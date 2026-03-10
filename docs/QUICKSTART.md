@@ -223,6 +223,7 @@ ksef-monitor | ✓ KSeF client initialized
 ksef-monitor | Initializing notification channels...
 ksef-monitor | ✓ Notification system initialized
 ksef-monitor |   Enabled channels: discord, email
+ksef-monitor | ✓ Database initialized (SQLite)
 ksef-monitor | ✓ Invoice monitor initialized
 ksef-monitor | Checking for new invoices...
 ```
@@ -501,10 +502,12 @@ KSeF_Monitor/
 │   └── notifiers/                 # Multi-channel notifications (5 channels)
 ├── config.json                    # Configuration (git-ignored)
 ├── .env                           # Secrets (git-ignored)
+├── db_admin.py                    # Database administration CLI
 ├── docker-compose.yml             # Docker Compose config
 ├── Dockerfile                     # Docker image definition
 └── data/                          # Persistent data (auto-created)
-    └── last_check.json            # State file
+    ├── invoices.db                # SQLite database (v0.3)
+    └── last_check.json            # Legacy state file
 ```
 
 ## Next Steps
@@ -519,7 +522,7 @@ KSeF_Monitor/
 2. **Customize:**
    - Change check interval
    - Customize notification templates ([TEMPLATES.md](./TEMPLATES.md))
-   - Add custom logic
+   - Manage database: `python db_admin.py status` ([DATABASE.md](./DATABASE.md))
 
 3. **Monitor:**
    - Set up log rotation

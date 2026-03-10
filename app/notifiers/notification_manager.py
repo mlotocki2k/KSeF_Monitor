@@ -17,14 +17,16 @@ class NotificationManager:
     Gracefully handles failures - one channel failing doesn't stop others.
     """
 
-    def __init__(self, config):
+    def __init__(self, config, database=None):
         """
         Initialize notification manager with all configured channels
 
         Args:
             config: ConfigManager instance or dict with notifications configuration
+            database: Database instance (optional, enables notification logging)
         """
         self.config = config
+        self.db = database
         self.notifiers: List = []
         self._initialize_notifiers()
         self._initialize_template_renderer()
@@ -90,12 +92,46 @@ class NotificationManager:
         custom_templates_dir = notifications_config.get("templates_dir")
         self.template_renderer = TemplateRenderer(custom_templates_dir)
 
+    def _log_to_db(self, event_type: str, channel: str, status: str,
+                   title: Optional[str] = None, priority: int = 0,
+                   invoice_id: Optional[int] = None, error_message: Optional[str] = None,
+                   dedup_key: Optional[str] = None):
+        """Log notification event to database (if available)."""
+        if not self.db:
+            return
+        try:
+            session = self.db.get_session()
+            self.db.log_notification(
+                session=session,
+                event_type=event_type,
+                channel=channel,
+                status=status,
+                title=title,
+                priority=priority,
+                invoice_id=invoice_id,
+                error_message=error_message,
+                dedup_key=dedup_key,
+            )
+            session.commit()
+        except Exception as e:
+            logger.debug(f"Failed to log notification to DB: {e}")
+            try:
+                session.rollback()
+            except Exception:
+                pass
+        finally:
+            try:
+                session.close()
+            except Exception:
+                pass
+
     def send_invoice_notification(self, context: Dict[str, Any]) -> bool:
         """
         Send invoice notification using templates to all enabled channels.
 
         Args:
             context: Template context dict from InvoiceMonitor.build_template_context()
+                     May include _invoice_id for DB logging.
 
         Returns:
             True if at least one channel succeeded
@@ -106,16 +142,34 @@ class NotificationManager:
 
         success_count = 0
         total_count = len(self.notifiers)
+        invoice_id = context.get("_invoice_id")
+        ksef_number = context.get("ksef_number", "")
 
         for notifier in self.notifiers:
+            channel = notifier.channel_name.lower()
             try:
                 if notifier.render_and_send(context, self.template_renderer):
                     success_count += 1
                     logger.debug(f"✓ {notifier.channel_name} invoice notification sent")
+                    self._log_to_db(
+                        event_type="invoice", channel=channel, status="sent",
+                        title=context.get("title"), priority=context.get("priority", 0),
+                        invoice_id=invoice_id,
+                        dedup_key=f"{ksef_number}:{channel}" if ksef_number else None,
+                    )
                 else:
                     logger.warning(f"⚠ {notifier.channel_name} invoice notification failed")
+                    self._log_to_db(
+                        event_type="invoice", channel=channel, status="failed",
+                        title=context.get("title"), priority=context.get("priority", 0),
+                        invoice_id=invoice_id,
+                    )
             except Exception as e:
                 logger.error(f"✗ {notifier.channel_name} invoice notification error: {e}", exc_info=True)
+                self._log_to_db(
+                    event_type="invoice", channel=channel, status="failed",
+                    invoice_id=invoice_id, error_message=str(e),
+                )
 
         if success_count > 0:
             logger.info(f"Invoice notification sent to {success_count}/{total_count} channel(s)")
@@ -144,15 +198,25 @@ class NotificationManager:
         success_count = 0
         total_count = len(self.notifiers)
 
+        # Determine event_type from title
+        event_type = "startup" if "Started" in (title or "") else "shutdown" if "Stopped" in (title or "") else "system"
+
         for notifier in self.notifiers:
+            channel = notifier.channel_name.lower()
             try:
                 if notifier.send_notification(title, message, priority, url):
                     success_count += 1
                     logger.debug(f"✓ {notifier.channel_name} notification sent")
+                    self._log_to_db(event_type=event_type, channel=channel, status="sent",
+                                    title=title, priority=priority)
                 else:
                     logger.warning(f"⚠ {notifier.channel_name} notification failed")
+                    self._log_to_db(event_type=event_type, channel=channel, status="failed",
+                                    title=title, priority=priority)
             except Exception as e:
                 logger.error(f"✗ {notifier.channel_name} notification error: {e}", exc_info=True)
+                self._log_to_db(event_type=event_type, channel=channel, status="failed",
+                                title=title, error_message=str(e))
 
         if success_count > 0:
             logger.info(f"Notification sent successfully to {success_count}/{total_count} channel(s)")
@@ -179,14 +243,21 @@ class NotificationManager:
         total_count = len(self.notifiers)
 
         for notifier in self.notifiers:
+            channel = notifier.channel_name.lower()
             try:
                 if notifier.send_error_notification(error_message):
                     success_count += 1
                     logger.debug(f"✓ {notifier.channel_name} error notification sent")
+                    self._log_to_db(event_type="error", channel=channel, status="sent",
+                                    title="Error", priority=1)
                 else:
                     logger.warning(f"⚠ {notifier.channel_name} error notification failed")
+                    self._log_to_db(event_type="error", channel=channel, status="failed",
+                                    title="Error", priority=1, error_message=error_message)
             except Exception as e:
                 logger.error(f"✗ {notifier.channel_name} error notification error: {e}", exc_info=True)
+                self._log_to_db(event_type="error", channel=channel, status="failed",
+                                error_message=str(e))
 
         if success_count > 0:
             logger.info(f"Error notification sent to {success_count}/{total_count} channel(s)")

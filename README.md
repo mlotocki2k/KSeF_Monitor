@@ -54,6 +54,7 @@ KSeF_Monitor/
 │   ├── template_renderer.py     # Silnik szablonów Jinja2
 │   ├── prometheus_metrics.py    # Prometheus metrics endpoint
 │   ├── scheduler.py             # Elastyczny system schedulowania (5 trybów)
+│   ├── database.py              # SQLite + SQLAlchemy 2.0 ORM (metadane, stan, logi)
 │   ├── logging_config.py        # Logging setup z timezone
 │   ├── templates/               # Wbudowane szablony Jinja2
 │   │   ├── invoice_pdf.html.j2  # Szablon PDF faktury (HTML/CSS)
@@ -95,6 +96,9 @@ KSeF_Monitor/
 │   ├── ISSUE_TEMPLATE/          # Issue templates (bug, feature)
 │   ├── PULL_REQUEST_TEMPLATE.md # PR template
 │   └── workflows/               # GitHub Actions (5 workflows)
+├── db_admin.py                  # Database administration CLI tool
+├── alembic.ini                  # Alembic migration configuration
+├── alembic/                     # Database migration scripts
 ├── CONTRIBUTING.md              # How to contribute
 ├── CODE_OF_CONDUCT.md           # Community guidelines
 ├── pyproject.toml               # Python project metadata
@@ -107,7 +111,7 @@ KSeF_Monitor/
 └── README.md                    # This file
 ```
 
-Katalog `data/` powstaje w runtime i zawiera plik stanu `last_check.json`.
+Katalog `data/` powstaje w runtime i zawiera bazę danych `invoices.db` oraz legacy plik stanu `last_check.json`.
 
 ---
 
@@ -123,6 +127,8 @@ Katalog `data/` powstaje w runtime i zawiera plik stanu `last_check.json`.
 - 🎨 [PDF_TEMPLATES.md](docs/PDF_TEMPLATES.md) — Szablony PDF faktur (HTML/CSS, v0.3)
 - 🏗️ [PROJECT_STRUCTURE.md](docs/PROJECT_STRUCTURE.md) — Architektura projektu
 - 💻 [IDE_TROUBLESHOOTING.md](docs/IDE_TROUBLESHOOTING.md) — Pomoc z konfiguracją IDE
+- 💾 [DATABASE.md](docs/DATABASE.md) — Baza danych SQLite (konfiguracja, tabele, db_admin.py)
+- 💾 [DATABASE_DESIGN.md](docs/DATABASE_DESIGN.md) — Wielofazowy projekt schematu bazy
 - 🗺️ [ROADMAP.md](docs/ROADMAP.md) — Roadmap projektu
 - 📚 [INDEX.md](docs/INDEX.md) — Indeks dokumentacji
 
@@ -153,6 +159,8 @@ Katalog `data/` powstaje w runtime i zawiera plik stanu `last_check.json`.
 | `reportlab` | 4.4.10 | Generowanie PDF faktur (silnik fallback) |
 | `qrcode` | 8.2 | Generowanie QR Code Type I na fakturach PDF |
 | `xhtml2pdf` | >=0.2.16 | Renderowanie HTML/CSS do PDF (silnik primary) |
+| `SQLAlchemy` | >=2.0.0 | ORM do bazy danych SQLite (metadane faktur, stan, logi) |
+| `alembic` | >=1.13.0 | Migracje schematu bazy danych |
 
 ---
 
@@ -446,6 +454,32 @@ UPO_sprz_<numer_ksef>_<data>.xml — UPO (tylko faktury sprzedażowe)
 - Generowanie PDF wymaga biblioteki `reportlab` (w `requirements.txt`)
 - Katalog `output_dir` i podfoldery są tworzone automatycznie przy pierwszym zapisie
 - UPO (Urzędowe Poświadczenie Odbioru) zapisywane jest razem z XML (zależne od `save_xml`)
+
+### Sekcja `database`
+
+SQLite baza danych do przechowywania metadanych faktur, stanu monitoringu i logu powiadomień.
+
+| Pole | Default | Opis |
+|---|---|---|
+| `enabled` | `true` | Włącz/wyłącz bazę danych. Wyłączenie powoduje fallback na `last_check.json`. |
+| `path` | `"/data/invoices.db"` | Ścieżka do pliku SQLite (tworzony automatycznie). |
+
+**Przykład konfiguracji:**
+
+```json
+{
+  "database": {
+    "enabled": true,
+    "path": "/data/invoices.db"
+  }
+}
+```
+
+Baza jest **opcjonalna** — monitor działa bez niej, ale traci trwałe przechowywanie metadanych faktur, log powiadomień, error tracking i deduplikację.
+
+Tabele: `invoices` (metadane faktur), `monitor_state` (stan per NIP + subject_type), `notification_log` (historia powiadomień z deduplikacją).
+
+Zarządzanie: `python db_admin.py status|invoices|stats|errors|...` — szczegóły: [docs/DATABASE.md](docs/DATABASE.md)
 
 ### Sekcja `prometheus`
 
@@ -776,7 +810,20 @@ Więcej szczegółów: [docs/NOTIFICATIONS.md](docs/NOTIFICATIONS.md)
 
 ## Stan aplikacji
 
-Plik `data/last_check.json` przechowuje stan między restartami:
+### Baza danych (v0.3+, domyślnie włączona)
+
+Stan monitoringu przechowywany jest w SQLite (`data/invoices.db`):
+- **`monitor_state`** — per NIP + subject_type: timestamp ostatniego sprawdzenia, licznik faktur, error tracking
+- **`invoices`** — metadane wszystkich faktur z deduplikacją po `ksef_number`
+- **`notification_log`** — historia wysłanych powiadomień z deduplikacją
+
+Przy pierwszym uruchomieniu z włączoną bazą dane z `last_check.json` są automatycznie migrowane.
+
+Administracja bazą: `python db_admin.py <komenda>` — szczegóły: [docs/DATABASE.md](docs/DATABASE.md)
+
+### Legacy: last_check.json (fallback)
+
+Plik `data/last_check.json` jest nadal zapisywany dla kompatybilności wstecznej:
 
 ```json
 {
@@ -788,6 +835,7 @@ Plik `data/last_check.json` przechowuje stan między restartami:
 - `last_check` — ISO 8601 timestamp ostatniego sprawdzenia. Kolejne zapytanie zacznie zakres od tej daty.
 - `seen_invoices` — hashes SHA-256 (`ksefNumber`) faktur dla których powiadomienie wysłano. Max 1000 najnowszych pozycji.
 - Przy pierwszym uruchomieniu (brak pliku lub brak `last_check`) zakres zapytania to ostatnie 24 godziny.
+- Gdy baza danych jest włączona (`database.enabled: true`), `monitor_state` ma priorytet nad JSON.
 
 ---
 

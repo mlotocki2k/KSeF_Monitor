@@ -57,6 +57,13 @@ chmod +x setup.sh && ./setup.sh
 | **[CODE_OF_CONDUCT.md](../CODE_OF_CONDUCT.md)** | Community guidelines | Before contributing |
 | **[Issues](https://github.com/mlotocki2k/KSeF_Monitor/issues)** | Report bugs or request features | Found an issue |
 
+### 💾 Database
+
+| Document | Description | Read When |
+|----------|-------------|-----------|
+| **[DATABASE.md](DATABASE.md)** | DB usage, config, db_admin.py CLI (v0.3) | Managing invoice database |
+| **[DATABASE_DESIGN.md](DATABASE_DESIGN.md)** | Full multi-phase schema design | Understanding DB architecture |
+
 ### 🏗️ Architecture & Development
 
 | Document | Description | Read When |
@@ -135,6 +142,10 @@ chmod +x setup.sh && ./setup.sh
 | **Test Setup** | See [TESTING.md](TESTING.md) | [TESTING.md](TESTING.md) |
 | **Fix IDE Errors** | See [IDE_TROUBLESHOOTING.md](IDE_TROUBLESHOOTING.md) | [IDE_TROUBLESHOOTING.md](IDE_TROUBLESHOOTING.md) |
 | **Secure Secrets** | See [SECURITY.md](SECURITY.md) | [SECURITY.md](SECURITY.md) |
+| **DB Status** | `python db_admin.py status` | [DATABASE.md](DATABASE.md) |
+| **List Invoices** | `python db_admin.py invoices` | [DATABASE.md](DATABASE.md) |
+| **DB Statistics** | `python db_admin.py stats` | [DATABASE.md](DATABASE.md) |
+| **Export Invoices** | `python db_admin.py export-invoices -o file.csv` | [DATABASE.md](DATABASE.md) |
 
 ### File Structure
 
@@ -167,6 +178,7 @@ KSeF_Monitor/
 │       ├── template_renderer.py    # Jinja2 template engine
 │       ├── prometheus_metrics.py   # Prometheus metrics
 │       ├── scheduler.py            # Flexible scheduling (5 modes)
+│       ├── database.py             # SQLite + SQLAlchemy 2.0 ORM (v0.3)
 │       ├── logging_config.py       # Logging with timezone
 │       ├── templates/              # Built-in Jinja2 templates (6 files)
 │       └── notifiers/              # Multi-channel notifications (5 channels)
@@ -202,13 +214,19 @@ KSeF_Monitor/
 │       ├── PULL_REQUEST_TEMPLATE.md # PR template
 │       └── workflows/              # GitHub Actions (5 workflows)
 │
-├── 🔧 Scripts
+├── 🔧 Scripts & Tools
 │   ├── setup.sh                    # Setup wizard
+│   ├── db_admin.py                 # Database administration CLI
 │   └── .gitignore                  # Git exclusions
+│
+├── 💾 Database Migrations
+│   ├── alembic.ini                 # Alembic configuration
+│   └── alembic/                    # Migration scripts
 │
 └── 💾 Data (created at runtime)
     └── data/
-        └── last_check.json         # Application state
+        ├── invoices.db             # SQLite database (v0.3)
+        └── last_check.json         # Legacy state (auto-migrated to DB)
 ```
 
 ---
@@ -313,6 +331,8 @@ Before running in production:
 - ✅ Production ready
 - ✅ PDF invoice generation (with QR code, Polish characters)
 - ✅ Configurable XML/PDF file storage with folder structure patterns
+- ✅ SQLite database for invoice metadata + notification log (v0.3)
+- ✅ Database admin CLI tool: `db_admin.py` (v0.3)
 - ✅ Custom HTML/CSS invoice PDF templates (v0.3)
 
 **Requirements:**

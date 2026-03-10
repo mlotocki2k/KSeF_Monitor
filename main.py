@@ -18,6 +18,7 @@ from app.notifiers import NotificationManager
 from app.invoice_monitor import InvoiceMonitor
 from app.prometheus_metrics import PrometheusMetrics
 from app.logging_config import setup_logging, apply_config
+from app.database import Database
 
 # Configure logging (system timezone until config is loaded)
 setup_logging()
@@ -71,9 +72,34 @@ def main():
         ksef_client = KSeFClient(config)
         logger.info("✓ KSeF client initialized")
 
+        # Initialize database
+        database = None
+        db_enabled = config.get("database", "enabled", default=True)
+        if db_enabled:
+            try:
+                db_path = config.get("database", "path", default="/data/invoices.db")
+                logger.info(f"Initializing database: {db_path}")
+                database = Database(db_path)
+                database.create_tables()
+
+                # Migrate last_check.json → DB (one-time, if needed)
+                from pathlib import Path
+                state_file = Path("/data/last_check.json")
+                nip = config.get("ksef", "nip") or ""
+                subject_types = config.get("monitoring", "subject_types") or ["Subject1"]
+                database.migrate_from_json(state_file, nip, subject_types)
+
+                logger.info("✓ Database initialized")
+            except Exception as e:
+                logger.warning(f"Failed to initialize database: {e}")
+                logger.info("Continuing without database persistence")
+                database = None
+        else:
+            logger.info("Database disabled in configuration")
+
         # Initialize notification manager
         logger.info("Initializing notification channels...")
-        notification_manager = NotificationManager(config)
+        notification_manager = NotificationManager(config, database=database)
         logger.info("✓ Notification system initialized")
 
         # Display enabled channels
@@ -113,7 +139,7 @@ def main():
 
         # Initialize and run monitor
         logger.info("Initializing invoice monitor...")
-        monitor = InvoiceMonitor(config, ksef_client, notification_manager, prometheus_metrics)
+        monitor = InvoiceMonitor(config, ksef_client, notification_manager, prometheus_metrics, database=database)
         logger.info("✓ Invoice monitor initialized")
         
         # Register signal handlers for graceful shutdown

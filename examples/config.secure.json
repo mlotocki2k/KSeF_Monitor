@@ -65,5 +65,10 @@
     "enabled": true,
     "port": 8000,
     "description": "Prometheus metrics endpoint on /metrics. Set enabled: false to disable."
+  },
+  "database": {
+    "enabled": true,
+    "path": "/data/invoices.db",
+    "description": "SQLite database for invoice metadata. Set enabled: false to use JSON state only."
   }
 }

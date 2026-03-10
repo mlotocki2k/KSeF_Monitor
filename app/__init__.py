@@ -12,11 +12,13 @@ from .config_manager import ConfigManager
 from .ksef_client import KSeFClient
 from .notifiers import NotificationManager
 from .invoice_monitor import InvoiceMonitor
+from .database import Database
 
 __all__ = [
     'SecretsManager',
     'ConfigManager',
     'KSeFClient',
     'NotificationManager',
-    'InvoiceMonitor'
+    'InvoiceMonitor',
+    'Database',
 ]

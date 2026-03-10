@@ -148,6 +148,9 @@ class ConfigManager:
         # Validate timezone (optional, defaults to Europe/Warsaw)
         self._validate_timezone(config)
 
+        # Set database defaults
+        self._apply_database_defaults(config)
+
         # Set storage defaults
         self._apply_storage_defaults(config)
 
@@ -353,6 +356,13 @@ class ConfigManager:
             logger.warning("pytz not installed - timezone validation disabled")
             logger.warning("Install pytz for timezone support: pip install pytz")
             logger.info(f"Using configured timezone without validation: {timezone}")
+
+    def _apply_database_defaults(self, config: Dict[str, Any]):
+        """Apply defaults for database section."""
+        db = config.setdefault("database", {})
+        db.setdefault("enabled", True)
+        db.setdefault("path", "/data/invoices.db")
+        logger.info(f"Database: enabled={db['enabled']}, path={db['path']}")
 
     def _apply_storage_defaults(self, config: Dict[str, Any]):
         """Apply defaults for storage section (save_xml, save_pdf, output_dir)."""

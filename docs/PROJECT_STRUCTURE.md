@@ -21,6 +21,7 @@ KSeF_Monitor/
 │   ├── template_renderer.py    # Jinja2 template engine
 │   ├── prometheus_metrics.py   # Prometheus metrics endpoint
 │   ├── scheduler.py            # Flexible scheduling (5 modes)
+│   ├── database.py             # SQLite + SQLAlchemy 2.0 ORM (v0.3)
 │   ├── logging_config.py       # Logging setup with timezone
 │   ├── templates/              # Built-in Jinja2 templates
 │   │   ├── invoice_pdf.html.j2 # Invoice PDF template (HTML/CSS)
@@ -84,11 +85,20 @@ KSeF_Monitor/
 │       ├── check-requirements-updates.yml  # Check outdated packages
 │       └── update-requirements.yml     # Auto-update requirements.txt
 │
+├── alembic/                     # Database migrations (Alembic)
+│   ├── env.py                  # Alembic environment config
+│   ├── script.py.mako          # Migration template
+│   └── versions/               # Migration scripts
+│       └── a6a08e11ea74_phase1_*.py  # Phase 1: invoices + state + notifications
+│
+├── alembic.ini                  # Alembic configuration
+│
 ├── tests/                       # Unit tests (pytest)
 │   ├── conftest.py             # Shared test fixtures
 │   ├── test_config_manager.py  # Configuration validation tests
 │   └── test_invoice_monitor.py # Invoice monitor tests
 │
+├── db_admin.py                  # Database administration CLI tool
 ├── CONTRIBUTING.md              # How to contribute
 ├── CODE_OF_CONDUCT.md           # Community guidelines (Contributor Covenant)
 ├── pyproject.toml               # Python project metadata & keywords
@@ -102,7 +112,8 @@ KSeF_Monitor/
 ├── docker-compose.secrets.yml   # Docker Compose with Docker secrets
 │
 └── data/                        # Persistent data (auto-created)
-    ├── last_check.json          # Application state
+    ├── invoices.db              # SQLite database (invoices, state, notification log)
+    ├── last_check.json          # Legacy state file (auto-migrated to DB on first run)
     └── invoices/                # Saved invoices (XML, PDF, UPO)
         └── {folder_structure}/  # Subfolders per config (e.g., 2026/02/)
 ```
@@ -150,17 +161,34 @@ Implements the full KSeF authentication flow:
 - `_extract_api_error_details()` - Parse KSeF error responses (`problem+json` / `ExceptionResponse`)
 - `_handle_401_refresh()` - Token expiry recovery with detailed logging
 
+### `app/database.py` (v0.3)
+**SQLite database layer — SQLAlchemy 2.0 ORM**
+
+- `Database` class — engine, session factory, CRUD helpers, migration
+- `Invoice` model — invoice metadata (ksef_number UNIQUE dedup)
+- `MonitorState` model — per NIP + subject_type state (replaces `last_check.json`)
+- `NotificationLog` model — notification delivery audit + dedup
+- WAL mode + foreign keys + busy_timeout pragmas
+- Automatic migration from `last_check.json` → DB on first run
+- Alembic migrations with `render_as_batch=True` (SQLite)
+
+Design: [DATABASE_DESIGN.md](DATABASE_DESIGN.md)
+
 ### `app/invoice_monitor.py`
 **Core monitoring logic**
 
 - Polls KSeF API at configured intervals
 - Tracks seen invoices to prevent duplicates (SHA-256 hash deduplication)
+- Saves invoice metadata to DB (when enabled) with ksef_number dedup
+- Reads/writes monitor_state from DB (per NIP + subject_type) with JSON fallback
 - Caps `dateRange` to 90 days (KSeF API 3-month limit) with warning
 - Normalizes naive datetimes in state file with warning
 - Builds template context for notifications (v0.3)
-- Manages persistent state (`last_check.json`)
+- Manages persistent state (`last_check.json` as fallback)
 - Saves invoice artifacts (XML, PDF, UPO) with configurable folder structure (v0.3)
+- Updates artifact paths in DB after saving files (v0.3)
 - Safe file writing with configurable `file_exists_strategy` (skip/rename/overwrite) (v0.3)
+- Error tracking in monitor_state (consecutive_errors, last_error) (v0.3)
 
 **Key methods:**
 - `run()` - Main monitoring loop
@@ -330,6 +358,8 @@ Managed in `requirements.txt`:
 | `reportlab` | PDF generation (fallback engine) |
 | `qrcode` | QR Code on invoices |
 | `xhtml2pdf` | HTML/CSS to PDF rendering |
+| `SQLAlchemy` | ORM + database engine |
+| `alembic` | Database schema migrations |
 
 Installed during Docker build.
 
