@@ -72,8 +72,8 @@ class SecretsManager:
             try:
                 with open(secret_file, 'r') as f:
                     return f.read().strip()
-            except Exception as e:
-                logger.warning(f"Failed to read Docker secret '{secret_name}': {type(e).__name__}")
+            except Exception:
+                logger.warning("Failed to read a Docker secret file")
         return None
     
     def load_config_with_secrets(self) -> Dict[str, Any]:
@@ -184,13 +184,13 @@ class SecretsManager:
             ("pushover", "api_token")
         ]
         
-        missing = []
+        missing_count = 0
         for section, key in required_secrets:
             if not config.get(section, {}).get(key):
-                missing.append(f"{section}.{key}")
-        
-        if missing:
-            logger.error("Missing required secrets: %s", ', '.join(missing))
+                missing_count += 1
+
+        if missing_count:
+            logger.error("Missing %d required secret(s) — check configuration", missing_count)
             return False
         
         return True
