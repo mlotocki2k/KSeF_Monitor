@@ -255,10 +255,10 @@ class TestKSeFClientRequestWithRetry:
 
     @patch("app.ksef_client.time.sleep")
     def test_429_retry_after_capped(self, mock_sleep, client):
-        """Retry-After is capped at 120 seconds."""
+        """Retry-After is capped at MAX_RETRY_AFTER (1800 seconds)."""
         retry_response = MagicMock()
         retry_response.status_code = 429
-        retry_response.headers = {"Retry-After": "300"}
+        retry_response.headers = {"Retry-After": "3600"}
         retry_response.json.return_value = {"status": {"details": []}}
 
         success_response = MagicMock()
@@ -269,7 +269,7 @@ class TestKSeFClientRequestWithRetry:
         )
 
         client._request_with_retry("GET", "https://example.com")
-        mock_sleep.assert_called_once_with(120)
+        mock_sleep.assert_called_once_with(1800)
 
 
 class TestKSeFClientHandle401Refresh:
