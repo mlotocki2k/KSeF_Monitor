@@ -7,15 +7,20 @@ from app.invoice_pdf_generator import InvoiceXMLParser
 
 
 class TestSanitizeText:
-    """Tests for InvoiceXMLParser._sanitize_text (defense-in-depth)."""
+    """Tests for InvoiceXMLParser._sanitize_text (defense-in-depth).
+
+    _sanitize_text strips HTML tags but does NOT html.escape().
+    Escaping is handled by the rendering layer: Jinja2 autoescape (xhtml2pdf)
+    or ReportLab Paragraph (fallback).
+    """
 
     def test_plain_text_unchanged(self):
         """Plain text passes through unchanged."""
         assert InvoiceXMLParser._sanitize_text("Firma ABC") == "Firma ABC"
 
     def test_html_tags_stripped(self):
-        """HTML tags are removed."""
-        assert InvoiceXMLParser._sanitize_text('<script>alert("xss")</script>') == 'alert(&quot;xss&quot;)'
+        """HTML tags are removed, content preserved."""
+        assert InvoiceXMLParser._sanitize_text('<script>alert("xss")</script>') == 'alert("xss")'
 
     def test_img_onerror_stripped(self):
         """img onerror payload is stripped."""
@@ -23,13 +28,11 @@ class TestSanitizeText:
         assert "<img" not in result
         assert "onerror" not in result
 
-    def test_html_entities_escaped(self):
-        """HTML special characters are escaped."""
+    def test_special_characters_preserved(self):
+        """Special characters are preserved (escaping is the renderer's job)."""
         result = InvoiceXMLParser._sanitize_text('A & B <> "C"')
-        assert "&amp;" in result
-        assert "&lt;" in result
-        assert "&gt;" in result
-        assert "&quot;" in result
+        # Tags stripped: <> removed (matches as tag)
+        assert "A & B" in result
 
     def test_reportlab_eval_payload_neutralized(self):
         """ReportLab eval() payloads in span/unichar tags are stripped."""
@@ -41,7 +44,7 @@ class TestSanitizeText:
     def test_nested_tags_stripped(self):
         """Nested HTML tags are all removed."""
         result = InvoiceXMLParser._sanitize_text('<div><b><script>x</script></b></div>')
-        assert "<" not in result or "&lt;" in result
+        assert "<" not in result
 
     def test_polish_characters_preserved(self):
         """Polish diacritical marks are preserved."""
@@ -59,6 +62,10 @@ class TestSanitizeText:
     def test_invoice_number_with_slashes(self):
         """Invoice numbers with slashes are preserved."""
         assert InvoiceXMLParser._sanitize_text("FV/2026/03/001") == "FV/2026/03/001"
+
+    def test_ampersand_preserved(self):
+        """Ampersands are preserved (not double-encoded)."""
+        assert InvoiceXMLParser._sanitize_text("A & B") == "A & B"
 
 
 class TestXMLParserSanitizesOutput:
@@ -92,10 +99,10 @@ class TestXMLParserSanitizesOutput:
         with pytest.raises(Exception):
             parser.parse()
 
-    def test_xml_escaped_html_entities_double_escaped(self):
-        """XML-escaped HTML entities get double-escaped by _sanitize_text (defense-in-depth)."""
-        # In real XML, &lt;script&gt; is valid text content — XML parser decodes to <script>
-        # _sanitize_text must then strip the tag and escape remaining chars
+    def test_xml_escaped_html_entities_stripped(self):
+        """XML-escaped HTML entities are decoded by XML parser, then tags stripped."""
+        # In real XML, &lt;script&gt; is valid text — XML parser decodes to <script>
+        # _sanitize_text strips the tag, leaving only non-tag content
         xml = self.MINIMAL_XML.format(
             seller_name='&lt;script&gt;alert("xss")&lt;/script&gt;Evil Corp'
         )
@@ -105,14 +112,13 @@ class TestXMLParserSanitizesOutput:
         assert "<script>" not in seller_name
         assert "Evil Corp" in seller_name
 
-    def test_ampersand_in_seller_name_escaped(self):
-        """Ampersand in company name is properly escaped for PDF rendering."""
+    def test_ampersand_in_seller_name_preserved(self):
+        """Ampersand in company name is preserved (no double-encoding)."""
         xml = self.MINIMAL_XML.format(seller_name="Firma A &amp; B Sp. z o.o.")
         parser = InvoiceXMLParser(xml)
         data = parser.parse()
         seller_name = data['seller']['nazwa']
-        assert "&amp;" in seller_name  # html.escape converts & to &amp;
-        assert "<" not in seller_name
+        assert seller_name == "Firma A & B Sp. z o.o."
 
     def test_normal_seller_name_preserved(self):
         """Normal Polish company names pass through correctly."""

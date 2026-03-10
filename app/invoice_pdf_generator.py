@@ -211,9 +211,13 @@ class InvoiceXMLParser:
 
     @staticmethod
     def _sanitize_text(value: str) -> str:
-        """Strip HTML tags and escape special characters to prevent injection in PDF rendering."""
-        stripped = re.sub(r'<[^>]+>', '', value)
-        return html.escape(stripped, quote=True)
+        """Strip HTML tags to prevent injection in PDF rendering.
+
+        Only strips tags — does NOT html.escape(). Both rendering paths
+        handle escaping themselves: Jinja2 autoescape for xhtml2pdf,
+        ReportLab Paragraph for the fallback path.
+        """
+        return re.sub(r'<[^>]+>', '', value)
 
     def _text(self, parent, *tags, default=''):
         if parent is None:

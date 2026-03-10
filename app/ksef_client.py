@@ -63,6 +63,7 @@ class KSeFClient:
         self.access_token = None
         self.refresh_token = None
         self._ksef_public_key = None
+        self.on_auth_failure = None  # Optional callback: on_auth_failure(status_code: int)
         self.session = requests.Session()
         self.session.verify = True  # Explicit TLS certificate verification
 
@@ -199,6 +200,8 @@ class KSeFClient:
         if self.authenticate():
             return True
         logger.error("Re-authentication failed")
+        if self.on_auth_failure:
+            self.on_auth_failure(401)
         return False
 
     def authenticate(self) -> bool:

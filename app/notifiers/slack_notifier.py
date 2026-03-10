@@ -131,11 +131,12 @@ class SlackNotifier(BaseNotifier):
                 ]
             }
 
-            # Send to Slack
+            # Send to Slack (redirects disabled for SSRF protection)
             response = self.session.post(
                 self.webhook_url,
                 json=payload,
-                timeout=self.timeout
+                timeout=self.timeout,
+                allow_redirects=False
             )
             response.raise_for_status()
 
@@ -162,7 +163,7 @@ class SlackNotifier(BaseNotifier):
             payload["username"] = self.username
             payload["icon_emoji"] = self.icon_emoji
 
-            response = self.session.post(self.webhook_url, json=payload, timeout=self.timeout)
+            response = self.session.post(self.webhook_url, json=payload, timeout=self.timeout, allow_redirects=False)
             response.raise_for_status()
 
             logger.info(f"Slack notification sent: {context.get('title')}")

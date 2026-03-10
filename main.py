@@ -146,6 +146,10 @@ def main():
         else:
             logger.info("Prometheus metrics disabled in configuration")
 
+        # Wire auth failure metric callback
+        if prometheus_metrics:
+            ksef_client.on_auth_failure = lambda sc: prometheus_metrics.increment_auth_failures(sc)
+
         # Initialize and run monitor
         logger.info("Initializing invoice monitor...")
         monitor = InvoiceMonitor(config, ksef_client, notification_manager, prometheus_metrics, database=database)

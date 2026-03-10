@@ -100,11 +100,12 @@ class DiscordNotifier(BaseNotifier):
             if self.avatar_url:
                 payload["avatar_url"] = self.avatar_url
 
-            # Send to Discord
+            # Send to Discord (redirects disabled for SSRF protection)
             response = self.session.post(
                 self.webhook_url,
                 json=payload,
-                timeout=self.timeout
+                timeout=self.timeout,
+                allow_redirects=False
             )
             response.raise_for_status()
 
@@ -135,7 +136,7 @@ class DiscordNotifier(BaseNotifier):
             if self.avatar_url:
                 payload["avatar_url"] = self.avatar_url
 
-            response = self.session.post(self.webhook_url, json=payload, timeout=self.timeout)
+            response = self.session.post(self.webhook_url, json=payload, timeout=self.timeout, allow_redirects=False)
             response.raise_for_status()
 
             logger.info(f"Discord notification sent: {context.get('title')}")
