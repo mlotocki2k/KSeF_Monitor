@@ -36,12 +36,21 @@ from sqlalchemy import func, inspect, text
 from app.database import Database, Invoice, MonitorState, NotificationLog
 
 
-def _default_db_path() -> str:
-    """Auto-detect DB path: /data/invoices.db (Docker) or data/invoices.db (local)."""
-    # Docker container: /data directory exists and is writable
-    if Path("/data").is_dir():
-        return "/data/invoices.db"
-    return "data/invoices.db"
+def _db_path_from_config() -> str:
+    """Read database path from config.json (same lookup as main.py)."""
+    config_paths = ["/config/config.json", "/data/config.json", "config.json"]
+    for cp in config_paths:
+        if Path(cp).exists():
+            try:
+                with open(cp) as f:
+                    cfg = json.load(f)
+                db_path = cfg.get("database", {}).get("path")
+                if db_path:
+                    return db_path
+            except (json.JSONDecodeError, OSError):
+                pass
+    # Fallback default (same as config_manager)
+    return "/data/invoices.db"
 
 
 def get_db(args) -> Database:
@@ -687,8 +696,8 @@ def main():
         description="KSeF Monitor — Database Administration Tool",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    parser.add_argument("--db", default=_default_db_path(),
-                        help="Path to SQLite database (default: auto-detect)")
+    parser.add_argument("--db", default=_db_path_from_config(),
+                        help="Path to SQLite database (default: from config.json)")
 
     sub = parser.add_subparsers(dest="command", help="Command to run")
 
