@@ -130,6 +130,17 @@ Poprawki niezwiązane z konkretnymi feature'ami, ale krytyczne dla stabilności:
 - Szkielet uprawnień
   - podstawowe auth (np. token) dla web UI/admin
 - Refaktoring i optymalizacja kodu
+  - Rozbicie `check_for_new_invoices()` (~500 linii) na mniejsze klasy/metody (polling, dedup, artefakty, powiadomienia)
+  - Rozbicie `invoice_pdf_generator.py` (~1800 linii) — wydzielenie `InvoiceXMLParser` i `ReportLabPDFRenderer`
+  - Wyciągnięcie wspólnych stałych PDF (VAT_RATE_LABELS, QR_BASE_URLS, PAYMENT_METHODS) do osobnego modułu
+  - Eliminacja powtórzonego wzorca 401-retry w `ksef_client.py` → `_make_authenticated_request()`
+  - Uproszczenie walidacji w `config_manager.py` — data-driven validators zamiast 5 osobnych metod
+  - Deduplikacja logiki QR code i szukania fontów między `invoice_pdf_generator.py` a `invoice_pdf_template.py`
+
+### Zmiany API / schema
+- Śledzenie zmian KSeF OpenAPI spec (CI workflow monitoruje 3 środowiska)
+- Śledzenie zmian FA(3)/FA(2) XSD schema (CI workflow)
+- Ewentualna adaptacja do nowych wersji API jeśli pojawią się breaking changes
 
 **Zależności:** v0.3
 **DoD:** UI może bazować na stabilnym API; system jest odporny na retry i ma podstawową telemetrię operacyjną.
@@ -182,6 +193,11 @@ Poprawki niezwiązane z konkretnymi feature'ami, ale krytyczne dla stabilności:
 - nowy notifier: `app/notifiers/ios_push_notifier.py` (POST JSON do Worker URL)
 - szablon Jinja2: `app/templates/ios_push.json.j2`
 
+### Zmiany API / schema
+- Obsługa ewentualnych nowych wersji KSeF API (breaking changes w endpointach, paginacji, autentykacji)
+- Wsparcie nowych wersji schematu FA — jeśli pojawi się FA(4) lub nowe pola w FA(3), adaptacja parsera XML i template PDF
+- Aktualizacja `spec/openapi.json` i `spec/schemat_FA(3)_v1-0E.xsd` do najnowszych wersji
+
 **Zależności:** v0.4
 **DoD:** użytkownik widzi dashboard + listę + podgląd; initial load działa powtarzalnie bez duplikatów; push notification dociera na iOS.
 
@@ -191,6 +207,10 @@ Poprawki niezwiązane z konkretnymi feature'ami, ale krytyczne dla stabilności:
 **Cel:** wbudowany mechanizm aktualizacji bez potrzeby aktualizowania całego obrazu Docker
 
 - Automatyczny update aplikacji bez przebudowy obrazu Docker
+
+### Zmiany API / schema
+- Mechanizm auto-update musi uwzględniać zmiany w schemacie DB (Alembic migracje przy update)
+- Walidacja kompatybilności nowej wersji z aktualnym schematem FA i API KSeF
 
 **Zależności:** v0.5
 
@@ -207,6 +227,10 @@ Poprawki niezwiązane z konkretnymi feature'ami, ale krytyczne dla stabilności:
 - konfiguracja nazw plików (pattern, prefix)
 - konfiguracja folderów (folder_structure, output_dir)
 
+### Zmiany API / schema
+- UI do podglądu aktualnie używanej wersji API KSeF i schematu FA
+- Powiadomienie w panelu admin o wykrytych zmianach w specyfikacji (z CI workflow)
+
 **Zależności:** v0.5
 **DoD:** wszystko da się skonfigurować z UI, a zmiany wchodzą w życie bez ręcznych edycji configów (lub z kontrolowanym restartem usługi).
 
@@ -221,6 +245,10 @@ Poprawki niezwiązane z konkretnymi feature'ami, ale krytyczne dla stabilności:
 - notifier: routing per NIP
 - monitoring: metryki per NIP
 
+### Zmiany API / schema
+- Rozszerzenie modelu DB o tenant_id (NIP) — migracja Alembic
+- Ewentualne nowe endpointy KSeF API per NIP (jeśli API wprowadzi multi-subject w jednej sesji)
+
 **Zależności:** v1.0
 **DoD:** można dodać drugi NIP i wszystko (import, lista, powiadomienia, metryki) działa niezależnie.
 
@@ -228,7 +256,15 @@ Poprawki niezwiązane z konkretnymi feature'ami, ale krytyczne dla stabilności:
 
 ## Do rozważenia
 - GUI do pobierania faktur przed v0.5?
+  - Prosty interfejs webowy (Flask/FastAPI) do ręcznego pobrania faktury po numerze KSeF
+  - Pobranie XML + generacja PDF on-demand z podglądem w przeglądarce
+  - Bez pełnego dashboardu — tylko formularz „podaj numer KSeF → pobierz PDF"
 - Wystawienie endpointu dla Message Queue (MQ)
+  - Publikacja eventów o nowych fakturach do kolejki (RabbitMQ / Redis Streams / NATS)
+  - Event payload: metadane faktury (ksef_number, NIP, kwota, data, subject_type)
+  - Umożliwienie integracji z zewnętrznymi systemami (ERP, księgowość, automatyzacja)
+  - Konfiguracja w `config.json`: typ brokera, connection string, nazwa kolejki/topicu
+  - Retry + DLQ (Dead Letter Queue) dla nieudanych publishów
 - API na Cloudflare do generowania faktur PDF dla iOS, gdzie można używać własnego template
   - Cloudflare Worker jako REST API: POST XML faktury → odpowiedź PDF (binary)
   - Wbudowany domyślny template HTML/CSS (analogiczny do `invoice_pdf.html.j2`)
