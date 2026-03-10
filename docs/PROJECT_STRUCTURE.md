@@ -125,7 +125,8 @@ KSeF_Monitor/
 
 - Initializes all components
 - Sets up logging
-- Registers signal handlers for graceful shutdown
+- Registers signal handlers for graceful shutdown (SIGINT, SIGTERM)
+- Registers SIGUSR1 handler for on-demand invoice check trigger
 - Orchestrates the monitoring process
 
 ### `app/config_manager.py`
@@ -199,6 +200,7 @@ Design: [DATABASE_DESIGN.md](DATABASE_DESIGN.md)
 - `_resolve_output_dir()` - Resolve target dir from `folder_structure` pattern (v0.3)
 - `_resolve_safe_path()` - Apply file_exists_strategy before writing (v0.3)
 - `_save_invoice_artifacts()` - Save PDF, XML, UPO to target dir
+- `trigger_check()` - Set flag for on-demand check (called by SIGUSR1 handler)
 - `shutdown()` - Graceful shutdown
 
 ### `app/template_renderer.py` (v0.3)

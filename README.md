@@ -674,6 +674,16 @@ docker restart ksef-invoice-monitor      # restart
 docker stop ksef-invoice-monitor         # stop
 ```
 
+### Wymuszenie sprawdzenia poza harmonogramem
+
+Aby natychmiast sprawdzić nowe faktury bez restartu kontenera i bez czekania na harmonogram:
+
+```bash
+docker kill -s SIGUSR1 ksef-invoice-monitor
+```
+
+W logach pojawi się: `Manual trigger received — checking for new invoices...`
+
 ---
 
 ## Przepływ autentykacji KSeF API v2

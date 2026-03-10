@@ -138,6 +138,7 @@ chmod +x setup.sh && ./setup.sh
 | **Start Monitor** | `docker-compose up -d` | [QUICKSTART.md](QUICKSTART.md) |
 | **View Logs** | `docker-compose logs -f` | [README.md](README.md) |
 | **Stop Monitor** | `docker-compose down` | [README.md](README.md) |
+| **Trigger Check** | `docker kill -s SIGUSR1 ksef-invoice-monitor` | [README.md](README.md) |
 | **Generate Invoice PDF** | `python examples/test_invoice_pdf.py <ksef-number>` | [PDF_GENERATION.md](PDF_GENERATION.md) |
 | **Test Setup** | See [TESTING.md](TESTING.md) | [TESTING.md](TESTING.md) |
 | **Fix IDE Errors** | See [IDE_TROUBLESHOOTING.md](IDE_TROUBLESHOOTING.md) | [IDE_TROUBLESHOOTING.md](IDE_TROUBLESHOOTING.md) |

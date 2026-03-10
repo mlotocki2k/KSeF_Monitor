@@ -86,6 +86,9 @@ Poprawki niezwiązane z konkretnymi feature'ami, ale krytyczne dla stabilności:
 - [x] Fix: `dateRange` lowercase `from`/`to` (nie `From`/`To`)
 - [x] Warning przy naive datetime w state file
 
+### Operacje
+- [x] On-demand trigger: `docker kill -s SIGUSR1 <container>` — natychmiastowe sprawdzenie faktur poza harmonogramem
+
 ### Docker i CI
 - [x] Entrypoint z dynamicznym ownership (`gosu`)
 - [x] Named volume + config mount separation (`/config` vs `/data`)
