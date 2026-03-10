@@ -83,7 +83,8 @@
   "prometheus": {
     "enabled": true,
     "port": 8000,
-    "description": "Prometheus metrics endpoint. Exposes /metrics on specified port. Metrics: ksef_last_check_timestamp (last API check), ksef_new_invoices_total (new invoices by subject_type), ksef_monitor_up (health status)"
+    "bind_address": "0.0.0.0",
+    "description": "Prometheus metrics endpoint. Exposes /metrics on specified port. bind_address: '0.0.0.0' for Docker (default), '127.0.0.1' for bare metal. Metrics: ksef_last_check_timestamp, ksef_new_invoices_total, ksef_monitor_up"
   },
   "database": {
     "enabled": true,

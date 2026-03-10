@@ -414,6 +414,7 @@ Konfiguracja zapisywania plików faktur (XML, PDF). Domyślnie wyłączone.
 | `save_pdf` | `false` | Generuj i zapisuj pliki PDF faktur (wymaga `reportlab`). |
 | `output_dir` | `"/data/invoices"` | Katalog docelowy dla zapisanych plików. Tworzony automatycznie jeśli nie istnieje. |
 | `folder_structure` | `""` | Wzorzec podfolderów z placeholderami: `{year}`, `{month}`, `{day}`, `{type}`. Pusty = płaski katalog. |
+| `file_name_pattern` | `"{type}_{date}_{invoice_number}"` | Wzorzec nazw plików. Placeholdery: `{type}` (sprz/zak/upo), `{date}` (YYYYMMDD), `{invoice_number}`, `{ksef}`, `{ksef_short}`, `{seller_nip}`, `{buyer_nip}`. |
 | `file_exists_strategy` | `"skip"` | Co zrobić gdy plik już istnieje: `skip` (pomiń), `rename` (dodaj suffix `_1`, `_2`...), `overwrite` (nadpisz). |
 
 **Przykład konfiguracji:**
@@ -424,7 +425,8 @@ Konfiguracja zapisywania plików faktur (XML, PDF). Domyślnie wyłączone.
     "save_xml": true,
     "save_pdf": true,
     "output_dir": "/data/invoices",
-    "folder_structure": "{year}/{month}"
+    "folder_structure": "{year}/{month}",
+    "file_name_pattern": "{type}_{date}_{invoice_number}"
   }
 }
 ```
@@ -433,20 +435,30 @@ Konfiguracja zapisywania plików faktur (XML, PDF). Domyślnie wyłączone.
 
 | Wzorzec | Wynik |
 |---|---|
-| `""` (domyślnie) | `/data/invoices/sprz_<ksef>_20260227.pdf` |
-| `"{year}/{month}"` | `/data/invoices/2026/02/sprz_<ksef>_20260227.pdf` |
-| `"{year}/{month}/{day}"` | `/data/invoices/2026/02/27/sprz_<ksef>_20260227.pdf` |
-| `"{type}/{year}/{month}"` | `/data/invoices/sprzedaz/2026/02/sprz_<ksef>_20260227.pdf` |
+| `""` (domyślnie) | `/data/invoices/sprz_20260227_FV-123_2026.pdf` |
+| `"{year}/{month}"` | `/data/invoices/2026/02/sprz_20260227_FV-123_2026.pdf` |
+| `"{year}/{month}/{day}"` | `/data/invoices/2026/02/27/sprz_20260227_FV-123_2026.pdf` |
+| `"{type}/{year}/{month}"` | `/data/invoices/sprzedaz/2026/02/sprz_20260227_FV-123_2026.pdf` |
 
 Dostępne placeholdery: `{year}` (rok), `{month}` (miesiąc 01-12), `{day}` (dzień 01-31), `{type}` (`sprzedaz`/`zakup`).
 
-**Nazewnictwo plików:**
+**Wzorce `file_name_pattern`:**
+
+| Wzorzec | Wynik (XML) |
+|---|---|
+| `"{type}_{date}_{invoice_number}"` (domyślnie) | `sprz_20260227_FV-123_2026.xml` |
+| `"{type}_{seller_nip}_{date}_{invoice_number}"` | `sprz_9730842472_20260227_FV-123_2026.xml` |
+| `"{date}_{type}_{ksef_short}"` | `20260227_sprz_456-78.xml` |
+
+Dostępne placeholdery: `{type}` (sprz/zak/upo), `{date}` (YYYYMMDD), `{invoice_number}`, `{ksef}` (pełny numer KSeF), `{ksef_short}` (ostatnie 6 znaków), `{seller_nip}`, `{buyer_nip}`. Znaki niedozwolone w systemie plików są automatycznie zamieniane na `_`.
+
+**Nazewnictwo plików** (domyślny pattern):
 ```
-sprz_<numer_ksef>_<data>.xml    — XML faktury sprzedażowej
-sprz_<numer_ksef>_<data>.pdf    — PDF faktury sprzedażowej
-zak_<numer_ksef>_<data>.xml     — XML faktury zakupowej
-zak_<numer_ksef>_<data>.pdf     — PDF faktury zakupowej
-UPO_sprz_<numer_ksef>_<data>.xml — UPO (tylko faktury sprzedażowe)
+sprz_20260227_FV-123_2026.xml    — XML faktury sprzedażowej
+sprz_20260227_FV-123_2026.pdf    — PDF faktury sprzedażowej
+zak_20260227_FV-456_2026.xml     — XML faktury zakupowej
+zak_20260227_FV-456_2026.pdf     — PDF faktury zakupowej
+upo_20260227_FV-123_2026.xml     — UPO (tylko faktury sprzedażowe)
 ```
 
 **Uwagi:**
@@ -880,6 +892,7 @@ Moduł do pobierania XML faktur z KSeF i konwersji do PDF według oficjalnego wz
 - ✅ Stopka z datą generowania i strefą czasową
 - ✅ Automatyczny zapis PDF/XML dla nowych faktur (sekcja `storage`)
 - ✅ Konfigurowalna struktura folderów (`folder_structure` z placeholderami)
+- ✅ Konfigurowalne nazwy plików (`file_name_pattern` z 7 placeholderami)
 - ✅ Skrypt testowy do manualnego generowania PDF
 
 ### Użycie - Skrypt testowy

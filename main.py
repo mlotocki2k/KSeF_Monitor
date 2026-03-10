@@ -128,11 +128,12 @@ def main():
         logger.info("Initializing Prometheus metrics...")
         prometheus_port = config.get("prometheus", "port", default=8000)
         prometheus_enabled = config.get("prometheus", "enabled", default=True)
+        prometheus_bind = config.get("prometheus", "bind_address", default="0.0.0.0")
 
         prometheus_metrics = None
         if prometheus_enabled:
             try:
-                prometheus_metrics = PrometheusMetrics(port=prometheus_port)
+                prometheus_metrics = PrometheusMetrics(port=prometheus_port, bind_address=prometheus_bind)
                 prometheus_metrics.start_server()
             except Exception as e:
                 logger.warning(f"Failed to initialize Prometheus metrics: {e}")

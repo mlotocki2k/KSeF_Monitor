@@ -24,14 +24,16 @@ class PrometheusMetrics:
     - ksef_monitor_up: Health check - 1 if monitor is running
     """
 
-    def __init__(self, port: int = 8000):
+    def __init__(self, port: int = 8000, bind_address: str = '0.0.0.0'):
         """
         Initialize Prometheus metrics
 
         Args:
             port: HTTP server port for /metrics endpoint (default: 8000)
+            bind_address: Network interface to bind (default: '0.0.0.0' for Docker)
         """
         self.port = port
+        self.bind_address = bind_address
         self._server_started = False
 
         # Metric: Last check timestamp (gauge - can go up and down)
@@ -69,9 +71,9 @@ class PrometheusMetrics:
 
         try:
             # Start HTTP server in daemon thread
-            start_http_server(self.port, addr='127.0.0.1')
+            start_http_server(self.port, addr=self.bind_address)
             self._server_started = True
-            logger.info(f"✓ Prometheus metrics server started on port {self.port}")
+            logger.info(f"✓ Prometheus metrics server started on {self.bind_address}:{self.port}")
             logger.info(f"  Metrics endpoint: http://localhost:{self.port}/metrics")
         except OSError as e:
             logger.error(f"Failed to start Prometheus server on port {self.port}: {e}")

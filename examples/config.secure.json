@@ -65,7 +65,8 @@
   "prometheus": {
     "enabled": true,
     "port": 8000,
-    "description": "Prometheus metrics endpoint on /metrics. Set enabled: false to disable."
+    "bind_address": "0.0.0.0",
+    "description": "Prometheus metrics endpoint on /metrics. bind_address: '0.0.0.0' for Docker (default), '127.0.0.1' for bare metal. Set enabled: false to disable."
   },
   "database": {
     "enabled": true,

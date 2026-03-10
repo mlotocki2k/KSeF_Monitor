@@ -4,7 +4,7 @@ Complete guide for testing your KSeF Invoice Monitor installation.
 
 ## Unit Tests (pytest)
 
-The project includes a comprehensive unit test suite (229 tests) covering configuration validation, invoice monitoring logic, template rendering, and more.
+The project includes a comprehensive unit test suite (262 tests) covering configuration validation, invoice monitoring logic, file naming, API field mapping, template rendering, and more.
 
 ### Running unit tests
 
@@ -28,8 +28,8 @@ pytest tests/ --cov=app --cov-report=term-missing
 ```
 tests/
 ├── conftest.py                 # Shared fixtures (mock_config, sample_invoice, etc.)
-├── test_config_manager.py      # Config validation, defaults, file_exists_strategy
-└── test_invoice_monitor.py     # Monitor logic, deduplication, safe path resolution
+├── test_config_manager.py      # Config validation, defaults, file_exists_strategy, file_name_pattern
+└── test_invoice_monitor.py     # Monitor logic, deduplication, safe path, file naming, DB save, API fields
 ```
 
 ### CI
