@@ -66,6 +66,7 @@ class InvoiceMonitor:
         self.output_dir = Path(output_dir)
         self.folder_structure = config.get("storage", "folder_structure", default="")
         self.file_exists_strategy = config.get("storage", "file_exists_strategy", default="skip")
+        self.file_name_pattern = config.get("storage", "file_name_pattern", default="{type}_{date}_{invoice_number}")
 
         # Get timezone from config
         if PYTZ_AVAILABLE:
@@ -574,6 +575,61 @@ class InvoiceMonitor:
 
         return path
 
+    @staticmethod
+    def _sanitize_filename_value(value: str) -> str:
+        """Sanitize a value for safe use in filenames."""
+        if not value:
+            return "unknown"
+        result = str(value)
+        for ch in r'/\:*?"<>|':
+            result = result.replace(ch, '_')
+        result = result.replace('\x00', '')
+        result = result.strip('. ')
+        return result[:100] or "unknown"
+
+    def _build_file_name(self, invoice: Dict, subject_type: str, file_type: str = "invoice") -> str:
+        """
+        Build file name from file_name_pattern config.
+
+        Args:
+            invoice: Invoice metadata dict from KSeF API
+            subject_type: Subject1 or Subject2
+            file_type: "invoice" or "upo"
+
+        Returns:
+            File name without extension
+        """
+        san = self._sanitize_filename_value
+        ksef_number = invoice.get('ksefNumber', '')
+        safe_ksef = san(ksef_number)
+        issue_date = invoice.get('issueDate', '')
+        buyer = invoice.get('buyer', {})
+        buyer_nip = (
+            buyer.get("identifier", {}).get("value")
+            or buyer.get("nip", "")
+        )
+
+        if file_type == "upo":
+            type_val = "upo"
+        else:
+            type_val = "sprz" if subject_type == "Subject1" else "zak"
+
+        placeholders = {
+            "type": type_val,
+            "date": self._format_date_for_filename(issue_date),
+            "ksef": safe_ksef,
+            "ksef_short": safe_ksef[-6:] if len(safe_ksef) >= 6 else safe_ksef,
+            "invoice_number": san(invoice.get('invoiceNumber', '')),
+            "seller_nip": san(invoice.get('seller', {}).get('nip', '')),
+            "buyer_nip": san(buyer_nip),
+        }
+
+        try:
+            return self.file_name_pattern.format(**placeholders)
+        except (KeyError, IndexError, ValueError) as e:
+            logger.warning(f"file_name_pattern error: {e} — using fallback")
+            return f"{type_val}_{placeholders['date']}_{safe_ksef}"
+
     def _save_invoice_artifacts(self, invoice: Dict, subject_type: str,
                                 invoice_id: Optional[int] = None, db_session=None):
         """
@@ -594,21 +650,13 @@ class InvoiceMonitor:
             return
 
         ksef_number = invoice.get('ksefNumber', '')
-        issue_date = invoice.get('issueDate', '')
 
         if not ksef_number:
             logger.warning("No KSeF number - skipping artifact saving")
             return
 
-        # Determine type prefix
-        prefix = 'sprz' if subject_type == 'Subject1' else 'zak'
-
-        # Format date and sanitize KSeF number for filename
-        date_str = self._format_date_for_filename(issue_date)
-        safe_ksef = ksef_number.replace('/', '_').replace('\\', '_')
-
-        # Build base filename
-        base_name = f"{prefix}_{safe_ksef}_{date_str}"
+        # Build base filename from configurable pattern
+        base_name = self._build_file_name(invoice, subject_type, file_type="invoice")
 
         # Resolve target directory (may include date-based subfolders)
         target_dir = self._resolve_output_dir(invoice, subject_type)
@@ -670,7 +718,8 @@ class InvoiceMonitor:
         # For sales invoices (Subject1), fetch and save UPO (XML-based, follows save_xml flag)
         if self.save_xml and subject_type == 'Subject1':
             try:
-                upo_orig_path = target_dir / f"UPO_{base_name}.xml"
+                upo_name = self._build_file_name(invoice, subject_type, file_type="upo")
+                upo_orig_path = target_dir / f"{upo_name}.xml"
                 upo_result = self.ksef.get_invoice_upo(ksef_number)
                 if upo_result:
                     upo_path = self._resolve_safe_path(upo_orig_path)

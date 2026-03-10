@@ -134,6 +134,7 @@ KSeF_Monitor/
 - Loads configuration from JSON file
 - Validates required fields (ksef, notifications, schedule, storage, prometheus)
 - Validates `templates_dir` if provided (warning only, non-blocking)
+- Validates `folder_structure` and `file_name_pattern` placeholders (warning + fallback)
 - Provides typed access to configuration values
 
 ### `app/secrets_manager.py`
@@ -194,6 +195,7 @@ Design: [DATABASE_DESIGN.md](DATABASE_DESIGN.md)
 - `run()` - Main monitoring loop
 - `check_for_new_invoices()` - Check and notify
 - `build_template_context()` - Build context dict for Jinja2 templates (v0.3)
+- `_build_file_name()` - Build file name from configurable `file_name_pattern` (v0.3)
 - `_resolve_output_dir()` - Resolve target dir from `folder_structure` pattern (v0.3)
 - `_resolve_safe_path()` - Apply file_exists_strategy before writing (v0.3)
 - `_save_invoice_artifacts()` - Save PDF, XML, UPO to target dir

@@ -400,6 +400,24 @@ class ConfigManager:
             else:
                 logger.info(f"Storage folder structure: {folder_structure}")
 
+        # Validate and default file_name_pattern
+        default_fnp = "{type}_{date}_{invoice_number}"
+        storage.setdefault("file_name_pattern", default_fnp)
+        file_name_pattern = storage["file_name_pattern"]
+        if file_name_pattern:
+            allowed_fnp = r'\{(ksef|ksef_short|invoice_number|date|type|seller_nip|buyer_nip)\}'
+            stripped_fnp = re.sub(allowed_fnp, '', file_name_pattern)
+            if '{' in stripped_fnp or '}' in stripped_fnp:
+                logger.warning(
+                    f"Invalid file_name_pattern '{file_name_pattern}' - "
+                    f"only {{ksef}}, {{ksef_short}}, {{invoice_number}}, {{date}}, {{type}}, "
+                    f"{{seller_nip}}, {{buyer_nip}} placeholders allowed. "
+                    f"Falling back to default."
+                )
+                storage["file_name_pattern"] = default_fnp
+            else:
+                logger.info(f"Storage file name pattern: {file_name_pattern}")
+
         # Validate optional pdf_templates_dir
         pdf_templates_dir = storage.get("pdf_templates_dir")
         if pdf_templates_dir:

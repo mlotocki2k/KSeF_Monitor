@@ -30,12 +30,14 @@
 - [x] QR Code Type I jako base64 data URI w HTML
 - [x] Dokumentacja: [PDF_TEMPLATES.md](PDF_TEMPLATES.md) — zmienne, filtry, CSS customizacja
 
-### 3) Formatowanie/zapisywanie (struktura folderów) ✅
+### 3) Formatowanie/zapisywanie (struktura folderów + nazwy plików) ✅
 - [x] Konfigurowalna struktura folderów (`folder_structure` w config storage)
-- [x] Placeholdery: `{year}`, `{month}`, `{day}`, `{type}` (sprzedaz/zakup)
-- [x] Walidacja wzorca w config_manager (tylko dozwolone placeholdery)
+- [x] Placeholdery folderów: `{year}`, `{month}`, `{day}`, `{type}` (sprzedaz/zakup)
+- [x] Konfigurowalne nazwy plików (`file_name_pattern` w config storage)
+- [x] Placeholdery nazw: `{type}` (sprz/zak/upo), `{date}`, `{invoice_number}`, `{ksef}`, `{ksef_short}`, `{seller_nip}`, `{buyer_nip}`
+- [x] Walidacja wzorców w config_manager (tylko dozwolone placeholdery)
 - [x] Path traversal guard na wynikowej ścieżce
-- [x] Backward compatible: pusty string = flat directory (zachowanie domyślne)
+- [x] Backward compatible: domyślny pattern `{type}_{date}_{invoice_number}`
 
 ### 4) Safecheck na overwrite plików ✅
 - [x] Sprawdzanie czy plik (XML/PDF/UPO) już istnieje przed zapisem

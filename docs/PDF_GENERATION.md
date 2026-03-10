@@ -614,11 +614,45 @@ Klucz `folder_structure` w sekcji `storage` pozwala organizować pliki w podfold
 
 | Wzorzec | Wynik |
 |---|---|
-| `""` (domyślnie) | `/data/invoices/sprz_<ksef>_20260227.pdf` |
-| `"{year}/{month}"` | `/data/invoices/2026/02/sprz_<ksef>_20260227.pdf` |
-| `"{type}/{year}/{month}/{day}"` | `/data/invoices/sprzedaz/2026/02/27/sprz_<ksef>_20260227.pdf` |
+| `""` (domyślnie) | `/data/invoices/sprz_20260227_FV-123_2026.pdf` |
+| `"{year}/{month}"` | `/data/invoices/2026/02/sprz_20260227_FV-123_2026.pdf` |
+| `"{type}/{year}/{month}/{day}"` | `/data/invoices/sprzedaz/2026/02/27/sprz_20260227_FV-123_2026.pdf` |
 
 Podfoldery tworzone automatycznie. Pusty string = płaski katalog (zachowanie domyślne).
+
+## Nazwy plików (file_name_pattern)
+
+Klucz `file_name_pattern` w sekcji `storage` kontroluje nazwy zapisywanych plików:
+
+```json
+{
+  "storage": {
+    "file_name_pattern": "{type}_{date}_{invoice_number}"
+  }
+}
+```
+
+**Dostępne placeholdery:**
+
+| Placeholder | Wartość | Przykład |
+|---|---|---|
+| `{type}` | Typ: `sprz` / `zak` / `upo` | `sprz` |
+| `{date}` | Data wystawienia YYYYMMDD | `20260227` |
+| `{invoice_number}` | Numer faktury (sanitized) | `FV-123_2026` |
+| `{ksef}` | Pełny numer KSeF (sanitized) | `1234567890-20260227-ABC123DEF456-78` |
+| `{ksef_short}` | Ostatnie 6 znaków numeru KSeF | `456-78` |
+| `{seller_nip}` | NIP sprzedawcy | `9730842472` |
+| `{buyer_nip}` | NIP kupującego | `1234567890` |
+
+**Przykłady:**
+
+| Wzorzec | Wynik (XML) |
+|---|---|
+| `"{type}_{date}_{invoice_number}"` (domyślnie) | `sprz_20260227_FV-123_2026.xml` |
+| `"{type}_{seller_nip}_{date}_{invoice_number}"` | `sprz_9730842472_20260227_FV-123_2026.xml` |
+| `"{date}_{type}_{ksef_short}"` | `20260227_sprz_456-78.xml` |
+
+Znaki niedozwolone w systemie plików (`/\:*?"<>|`) są automatycznie zamieniane na `_`.
 
 ## Strategia zapisu plików (file_exists_strategy)
 

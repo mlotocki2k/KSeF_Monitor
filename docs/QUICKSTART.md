@@ -302,6 +302,7 @@ Edit `config.json` to customize:
     "save_pdf": false,            // Generate and save PDF files
     "output_dir": "/data/invoices", // Output directory (auto-created)
     "folder_structure": "",       // Subfolder pattern: {year}/{month}/{day}/{type}
+    "file_name_pattern": "{type}_{date}_{invoice_number}", // File naming: {type}/{date}/{invoice_number}/{ksef}/{ksef_short}/{seller_nip}/{buyer_nip}
     "file_exists_strategy": "skip" // skip / rename / overwrite
   },
   "schedule": {
