@@ -491,7 +491,7 @@ KSeF_Monitor/
 ├── app/                           # Application modules
 │   ├── config_manager.py          # Configuration loading & validation
 │   ├── secrets_manager.py         # Secrets from env / Docker secrets / config
-│   ├── ksef_client.py             # KSeF API v2.1/v2.2 client
+│   ├── ksef_client.py             # KSeF API v2.2.0 client
 │   ├── invoice_monitor.py         # Main monitoring loop
 │   ├── invoice_pdf_generator.py   # XML parser + ReportLab PDF (fallback)
 │   ├── invoice_pdf_template.py    # HTML/CSS → PDF via xhtml2pdf (primary)

@@ -131,7 +131,7 @@ class InvoiceMonitor:
             if dt.tzinfo is None and self.timezone:
                 logger.warning(
                     "Naive datetime '%s' in state file — localizing to %s. "
-                    "KSeF API v2.1.2+ interprets naive dates as Europe/Warsaw.",
+                    "KSeF API v2.2.0 interprets naive dates as Europe/Warsaw.",
                     date_string, self.timezone
                 )
                 dt = self.timezone.localize(dt)
@@ -148,7 +148,7 @@ class InvoiceMonitor:
         """
         Cap date_from to now - MAX_DATE_RANGE_DAYS.
 
-        KSeF API v2.0.0+ limits dateRange to 3 months. If date_from is older,
+        KSeF API v2.2.0 limits dateRange to 3 months. If date_from is older,
         cap it and log a warning about the skipped period.
         """
         max_lookback = now - timedelta(days=self.MAX_DATE_RANGE_DAYS)

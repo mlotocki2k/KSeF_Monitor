@@ -126,7 +126,7 @@ class TestInvoiceMonitorBuildTemplateContext:
         assert ctx["title"] == "Nowa faktura w KSeF"
 
     def test_buyer_nip_from_identifier(self, monitor, sample_invoice):
-        """Buyer NIP extracted from buyer.identifier.value (API v2.1.2 schema)."""
+        """Buyer NIP extracted from buyer.identifier.value (API v2.2.0 schema)."""
         ctx = monitor.build_template_context(sample_invoice, "Subject1")
         assert ctx["buyer_nip"] == "1234567890"
 

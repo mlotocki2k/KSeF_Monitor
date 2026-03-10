@@ -1,7 +1,7 @@
 # KSeF Invoice Monitor - Documentation Index
 
 **Version:** v0.3
-**Based on:** KSeF API v2.1
+**Based on:** KSeF API v2.2.0
 **License:** MIT
 
 ---
@@ -171,7 +171,7 @@ KSeF_Monitor/
 │   └── app/                        # Application package
 │       ├── config_manager.py       # Configuration
 │       ├── secrets_manager.py      # Secrets handling
-│       ├── ksef_client.py          # KSeF API v2.1/v2.2 client
+│       ├── ksef_client.py          # KSeF API v2.2.0 client
 │       ├── invoice_monitor.py      # Main monitoring logic
 │       ├── invoice_pdf_generator.py # XML parser + ReportLab PDF (fallback)
 │       ├── invoice_pdf_template.py  # HTML/CSS → PDF via xhtml2pdf (primary)
@@ -316,7 +316,7 @@ Before running in production:
 **Current Version:** v0.3
 
 **Features:**
-- ✅ Full KSeF API v2.1 support
+- ✅ Full KSeF API v2.2.0 support
 - ✅ Multi-channel notifications (5 channels)
 - ✅ Customizable Jinja2 notification templates (v0.3)
 - ✅ Polish monetary formatting (v0.3)

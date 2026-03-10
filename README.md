@@ -47,7 +47,7 @@ KSeF_Monitor/
 │   ├── __init__.py
 │   ├── config_manager.py        # Wczytanie i walidacja config.json
 │   ├── secrets_manager.py       # Sekretne wartości z env / Docker secrets / config
-│   ├── ksef_client.py           # Klient API KSeF v2.1/v2.2 (autentykacja + paginacja)
+│   ├── ksef_client.py           # Klient API KSeF v2.2.0 (autentykacja + paginacja)
 │   ├── invoice_monitor.py       # Główna pętla monitorowania + kontekst szablonów
 │   ├── invoice_pdf_generator.py # XML parser + ReportLab PDF generator (fallback)
 │   ├── invoice_pdf_template.py  # HTML/CSS template PDF renderer (xhtml2pdf)
@@ -86,7 +86,7 @@ KSeF_Monitor/
 │   ├── IDE_TROUBLESHOOTING.md   # IDE setup help
 │   └── INDEX.md                 # Documentation index
 ├── spec/                        # API specifications
-│   ├── openapi.json             # KSeF API v2.1/v2.2 OpenAPI spec
+│   ├── openapi.json             # KSeF API v2.2.0 OpenAPI spec
 │   └── schemat_FA(3)_v1-0E.xsd # Schemat FA(3) faktury
 ├── examples/                    # Example configuration files
 │   ├── config.example.json      # Configuration template
