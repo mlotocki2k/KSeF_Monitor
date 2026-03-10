@@ -241,6 +241,8 @@ See [PDF_TEMPLATES.md](PDF_TEMPLATES.md) for template customization guide.
 
 Exports: `ksef_last_check_timestamp`, `ksef_new_invoices_total`, `ksef_monitor_up`
 
+Configurable `bind_address`: `0.0.0.0` (Docker, default) or `127.0.0.1` (bare metal).
+
 ### `app/notifiers/`
 **Multi-channel notification system**
 

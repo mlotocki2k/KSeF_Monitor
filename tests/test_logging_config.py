@@ -197,3 +197,27 @@ class TestPrometheusMetrics:
             pm.start_server()
             assert pm._server_started is True
             pm.start_server()  # Should warn, not crash
+
+    def test_bind_address_default(self):
+        """Default bind_address is 0.0.0.0."""
+        with patch("app.prometheus_metrics.Gauge") as MockGauge, \
+             patch("app.prometheus_metrics.Counter") as MockCounter:
+            MockGauge.return_value = MagicMock()
+            MockCounter.return_value = MagicMock()
+
+            from app.prometheus_metrics import PrometheusMetrics
+            pm = PrometheusMetrics(port=9993)
+            assert pm.bind_address == '0.0.0.0'
+
+    def test_bind_address_custom(self):
+        """Custom bind_address is passed to start_http_server."""
+        with patch("app.prometheus_metrics.Gauge") as MockGauge, \
+             patch("app.prometheus_metrics.Counter") as MockCounter, \
+             patch("app.prometheus_metrics.start_http_server") as mock_start:
+            MockGauge.return_value = MagicMock()
+            MockCounter.return_value = MagicMock()
+
+            from app.prometheus_metrics import PrometheusMetrics
+            pm = PrometheusMetrics(port=9992, bind_address='127.0.0.1')
+            pm.start_server()
+            mock_start.assert_called_once_with(9992, addr='127.0.0.1')

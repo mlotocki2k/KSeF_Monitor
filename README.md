@@ -501,6 +501,7 @@ Eksport metryk dla systemów monitorowania (Prometheus, Grafana, etc.)
 |---|---|---|
 | `enabled` | `true` | Włącz/wyłącz endpoint metryk Prometheus |
 | `port` | `8000` | Port HTTP dla endpointu `/metrics` |
+| `bind_address` | `"0.0.0.0"` | Adres sieciowy do nasłuchu. `0.0.0.0` dla Dockera (domyślnie), `127.0.0.1` dla bare metal |
 
 **Dostępne metryki:**
 
@@ -516,10 +517,18 @@ Eksport metryk dla systemów monitorowania (Prometheus, Grafana, etc.)
 {
   "prometheus": {
     "enabled": true,
-    "port": 8000
+    "port": 8000,
+    "bind_address": "0.0.0.0"
   }
 }
 ```
+
+**Bind address:**
+
+| Środowisko | `bind_address` | Uwagi |
+|---|---|---|
+| Docker (domyślnie) | `"0.0.0.0"` | Wymagane, aby metryki były dostępne spoza kontenera. Bezpieczeństwo zapewnia port mapping w `docker-compose.yml` (`127.0.0.1:8000:8000`). |
+| Bare metal / VM | `"127.0.0.1"` | Metryki dostępne tylko lokalnie. Zalecane gdy Prometheus działa na tym samym hoście. |
 
 **Dostęp do metryk:**
 ```bash
