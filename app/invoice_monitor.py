@@ -391,7 +391,7 @@ class InvoiceMonitor:
         return now - timedelta(hours=24)
 
     def _save_invoice_to_db(self, session, invoice: Dict, subject_type: str) -> Optional[int]:
-        """Save invoice metadata to DB. Returns invoice.id or None."""
+        """Save invoice metadata to DB. Returns invoice.id (new or existing) or None."""
         try:
             ksef_number = invoice.get('ksefNumber', '')
             seller = invoice.get('seller', {})
@@ -420,7 +420,11 @@ class InvoiceMonitor:
                 "raw_metadata": json.dumps(invoice, ensure_ascii=False, default=str),
             }
             inv = self.db.save_invoice(session, invoice_data)
-            return inv.id if inv else None
+            if inv:
+                return inv.id
+            # Duplicate — return existing record's id so artifacts can be linked
+            existing = session.query(Invoice).filter_by(ksef_number=ksef_number).first()
+            return existing.id if existing else None
         except Exception as e:
             logger.error(f"Failed to save invoice to DB: {e}")
             return None
@@ -627,7 +631,8 @@ class InvoiceMonitor:
 
         # Save XML
         if self.save_xml:
-            xml_path = self._resolve_safe_path(target_dir / f"{base_name}.xml")
+            xml_orig_path = target_dir / f"{base_name}.xml"
+            xml_path = self._resolve_safe_path(xml_orig_path)
             if xml_path:
                 try:
                     with open(xml_path, 'w', encoding='utf-8') as f:
@@ -636,11 +641,15 @@ class InvoiceMonitor:
                     self._update_artifact_in_db(db_session, invoice_id, "xml", xml_path)
                 except Exception as e:
                     logger.error(f"Failed to save XML for {ksef_number}: {e}")
+            elif xml_orig_path.exists():
+                # File exists on disk but was skipped — mark in DB
+                self._update_artifact_in_db(db_session, invoice_id, "xml", xml_orig_path)
 
         # Generate and save PDF
         if self.save_pdf:
             if REPORTLAB_AVAILABLE:
-                pdf_path = self._resolve_safe_path(target_dir / f"{base_name}.pdf")
+                pdf_orig_path = target_dir / f"{base_name}.pdf"
+                pdf_path = self._resolve_safe_path(pdf_orig_path)
                 if pdf_path:
                     try:
                         tz_name = self.config.get_timezone() if hasattr(self.config, 'get_timezone') else ''
@@ -652,20 +661,27 @@ class InvoiceMonitor:
                         self._update_artifact_in_db(db_session, invoice_id, "pdf", pdf_path)
                     except Exception as e:
                         logger.error(f"Failed to generate PDF for {ksef_number}: {e}")
+                elif pdf_orig_path.exists():
+                    # File exists on disk but was skipped — mark in DB
+                    self._update_artifact_in_db(db_session, invoice_id, "pdf", pdf_orig_path)
             else:
                 logger.warning("reportlab not available - skipping PDF generation")
 
         # For sales invoices (Subject1), fetch and save UPO (XML-based, follows save_xml flag)
         if self.save_xml and subject_type == 'Subject1':
             try:
+                upo_orig_path = target_dir / f"UPO_{base_name}.xml"
                 upo_result = self.ksef.get_invoice_upo(ksef_number)
                 if upo_result:
-                    upo_path = self._resolve_safe_path(target_dir / f"UPO_{base_name}.xml")
+                    upo_path = self._resolve_safe_path(upo_orig_path)
                     if upo_path:
                         with open(upo_path, 'w', encoding='utf-8') as f:
                             f.write(upo_result['xml_content'])
                         logger.info(f"UPO saved: {upo_path}")
                         self._update_artifact_in_db(db_session, invoice_id, "upo", upo_path)
+                    elif upo_orig_path.exists():
+                        # File exists on disk but was skipped — mark in DB
+                        self._update_artifact_in_db(db_session, invoice_id, "upo", upo_orig_path)
                 else:
                     logger.info(f"No UPO available yet for {ksef_number}")
             except Exception as e:
