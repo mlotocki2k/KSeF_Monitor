@@ -11,6 +11,9 @@ Usage:
     python db_admin.py stats                   # Aggregate statistics
     python db_admin.py errors                  # Show recent errors from monitor_state
     python db_admin.py search <query>          # Search invoices by ksef_number, seller, buyer
+    python db_admin.py set-last-check <nip> <datetime>    # Set last_check date for NIP
+    python db_admin.py delete-last-check <nip>           # Delete monitor_state for NIP
+    python db_admin.py delete-invoices [--nip NIP] [--before DATE] [--all]  # Delete invoices
     python db_admin.py cleanup-notifications [--days N]  # Delete old notification logs
     python db_admin.py export-invoices [--format csv|json] [--output FILE]  # Export invoices
     python db_admin.py reset-errors            # Reset consecutive_errors counters
@@ -407,6 +410,140 @@ def cmd_search(args):
     session.close()
 
 
+def cmd_set_last_check(args):
+    """Set last_check date for a NIP."""
+    db = get_db(args)
+    session = db.get_session()
+
+    # Parse datetime
+    try:
+        dt = datetime.fromisoformat(args.datetime)
+    except ValueError:
+        print(f"Invalid datetime format: {args.datetime}")
+        print("Expected: YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS")
+        session.close()
+        return
+
+    states = session.query(MonitorState).filter(MonitorState.nip == args.nip).all()
+
+    if not states:
+        print(f"No monitor_state entries for NIP: {args.nip}")
+        session.close()
+        return
+
+    for s in states:
+        old_val = s.last_check
+        s.last_check = dt.isoformat()
+        s.updated_at = datetime.now(timezone.utc)
+        print(f"  {s.nip} ({s.subject_type}): {old_val} → {dt.isoformat()}")
+
+    session.commit()
+    print(f"\nUpdated last_check for {len(states)} entry/entries.")
+    session.close()
+
+
+def cmd_delete_last_check(args):
+    """Delete monitor_state entries for a NIP."""
+    db = get_db(args)
+    session = db.get_session()
+
+    states = session.query(MonitorState).filter(MonitorState.nip == args.nip).all()
+
+    if not states:
+        print(f"No monitor_state entries for NIP: {args.nip}")
+        session.close()
+        return
+
+    print(f"Found {len(states)} monitor_state entry/entries for NIP {args.nip}:")
+    for s in states:
+        print(f"  {s.subject_type}: last_check={s.last_check}, invoices_count={s.invoices_count}")
+
+    if not args.yes:
+        answer = input(f"\nDelete these entries? Monitor will start fresh for this NIP. [y/N] ")
+        if answer.lower() != "y":
+            print("Aborted.")
+            session.close()
+            return
+
+    count = session.query(MonitorState).filter(MonitorState.nip == args.nip).delete()
+    session.commit()
+    print(f"Deleted {count} monitor_state entry/entries.")
+    session.close()
+
+
+def cmd_delete_invoices(args):
+    """Delete invoices from database."""
+    db = get_db(args)
+    session = db.get_session()
+
+    query = session.query(Invoice)
+    filters = []
+
+    if args.nip:
+        query = query.filter(
+            (Invoice.seller_nip == args.nip) | (Invoice.buyer_nip == args.nip)
+        )
+        filters.append(f"NIP={args.nip}")
+
+    if args.before:
+        try:
+            before_dt = datetime.fromisoformat(args.before)
+            query = query.filter(Invoice.created_at < before_dt)
+            filters.append(f"created before {args.before}")
+        except ValueError:
+            print(f"Invalid date format: {args.before}")
+            print("Expected: YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS")
+            session.close()
+            return
+
+    if args.ksef_number:
+        query = query.filter(Invoice.ksef_number == args.ksef_number)
+        filters.append(f"ksef_number={args.ksef_number}")
+
+    if not filters and not args.all:
+        print("Safety: specify at least one filter (--nip, --before, --ksef-number) or --all")
+        session.close()
+        return
+
+    count = query.count()
+
+    if count == 0:
+        print("No invoices match the given criteria.")
+        session.close()
+        return
+
+    filter_desc = ", ".join(filters) if filters else "ALL invoices"
+    print(f"Found {count} invoice(s) matching: {filter_desc}")
+
+    # Show sample
+    sample = query.order_by(Invoice.created_at.desc()).limit(5).all()
+    for inv in sample:
+        print(f"  [{inv.id}] {inv.ksef_number}  {inv.issue_date}  "
+              f"{inv.seller_nip} → {inv.buyer_nip}")
+    if count > 5:
+        print(f"  ... and {count - 5} more")
+
+    if not args.yes:
+        answer = input(f"\nDelete {count} invoice(s) and their notification logs? [y/N] ")
+        if answer.lower() != "y":
+            print("Aborted.")
+            session.close()
+            return
+
+    # Delete related notification logs first
+    invoice_ids = [inv.id for inv in query.all()]
+    if invoice_ids:
+        notif_count = session.query(NotificationLog).filter(
+            NotificationLog.invoice_id.in_(invoice_ids)
+        ).delete(synchronize_session="fetch")
+        print(f"Deleted {notif_count} related notification log(s).")
+
+    deleted = query.delete(synchronize_session="fetch")
+    session.commit()
+    print(f"Deleted {deleted} invoice(s).")
+    session.close()
+
+
 def cmd_cleanup_notifications(args):
     """Delete notification logs older than N days."""
     db = get_db(args)
@@ -578,6 +715,24 @@ def main():
     p.add_argument("query", help="Search term (ksef_number, name, NIP)")
     p.add_argument("--limit", "-n", type=int, default=20, help="Max results")
 
+    # set-last-check
+    p = sub.add_parser("set-last-check", help="Set last_check date for a NIP")
+    p.add_argument("nip", help="NIP number")
+    p.add_argument("datetime", help="New datetime (YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS)")
+
+    # delete-last-check
+    p = sub.add_parser("delete-last-check", help="Delete monitor_state for a NIP")
+    p.add_argument("nip", help="NIP number")
+    p.add_argument("-y", "--yes", action="store_true", help="Skip confirmation")
+
+    # delete-invoices
+    p = sub.add_parser("delete-invoices", help="Delete invoices from database")
+    p.add_argument("--nip", help="Filter by NIP (seller or buyer)")
+    p.add_argument("--before", help="Delete invoices created before date (YYYY-MM-DD)")
+    p.add_argument("--ksef-number", help="Delete specific invoice by KSeF number")
+    p.add_argument("--all", action="store_true", help="Delete ALL invoices (requires confirmation)")
+    p.add_argument("-y", "--yes", action="store_true", help="Skip confirmation")
+
     # cleanup-notifications
     p = sub.add_parser("cleanup-notifications", help="Delete old notification logs")
     p.add_argument("--days", type=int, default=90, help="Delete older than N days (default: 90)")
@@ -610,6 +765,9 @@ def main():
         "stats": cmd_stats,
         "errors": cmd_errors,
         "search": cmd_search,
+        "set-last-check": cmd_set_last_check,
+        "delete-last-check": cmd_delete_last_check,
+        "delete-invoices": cmd_delete_invoices,
         "cleanup-notifications": cmd_cleanup_notifications,
         "export-invoices": cmd_export_invoices,
         "reset-errors": cmd_reset_errors,
