@@ -1,6 +1,6 @@
 # Security Guide - Protecting Sensitive Credentials
 
-This guide explains multiple methods to secure your API tokens and credentials for the KSeF Invoice Monitor v0.2.
+This guide explains multiple methods to secure your API tokens and credentials for the KSeF Invoice Monitor v0.3.
 
 **Protected Credentials:**
 - KSeF API token
@@ -418,7 +418,7 @@ docker-compose logs | grep "Enabled channels"
 ```bash
 docker-compose exec ksef-monitor python3 -c "
 from app.config_manager import ConfigManager
-config = ConfigManager('/data/config.json')
+config = ConfigManager('/config/config.json')
 print('✓ Config loaded successfully')
 print('Environment:', config.get('ksef', 'environment'))
 print('Secrets loaded:', 'token' in str(config.get('ksef', 'token')))
@@ -546,10 +546,31 @@ nano config.json  # Set notifications.channels
 docker stack deploy -c docker-compose.yml ksef
 ```
 
+## Vulnerability Disclosure Policy
+
+If you discover a security vulnerability in KSeF Invoice Monitor, please report it responsibly:
+
+1. **Do NOT open a public GitHub issue** for security vulnerabilities
+2. **Email the maintainer directly** or use [GitHub Security Advisories](https://github.com/mlotocki2k/KSeF_Monitor/security/advisories/new) to report privately
+3. Include:
+   - Description of the vulnerability
+   - Steps to reproduce
+   - Potential impact
+   - Suggested fix (if any)
+
+**Response timeline:**
+- Acknowledgment within **48 hours**
+- Assessment and fix plan within **7 days**
+- Patch release within **30 days** (critical issues faster)
+
+We will credit reporters in the release notes (unless anonymity is requested).
+
+**Scope:** This policy covers the KSeF Invoice Monitor application code, Docker configuration, and CI/CD pipelines. It does not cover the KSeF API itself (report those to the Ministry of Finance).
+
 ## Support
 
-For security questions or to report vulnerabilities:
-- Open a GitHub issue (do NOT include actual credentials)
+For general security questions:
+- Open a GitHub issue (do NOT include actual credentials or vulnerability details)
 - Contact maintainers directly for sensitive matters
 
 ---

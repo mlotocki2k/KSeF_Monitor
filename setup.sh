@@ -1,11 +1,11 @@
 #!/bin/bash
-# KSeF Invoice Monitor v0.2 - Setup Script
+# KSeF Invoice Monitor v0.3 - Setup Script
 # This script helps you get started quickly
 
 set -e
 
 echo "=================================================="
-echo "  KSeF Invoice Monitor v0.2 - Setup Wizard"
+echo "  KSeF Invoice Monitor v0.3 - Setup Wizard"
 echo "=================================================="
 echo ""
 

@@ -45,13 +45,13 @@ class SecretsManager:
         # 1. Check environment variable
         env_value = os.getenv(key)
         if env_value:
-            logger.debug(f"Secret '{key}' loaded from environment variable")
+            logger.debug("Secret loaded from environment variable")
             return env_value
         
         # 2. Check Docker secrets
         docker_secret = self._read_docker_secret(key.lower())
         if docker_secret:
-            logger.debug(f"Secret '{key}' loaded from Docker secret")
+            logger.debug("Secret loaded from Docker secret")
             return docker_secret
         
         # 3. Return default
@@ -117,6 +117,11 @@ class SecretsManager:
         if ksef_token:
             config.setdefault("ksef", {})["token"] = ksef_token
             logger.info("KSeF token loaded from secure source")
+        elif config.get("ksef", {}).get("token"):
+            logger.warning(
+                "KSeF token loaded from config file — consider using "
+                "KSEF_TOKEN env var or Docker secret for better security"
+            )
 
         # Pushover credentials (support both old and new structure)
         pushover_user = self.get_secret("PUSHOVER_USER_KEY")

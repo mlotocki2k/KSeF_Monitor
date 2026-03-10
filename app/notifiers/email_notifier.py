@@ -3,11 +3,14 @@ Email Notification Service
 Sends notifications via SMTP with HTML formatting
 """
 
+import html as html_mod
 import logging
+import re
 import smtplib
+import ssl
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-from typing import Optional, List
+from typing import Any, Dict, Optional, List
 
 from .base_notifier import BaseNotifier
 
@@ -16,6 +19,8 @@ logger = logging.getLogger(__name__)
 
 class EmailNotifier(BaseNotifier):
     """Send notifications via email using SMTP"""
+
+    _EMAIL_RE = re.compile(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$')
 
     # Priority to X-Priority header mapping (email standard)
     PRIORITY_HEADER = {
@@ -33,6 +38,7 @@ class EmailNotifier(BaseNotifier):
         Args:
             config: ConfigManager instance or dict with notifications configuration
         """
+        super().__init__()
         notifications_config = config.get("notifications") or {}
         email_config = notifications_config.get("email") or {}
 
@@ -45,8 +51,21 @@ class EmailNotifier(BaseNotifier):
         self.to_addresses = email_config.get("to_addresses", [])
         self.timeout = email_config.get("timeout", 30)
 
+        # Validate email addresses at init time
+        self._validate_addresses()
+
         if not self.is_configured:
             logger.debug("Email SMTP configuration incomplete")
+
+    def _validate_addresses(self):
+        """Validate email address format at startup."""
+        if self.from_address and not self._EMAIL_RE.match(self.from_address):
+            logger.warning(f"Invalid from_address format: {self.from_address}")
+            self.from_address = None
+        invalid = [a for a in self.to_addresses if not self._EMAIL_RE.match(a)]
+        if invalid:
+            logger.warning(f"Removing invalid to_addresses: {invalid}")
+            self.to_addresses = [a for a in self.to_addresses if self._EMAIL_RE.match(a)]
 
     @property
     def is_configured(self) -> bool:
@@ -87,8 +106,10 @@ class EmailNotifier(BaseNotifier):
         }
         badge_text, badge_color = priority_styles.get(priority, ("📋 Normal", "#36a64f"))
 
-        # Convert newlines to HTML breaks
-        html_message = message.replace("\n", "<br>")
+        # Escape HTML special characters to prevent injection
+        safe_title = html_mod.escape(title)
+        safe_message = html_mod.escape(message).replace("\n", "<br>")
+        safe_url = html_mod.escape(url) if url else None
 
         # Build HTML
         html = f"""
@@ -108,11 +129,11 @@ class EmailNotifier(BaseNotifier):
             <div class="container">
                 <div class="header">
                     <div class="priority">{badge_text}</div>
-                    <h2 style="margin: 10px 0 0 0;">{title}</h2>
+                    <h2 style="margin: 10px 0 0 0;">{safe_title}</h2>
                 </div>
                 <div class="content">
-                    <p>{html_message}</p>
-                    {f'<a href="{url}" class="button">View in KSeF</a>' if url else ''}
+                    <p>{safe_message}</p>
+                    {f'<a href="{safe_url}" class="button">View in KSeF</a>' if safe_url else ''}
                 </div>
                 <div class="footer">
                     <p>KSeF Invoice Monitor</p>
@@ -166,7 +187,46 @@ class EmailNotifier(BaseNotifier):
             # Send email
             with smtplib.SMTP(self.smtp_server, self.smtp_port, timeout=self.timeout) as server:
                 if self.use_tls:
-                    server.starttls()
+                    server.starttls(context=ssl.create_default_context())
+                server.login(self.username, self.password)
+                server.sendmail(self.from_address, self.to_addresses, msg.as_string())
+
+            logger.info(f"Email notification sent to {len(self.to_addresses)} recipient(s): {title}")
+            return True
+
+        except smtplib.SMTPException as e:
+            logger.error(f"SMTP error sending email notification: {e}")
+            return False
+        except Exception as e:
+            logger.error(f"Unexpected error sending email notification: {e}")
+            return False
+
+    def _send_rendered(self, rendered: str, context: Dict[str, Any]) -> bool:
+        """Send email with rendered HTML template as body."""
+        if not self.is_configured:
+            logger.error("Email not configured - notification not sent")
+            return False
+
+        try:
+            title = context.get("title", "")
+            priority = context.get("priority", 0)
+
+            msg = MIMEMultipart('alternative')
+            msg['Subject'] = f"[KSeF Monitor] {title}"
+            msg['From'] = self.from_address
+            msg['To'] = ', '.join(self.to_addresses)
+            msg['X-Priority'] = self.PRIORITY_HEADER.get(priority, "3")
+
+            # Plain text fallback
+            text_content = f"{title}\n\n{self._build_fallback_message(context)}"
+            msg.attach(MIMEText(text_content, 'plain'))
+
+            # HTML from template
+            msg.attach(MIMEText(rendered, 'html'))
+
+            with smtplib.SMTP(self.smtp_server, self.smtp_port, timeout=self.timeout) as server:
+                if self.use_tls:
+                    server.starttls(context=ssl.create_default_context())
                 server.login(self.username, self.password)
                 server.sendmail(self.from_address, self.to_addresses, msg.as_string())
 

@@ -1,6 +1,6 @@
 # Quick Start Guide
 
-Get your KSeF Invoice Monitor v0.2 running in 5 minutes!
+Get your KSeF Invoice Monitor v0.3 running in 5 minutes!
 
 ## Prerequisites
 
@@ -148,8 +148,7 @@ Enable channels in `notifications` section:
 # Set secure permissions
 chmod 600 .env
 
-# Build and start
-docker-compose build
+# Start (image is pulled automatically from GHCR)
 docker-compose up -d
 
 # View logs
@@ -214,9 +213,9 @@ docker service logs -f ksef_ksef-monitor
 ### Expected output:
 ```
 ksef-monitor | ======================================================================
-ksef-monitor | KSeF Invoice Monitor v0.2
-ksef-monitor | Based on KSeF API v2.0 (github.com/CIRFMF/ksef-docs)
-ksef-monitor | Multi-channel notifications: Pushover, Discord, Slack, Email, Webhook
+ksef-monitor | KSeF Invoice Monitor v0.3
+ksef-monitor | Based on KSeF API v2.2.0 (github.com/CIRFMF/ksef-docs)
+ksef-monitor | Multi-channel notifications with Jinja2 templates
 ksef-monitor | ======================================================================
 ksef-monitor | Loading configuration...
 ksef-monitor | ✓ Configuration loaded
@@ -224,6 +223,7 @@ ksef-monitor | ✓ KSeF client initialized
 ksef-monitor | Initializing notification channels...
 ksef-monitor | ✓ Notification system initialized
 ksef-monitor |   Enabled channels: discord, email
+ksef-monitor | ✓ Database initialized (SQLite)
 ksef-monitor | ✓ Invoice monitor initialized
 ksef-monitor | Checking for new invoices...
 ```
@@ -251,7 +251,7 @@ docker-compose logs -f
 docker-compose exec ksef-monitor python3 -c "
 from app.config_manager import ConfigManager
 from app.notifiers import NotificationManager
-config = ConfigManager('/data/config.json')
+config = ConfigManager('/config/config.json')
 notifier = NotificationManager(config)
 print('Testing all channels...')
 notifier.test_connection()
@@ -300,7 +300,10 @@ Edit `config.json` to customize:
   "storage": {
     "save_xml": false,            // Save invoice XML files
     "save_pdf": false,            // Generate and save PDF files
-    "output_dir": "/data/invoices" // Output directory (auto-created)
+    "output_dir": "/data/invoices", // Output directory (auto-created)
+    "folder_structure": "",       // Subfolder pattern: {year}/{month}/{day}/{type}
+    "file_name_pattern": "{type}_{date}_{invoice_number}", // File naming: {type}/{date}/{invoice_number}/{ksef}/{ksef_short}/{seller_nip}/{buyer_nip}
+    "file_exists_strategy": "skip" // skip / rename / overwrite
   },
   "schedule": {
     "mode": "minutes",          // Scheduling mode
@@ -485,34 +488,27 @@ This is just an IDE issue - the code runs fine!
 ```
 KSeF_Monitor/
 ├── main.py                        # Entry point
-├── test_invoice_pdf.py            # Test script for PDF generation
 ├── app/                           # Application modules
-│   ├── __init__.py
 │   ├── config_manager.py          # Configuration loading & validation
 │   ├── secrets_manager.py         # Secrets from env / Docker secrets / config
-│   ├── ksef_client.py             # KSeF API v2.1/v2.2 client
+│   ├── ksef_client.py             # KSeF API v2.2.0 client
 │   ├── invoice_monitor.py         # Main monitoring loop
-│   ├── invoice_pdf_generator.py   # XML parser + PDF generator
-│   ├── logging_config.py          # Logging with timezone
-│   ├── prometheus_metrics.py      # /metrics endpoint
+│   ├── invoice_pdf_generator.py   # XML parser + ReportLab PDF (fallback)
+│   ├── invoice_pdf_template.py    # HTML/CSS → PDF via xhtml2pdf (primary)
+│   ├── template_renderer.py       # Jinja2 notification templates
 │   ├── scheduler.py               # 5 scheduling modes
+│   ├── prometheus_metrics.py      # /metrics endpoint
+│   ├── logging_config.py          # Logging with timezone
+│   ├── templates/                 # Built-in Jinja2 templates
 │   └── notifiers/                 # Multi-channel notifications (5 channels)
-│       ├── __init__.py
-│       ├── base_notifier.py
-│       ├── notification_manager.py
-│       ├── pushover_notifier.py
-│       ├── discord_notifier.py
-│       ├── slack_notifier.py
-│       ├── email_notifier.py
-│       └── webhook_notifier.py
-├── spec/                          # API specifications
-│   └── openapi.json               # KSeF API v2.2.0 OpenAPI spec
 ├── config.json                    # Configuration (git-ignored)
 ├── .env                           # Secrets (git-ignored)
+├── db_admin.py                    # Database administration CLI
 ├── docker-compose.yml             # Docker Compose config
 ├── Dockerfile                     # Docker image definition
 └── data/                          # Persistent data (auto-created)
-    └── last_check.json            # State file
+    ├── invoices.db                # SQLite database (v0.3)
+    └── last_check.json            # Legacy state file
 ```
 
 ## Next Steps
@@ -520,13 +516,14 @@ KSeF_Monitor/
 1. **Read the docs:**
    - [README.md](../README.md) - Full documentation
    - [NOTIFICATIONS.md](./NOTIFICATIONS.md) - Complete notification channel guide
+   - [TEMPLATES.md](./TEMPLATES.md) - Custom notification templates (Jinja2)
    - [SECURITY.md](./SECURITY.md) - Security best practices
    - [PROJECT_STRUCTURE.md](./PROJECT_STRUCTURE.md) - Architecture details
 
 2. **Customize:**
    - Change check interval
-   - Modify notification format
-   - Add custom logic
+   - Customize notification templates ([TEMPLATES.md](./TEMPLATES.md))
+   - Manage database: `python db_admin.py status` ([DATABASE.md](./DATABASE.md))
 
 3. **Monitor:**
    - Set up log rotation

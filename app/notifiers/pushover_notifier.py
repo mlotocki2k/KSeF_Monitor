@@ -5,7 +5,7 @@ Sends push notifications via Pushover API
 
 import logging
 import requests
-from typing import Optional
+from typing import Any, Dict, Optional
 
 from .base_notifier import BaseNotifier
 
@@ -24,6 +24,7 @@ class PushoverNotifier(BaseNotifier):
         Args:
             config: ConfigManager instance or dict with notifications configuration
         """
+        super().__init__()
         # Support both new notifications structure and legacy root-level pushover
         notifications_config = config.get("notifications") or {}
         pushover_config = notifications_config.get("pushover") or config.get("pushover") or {}
@@ -79,7 +80,7 @@ class PushoverNotifier(BaseNotifier):
                 payload["url"] = url
                 payload["url_title"] = "View in KSeF"
 
-            response = requests.post(self.API_URL, data=payload, timeout=10)
+            response = self.session.post(self.API_URL, data=payload, timeout=10)
             response.raise_for_status()
 
             logger.info(f"Pushover notification sent: {title}")
@@ -88,7 +89,41 @@ class PushoverNotifier(BaseNotifier):
         except requests.exceptions.RequestException as e:
             logger.error(f"Failed to send Pushover notification: {e}")
             if hasattr(e, 'response') and e.response is not None:
-                logger.error(f"Pushover API response: {e.response.text}")
+                logger.error(f"Pushover API response status: {e.response.status_code}")
+            return False
+        except Exception as e:
+            logger.error(f"Unexpected error sending Pushover notification: {e}")
+            return False
+
+    def _send_rendered(self, rendered: str, context: Dict[str, Any]) -> bool:
+        """Send Pushover notification with rendered text."""
+        if not self.is_configured:
+            logger.error("Pushover not configured - notification not sent")
+            return False
+
+        try:
+            payload = {
+                "token": self.api_token,
+                "user": self.user_key,
+                "title": context.get("title", ""),
+                "message": rendered[:1024],
+                "priority": context.get("priority", 0),
+            }
+            url = context.get("url")
+            if url:
+                payload["url"] = url
+                payload["url_title"] = "View in KSeF"
+
+            response = self.session.post(self.API_URL, data=payload, timeout=10)
+            response.raise_for_status()
+
+            logger.info(f"Pushover notification sent: {context.get('title')}")
+            return True
+
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Failed to send Pushover notification: {e}")
+            if hasattr(e, 'response') and e.response is not None:
+                logger.error(f"Pushover API response status: {e.response.status_code}")
             return False
         except Exception as e:
             logger.error(f"Unexpected error sending Pushover notification: {e}")

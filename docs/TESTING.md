@@ -2,6 +2,42 @@
 
 Complete guide for testing your KSeF Invoice Monitor installation.
 
+## Unit Tests (pytest)
+
+The project includes a comprehensive unit test suite (262 tests) covering configuration validation, invoice monitoring logic, file naming, API field mapping, template rendering, and more.
+
+### Running unit tests
+
+```bash
+# Install test dependencies
+pip install -e ".[test]"
+
+# Run all tests
+pytest tests/ -v
+
+# Run specific test file
+pytest tests/test_config_manager.py -v
+pytest tests/test_invoice_monitor.py -v
+
+# Run with coverage
+pytest tests/ --cov=app --cov-report=term-missing
+```
+
+### Test structure
+
+```
+tests/
+├── conftest.py                 # Shared fixtures (mock_config, sample_invoice, etc.)
+├── test_config_manager.py      # Config validation, defaults, file_exists_strategy, file_name_pattern
+└── test_invoice_monitor.py     # Monitor logic, deduplication, safe path, file naming, DB save, API fields
+```
+
+### CI
+
+Unit tests run automatically on push via GitHub Actions (`.github/workflows/test.yml`).
+
+---
+
 ## Pre-Deployment Tests
 
 Run these tests BEFORE deploying to production.
@@ -47,7 +83,7 @@ docker-compose build
 ```bash
 # Test imports work
 docker-compose run --rm ksef-monitor python3 -c "
-from app import ConfigManager, KSeFClient, InvoiceMonitor
+from app import ConfigManager, KSeFClient, NotificationManager, InvoiceMonitor, Database
 from app.notifiers.pushover_notifier import PushoverNotifier
 print('✓ All imports successful')
 "
@@ -65,7 +101,7 @@ Test each component individually.
 ```bash
 docker-compose run --rm ksef-monitor python3 -c "
 from app import ConfigManager
-config = ConfigManager('/data/config.json')
+config = ConfigManager('/config/config.json')
 print('✓ Config loaded')
 print('Environment:', config.get('ksef', 'environment'))
 print('NIP:', config.get('ksef', 'nip'))
@@ -88,7 +124,7 @@ Schedule mode: minutes
 ```bash
 docker-compose run --rm ksef-monitor python3 -c "
 from app import ConfigManager
-config = ConfigManager('/data/config.json')
+config = ConfigManager('/config/config.json')
 has_ksef = bool(config.get('ksef', 'token'))
 channels = config.get('notifications', 'channels') or []
 print('✓ Secrets check')
@@ -106,7 +142,7 @@ print(f'Enabled channels: {channels}')
 docker-compose run --rm ksef-monitor python3 -c "
 from app import ConfigManager
 from app.notifiers.pushover_notifier import PushoverNotifier
-config = ConfigManager('/data/config.json')
+config = ConfigManager('/config/config.json')
 notifier = PushoverNotifier(config)
 result = notifier.test_connection()
 print('✓ Test notification sent:', result)
@@ -126,7 +162,7 @@ print('✓ Test notification sent:', result)
 ```bash
 docker-compose run --rm ksef-monitor python3 -c "
 from app import ConfigManager, KSeFClient
-config = ConfigManager('/data/config.json')
+config = ConfigManager('/config/config.json')
 client = KSeFClient(config)
 result = client.authenticate()
 print('✓ KSeF authentication:', 'SUCCESS' if result else 'FAILED')
@@ -147,7 +183,7 @@ print('✓ KSeF authentication:', 'SUCCESS' if result else 'FAILED')
 docker-compose run --rm ksef-monitor python3 -c "
 from app import ConfigManager, KSeFClient
 from datetime import datetime, timedelta
-config = ConfigManager('/data/config.json')
+config = ConfigManager('/config/config.json')
 client = KSeFClient(config)
 client.authenticate()
 now = datetime.now()
@@ -159,6 +195,52 @@ print(f'Found {len(invoices)} invoice(s)')
 
 **Expected:** Query completes (may find 0 invoices if none exist)
 **On Error:** Check authentication and network
+
+### Test 9b: Template Rendering (v0.3)
+
+```bash
+docker-compose run --rm ksef-monitor python3 -c "
+from app.template_renderer import TemplateRenderer
+import json
+
+renderer = TemplateRenderer()
+context = {
+    'ksef_number': 'TEST-20260220-ABCDEF-AB',
+    'invoice_number': 'FV/2026/001',
+    'issue_date': '2026-02-20T10:30:00',
+    'gross_amount': 1234.56,
+    'net_amount': 1003.71,
+    'vat_amount': 230.85,
+    'currency': 'PLN',
+    'seller_name': 'Firma ABC',
+    'seller_nip': '1234567890',
+    'buyer_name': 'Klient XYZ',
+    'buyer_nip': '0987654321',
+    'subject_type': 'Subject1',
+    'title': 'Test',
+    'priority': 0,
+    'priority_emoji': '',
+    'priority_name': 'normal',
+    'priority_color': '#36a64f',
+    'priority_color_int': 3447003,
+    'timestamp': '2026-02-20T10:30:00',
+    'url': None,
+}
+
+# Test all channels
+for channel in ['pushover', 'email', 'slack', 'discord', 'webhook']:
+    result = renderer.render(channel, context)
+    if result:
+        if channel in ['slack', 'discord', 'webhook']:
+            json.loads(result)  # Validate JSON
+        print(f'✓ {channel} template OK')
+    else:
+        print(f'✗ {channel} template FAILED')
+"
+```
+
+**Expected:** All 5 channels render successfully
+**On Error:** Check template files in `app/templates/`
 
 ## Integration Tests
 
@@ -203,18 +285,37 @@ docker-compose logs -f
 **Expected:** Regular check cycles
 **On Error:** Check monitor configuration
 
-### Test 12: State Persistence
+### Test 12: State Persistence (Database)
 
 ```bash
-# Check state file created
-docker-compose exec ksef-monitor ls -la /data/last_check.json
+# Check database file created (v0.3+)
+docker-compose exec ksef-monitor ls -la /data/invoices.db
 
-# View state
-docker-compose exec ksef-monitor cat /data/last_check.json
+# Check database status
+docker-compose exec ksef-monitor python3 db_admin.py --db /data/invoices.db status
+
+# Check legacy state file (backward compatibility)
+docker-compose exec ksef-monitor ls -la /data/last_check.json
 ```
 
-**Expected:** JSON file with last_check and seen_invoices
-**On Error:** Check volume mounts
+**Expected:** Database file exists, tables created (invoices, monitor_state, notification_log)
+**On Error:** Check volume mounts, check `database.enabled` in config
+
+### Test 12b: Database Admin Tool
+
+```bash
+# Monitor state per NIP + subject_type
+docker-compose exec ksef-monitor python3 db_admin.py --db /data/invoices.db state
+
+# Invoice statistics
+docker-compose exec ksef-monitor python3 db_admin.py --db /data/invoices.db stats
+
+# Error tracking
+docker-compose exec ksef-monitor python3 db_admin.py --db /data/invoices.db errors
+```
+
+**Expected:** Tables with monitor state data after first check cycle
+**On Error:** Check database initialization in logs
 
 ### Test 13: Restart Persistence
 
@@ -225,11 +326,14 @@ docker-compose down
 # Start again
 docker-compose up -d
 
-# Check it remembers state
+# Check database remembers state
+docker-compose exec ksef-monitor python3 db_admin.py --db /data/invoices.db state
+
+# Check legacy state file (backward compatibility)
 docker-compose exec ksef-monitor cat /data/last_check.json
 ```
 
-**Expected:** Same state as before restart
+**Expected:** Same state as before restart (both DB and JSON)
 **On Error:** Check data volume mount
 
 ## Error Handling Tests
@@ -242,7 +346,7 @@ Test how the system handles errors.
 # Temporarily set wrong token
 docker-compose run --rm -e KSEF_TOKEN=invalid ksef-monitor python3 -c "
 from app import ConfigManager, KSeFClient
-config = ConfigManager('/data/config.json')
+config = ConfigManager('/config/config.json')
 client = KSeFClient(config)
 result = client.authenticate()
 print('Auth with bad token:', result)
@@ -258,7 +362,7 @@ print('Auth with bad token:', result)
 # Start monitor without network
 docker-compose run --rm --network none ksef-monitor python3 -c "
 from app import ConfigManager, KSeFClient
-config = ConfigManager('/data/config.json')
+config = ConfigManager('/config/config.json')
 client = KSeFClient(config)
 try:
     client.authenticate()
@@ -274,7 +378,7 @@ except Exception as e:
 
 ```bash
 # Try to run without config
-docker-compose run --rm -v /dev/null:/data/config.json ksef-monitor python3 main.py
+docker-compose run --rm -v /dev/null:/config/config.json ksef-monitor python3 main.py
 
 # Should exit with error message
 ```
@@ -292,7 +396,7 @@ import time
 from app import ConfigManager, KSeFClient
 from datetime import datetime, timedelta
 
-config = ConfigManager('/data/config.json')
+config = ConfigManager('/config/config.json')
 client = KSeFClient(config)
 
 # Test auth time

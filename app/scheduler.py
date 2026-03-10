@@ -14,6 +14,8 @@ logger = logging.getLogger(__name__)
 class Scheduler:
     """Flexible scheduler supporting multiple scheduling modes"""
 
+    MIN_INTERVAL_SECONDS = 300  # 5 minutes — prevent API abuse
+
     VALID_WEEKDAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
     WEEKDAY_MAP = {
         'monday': 0, 'tuesday': 1, 'wednesday': 2, 'thursday': 3,
@@ -57,6 +59,25 @@ class Scheduler:
             interval = self.config.get('interval')
             if not interval or not isinstance(interval, (int, float)) or interval <= 0:
                 raise ValueError(f"Invalid interval for {self.mode} mode: {interval}")
+
+            # Enforce minimum interval to prevent API abuse
+            effective_seconds = interval
+            if self.mode == 'minutes':
+                effective_seconds = interval * 60
+            elif self.mode == 'hourly':
+                effective_seconds = interval * 3600
+
+            if effective_seconds < self.MIN_INTERVAL_SECONDS:
+                min_val = self.MIN_INTERVAL_SECONDS
+                if self.mode == 'minutes':
+                    min_val = self.MIN_INTERVAL_SECONDS / 60
+                elif self.mode == 'hourly':
+                    min_val = self.MIN_INTERVAL_SECONDS / 3600
+                logger.warning(
+                    f"Interval {interval} too low for {self.mode} mode, "
+                    f"using minimum {min_val}"
+                )
+                self.config['interval'] = min_val
 
         elif self.mode in ['daily', 'weekly']:
             time_config = self.config.get('time')

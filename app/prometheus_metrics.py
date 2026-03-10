@@ -24,14 +24,16 @@ class PrometheusMetrics:
     - ksef_monitor_up: Health check - 1 if monitor is running
     """
 
-    def __init__(self, port: int = 8000):
+    def __init__(self, port: int = 8000, bind_address: str = '0.0.0.0'):  # nosec B104 - configurable, 0.0.0.0 needed for Docker
         """
         Initialize Prometheus metrics
 
         Args:
             port: HTTP server port for /metrics endpoint (default: 8000)
+            bind_address: Network interface to bind (default: '0.0.0.0' for Docker)
         """
         self.port = port
+        self.bind_address = bind_address
         self._server_started = False
 
         # Metric: Last check timestamp (gauge - can go up and down)
@@ -54,6 +56,13 @@ class PrometheusMetrics:
             'KSeF Monitor health status (1 = running, 0 = stopped)'
         )
 
+        # Metric: Authentication failures (counter)
+        self.auth_failures_total = Counter(
+            'ksef_auth_failures_total',
+            'Total number of KSeF API authentication failures',
+            labelnames=['status_code']
+        )
+
         # Initialize as running
         self.monitor_up.set(1)
 
@@ -69,9 +78,9 @@ class PrometheusMetrics:
 
         try:
             # Start HTTP server in daemon thread
-            start_http_server(self.port)
+            start_http_server(self.port, addr=self.bind_address)
             self._server_started = True
-            logger.info(f"✓ Prometheus metrics server started on port {self.port}")
+            logger.info(f"✓ Prometheus metrics server started on {self.bind_address}:{self.port}")
             logger.info(f"  Metrics endpoint: http://localhost:{self.port}/metrics")
         except OSError as e:
             logger.error(f"Failed to start Prometheus server on port {self.port}: {e}")
@@ -103,6 +112,16 @@ class PrometheusMetrics:
         if count > 0:
             self.new_invoices_total.labels(subject_type=subject_type).inc(count)
             logger.debug(f"Prometheus: Incremented new_invoices_total[{subject_type}] by {count}")
+
+    def increment_auth_failures(self, status_code: int = 0):
+        """
+        Increment authentication failure counter.
+
+        Args:
+            status_code: HTTP status code (401, 403, etc.)
+        """
+        self.auth_failures_total.labels(status_code=str(status_code)).inc()
+        logger.debug(f"Prometheus: Incremented auth_failures_total[{status_code}]")
 
     def set_monitor_up(self, is_up: bool):
         """

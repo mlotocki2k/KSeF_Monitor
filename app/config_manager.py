@@ -4,6 +4,7 @@ Handles loading and validation of JSON configuration with secrets support
 """
 
 import json
+import re
 import sys
 import logging
 from pathlib import Path
@@ -147,6 +148,9 @@ class ConfigManager:
         # Validate timezone (optional, defaults to Europe/Warsaw)
         self._validate_timezone(config)
 
+        # Set database defaults
+        self._apply_database_defaults(config)
+
         # Set storage defaults
         self._apply_storage_defaults(config)
 
@@ -268,6 +272,16 @@ class ConfigManager:
             elif channel == "webhook" and channel in notifications:
                 self._validate_webhook(notifications[channel])
 
+        # Validate optional templates_dir
+        templates_dir = notifications.get("templates_dir")
+        if templates_dir:
+            from pathlib import Path
+            if not Path(templates_dir).is_dir():
+                logger.warning(
+                    f"Custom templates directory not found: {templates_dir}. "
+                    f"Built-in defaults will be used."
+                )
+
     def _validate_pushover(self, pushover: Dict[str, Any]):
         """Validate Pushover configuration"""
         if not pushover.get("user_key"):
@@ -343,6 +357,13 @@ class ConfigManager:
             logger.warning("Install pytz for timezone support: pip install pytz")
             logger.info(f"Using configured timezone without validation: {timezone}")
 
+    def _apply_database_defaults(self, config: Dict[str, Any]):
+        """Apply defaults for database section."""
+        db = config.setdefault("database", {})
+        db.setdefault("enabled", True)
+        db.setdefault("path", "/data/invoices.db")
+        logger.info(f"Database: enabled={db['enabled']}, path={db['path']}")
+
     def _apply_storage_defaults(self, config: Dict[str, Any]):
         """Apply defaults for storage section (save_xml, save_pdf, output_dir)."""
         storage = config.setdefault("storage", {})
@@ -352,6 +373,59 @@ class ConfigManager:
             storage["save_pdf"] = False
         if "output_dir" not in storage:
             storage["output_dir"] = "/data/invoices"
+
+        # Validate file_exists_strategy
+        valid_strategies = ("skip", "rename", "overwrite")
+        strategy = storage.setdefault("file_exists_strategy", "skip")
+        if strategy not in valid_strategies:
+            logger.warning(
+                f"Invalid file_exists_strategy '{strategy}' - "
+                f"allowed values: {', '.join(valid_strategies)}. Falling back to 'skip'."
+            )
+            storage["file_exists_strategy"] = "skip"
+
+        # Validate and default folder_structure
+        storage.setdefault("folder_structure", "")
+        folder_structure = storage["folder_structure"]
+        if folder_structure:
+            # Only allow known placeholders: {year}, {month}, {day}, {type}
+            stripped = re.sub(r'\{(year|month|day|type)\}', '', folder_structure)
+            if '{' in stripped or '}' in stripped:
+                logger.warning(
+                    f"Invalid folder_structure '{folder_structure}' - "
+                    f"only {{year}}, {{month}}, {{day}}, {{type}} placeholders allowed. "
+                    f"Falling back to flat directory."
+                )
+                storage["folder_structure"] = ""
+            else:
+                logger.info(f"Storage folder structure: {folder_structure}")
+
+        # Validate and default file_name_pattern
+        default_fnp = "{type}_{date}_{invoice_number}"
+        storage.setdefault("file_name_pattern", default_fnp)
+        file_name_pattern = storage["file_name_pattern"]
+        if file_name_pattern:
+            allowed_fnp = r'\{(ksef|ksef_short|invoice_number|date|type|seller_nip|buyer_nip)\}'
+            stripped_fnp = re.sub(allowed_fnp, '', file_name_pattern)
+            if '{' in stripped_fnp or '}' in stripped_fnp:
+                logger.warning(
+                    f"Invalid file_name_pattern '{file_name_pattern}' - "
+                    f"only {{ksef}}, {{ksef_short}}, {{invoice_number}}, {{date}}, {{type}}, "
+                    f"{{seller_nip}}, {{buyer_nip}} placeholders allowed. "
+                    f"Falling back to default."
+                )
+                storage["file_name_pattern"] = default_fnp
+            else:
+                logger.info(f"Storage file name pattern: {file_name_pattern}")
+
+        # Validate optional pdf_templates_dir
+        pdf_templates_dir = storage.get("pdf_templates_dir")
+        if pdf_templates_dir:
+            if not Path(pdf_templates_dir).is_dir():
+                logger.warning(
+                    f"Custom PDF templates directory not found: {pdf_templates_dir}. "
+                    f"Built-in default template will be used."
+                )
 
         logger.info(f"Storage: save_xml={storage['save_xml']}, save_pdf={storage['save_pdf']}, output_dir={storage['output_dir']}")
 

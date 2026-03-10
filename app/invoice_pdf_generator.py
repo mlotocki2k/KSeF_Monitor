@@ -10,10 +10,11 @@ PDF contains ONLY data present in the source XML. No calculations, no defaults.
 
 import base64
 import hashlib
+import html
 import logging
 import os
 import re
-import xml.etree.ElementTree as ET
+from defusedxml import ElementTree as ET
 from datetime import datetime
 from typing import Dict, Optional, List
 from io import BytesIO
@@ -88,14 +89,14 @@ if REPORTLAB_AVAILABLE:
     if not _font_registered:
         logger.warning("No TTF font with Polish support found - diacritical marks may not render")
 
-# VAT rate display mapping (from XSL styl.xsl)
+# VAT rate display mapping (from XSD TStawkaPodatku + XSL styl.xsl)
 VAT_RATE_LABELS = {
     '23': '23%', '22': '22%', '8': '8%', '7': '7%',
     '5': '5%', '4': '4%', '3': '3%',
-    '0': '0%',
+    '0': '0%', '0 KR': '0%', '0 WDT': '0% WDT', '0 EX': '0% eksport',
     'zw': 'zw',
     'oo': 'odwr. obc.',
-    'np': 'np',
+    'np': 'np', 'np I': 'np', 'np II': 'np',
 }
 
 # Payment method mapping (from XSD TFormaPlatnosci)
@@ -122,20 +123,46 @@ QR_BASE_URLS = {
     'prod': 'https://qr.ksef.mf.gov.pl',
 }
 
-# VAT summary row definitions: (label, P_13 field, P_14 field)
+# VAT summary row definitions: (label, P_13 field, P_14 field, P_14W field)
 VAT_SUMMARY_ROWS = [
-    ('22% lub 23%', 'P_13_1', 'P_14_1'),
-    ('7% lub 8%', 'P_13_2', 'P_14_2'),
-    ('5%', 'P_13_3', 'P_14_3'),
-    ('0%', 'P_13_6_1', None),
-    ('0% WDT', 'P_13_6_2', None),
-    ('0% eksport', 'P_13_6_3', None),
-    ('zw', 'P_13_7', None),
-    ('oo', 'P_13_10', None),
-    ('np', 'P_13_8', None),
-    ('ryczalt taksowki', 'P_13_4', 'P_14_4'),
-    ('marza', 'P_13_11', None),
+    ('22% lub 23%', 'P_13_1', 'P_14_1', 'P_14_1W'),
+    ('7% lub 8%', 'P_13_2', 'P_14_2', 'P_14_2W'),
+    ('5%', 'P_13_3', 'P_14_3', 'P_14_3W'),
+    ('0%', 'P_13_6_1', None, None),
+    ('0% WDT', 'P_13_6_2', None, None),
+    ('0% eksport', 'P_13_6_3', None, None),
+    ('zw', 'P_13_7', None, None),
+    ('oo', 'P_13_10', None, None),
+    ('np', 'P_13_8', None, None),
+    ('usługi art. 100', 'P_13_9', None, None),
+    ('procedura szczególna', 'P_13_5', 'P_14_5', None),
+    ('ryczałt taksówki', 'P_13_4', 'P_14_4', 'P_14_4W'),
+    ('marża', 'P_13_11', None, None),
 ]
+
+# Mapping P_12 item rates to their VAT summary P_13 field
+_P12_TO_P13 = {
+    '22': 'P_13_1', '23': 'P_13_1',
+    '7': 'P_13_2', '8': 'P_13_2',
+}
+
+
+def _resolve_vat_summary_labels(items: list) -> dict:
+    """Determine actual VAT rate labels from invoice line items.
+
+    For ambiguous summary rows (P_13_1 covers 22%/23%, P_13_2 covers 7%/8%),
+    inspect the items' P_12 values to build a precise label.
+    """
+    labels = {}
+    for p13_field in ('P_13_1', 'P_13_2'):
+        possible = [p12 for p12, p13 in _P12_TO_P13.items() if p13 == p13_field]
+        actual = sorted(
+            {it['p12'] for it in items if it.get('p12') in possible},
+            key=lambda x: int(x),
+        )
+        if actual:
+            labels[p13_field] = ' / '.join(f'{r}%' for r in actual)
+    return labels
 
 
 class InvoiceXMLParser:
@@ -159,10 +186,18 @@ class InvoiceXMLParser:
                 'header': self._parse_header(),
                 'seller': self._parse_podmiot('Podmiot1'),
                 'buyer': self._parse_podmiot('Podmiot2'),
+                'podmiot3': self._parse_podmiot3(),
                 'items': self._parse_items(),
                 'vat_summary': self._parse_vat_summary(),
                 'payment': self._parse_payment(),
                 'annotations': self._parse_annotations(),
+                'dodatkowy_opis': self._parse_dodatkowy_opis(),
+                'dane_korygowanej': self._parse_dane_fa_korygowanej(),
+                'faktury_zaliczkowe': self._parse_faktury_zaliczkowe(),
+                'zaliczki_czesciowe': self._parse_zaliczki_czesciowe(),
+                'rozliczenie': self._parse_rozliczenie(),
+                'zamowienie': self._parse_zamowienie(),
+                'zalacznik': self._parse_zalacznik(),
                 'footer': self._parse_footer(),
             }
             logger.info("Invoice XML parsed successfully")
@@ -174,13 +209,23 @@ class InvoiceXMLParser:
             logger.error(f"Failed to parse invoice XML: {e}")
             raise
 
+    @staticmethod
+    def _sanitize_text(value: str) -> str:
+        """Strip HTML tags to prevent injection in PDF rendering.
+
+        Only strips tags — does NOT html.escape(). Both rendering paths
+        handle escaping themselves: Jinja2 autoescape for xhtml2pdf,
+        ReportLab Paragraph for the fallback path.
+        """
+        return re.sub(r'<[^>]+>', '', value)
+
     def _text(self, parent, *tags, default=''):
         if parent is None:
             return default
         for tag in tags:
             elem = parent.find(tag, self.NS)
             if elem is not None and elem.text:
-                return elem.text.strip()
+                return self._sanitize_text(elem.text.strip())
         return default
 
     def _parse_header(self) -> Dict:
@@ -206,6 +251,10 @@ class InvoiceXMLParser:
             h['fp'] = self._text(fa, 'fa:FP')
             h['tp'] = self._text(fa, 'fa:TP')
             h['kurs_waluty_z'] = self._text(fa, 'fa:KursWalutyZ')
+            # Correction invoice fields
+            h['przyczyna_korekty'] = self._text(fa, 'fa:PrzyczynaKorekty')
+            h['typ_korekty'] = self._text(fa, 'fa:TypKorekty')
+            h['nr_fa_korekty'] = self._text(fa, 'fa:NrFaKorekty')
 
         return h
 
@@ -364,7 +413,76 @@ class InvoiceXMLParser:
             pay['skonto_warunki'] = self._text(skonto, 'fa:WarunkiSkonta')
             pay['skonto_wysokosc'] = self._text(skonto, 'fa:WysokoscSkonta')
 
+        # WarunkiTransakcji
+        wt = self.root.find('.//fa:Fa/fa:WarunkiTransakcji', self.NS)
+        if wt is not None:
+            pay['warunki_transakcji'] = self._parse_warunki_transakcji(wt)
+
         return pay
+
+    def _parse_warunki_transakcji(self, wt) -> Dict:
+        """Parse WarunkiTransakcji (transaction conditions)."""
+        result = {}
+        # Contracts
+        umowy = wt.findall('fa:Umowy', self.NS)
+        if umowy:
+            result['umowy'] = []
+            for u in umowy:
+                entry = {
+                    'data': self._text(u, 'fa:DataUmowy'),
+                    'numer': self._text(u, 'fa:NrUmowy'),
+                }
+                if any(v for v in entry.values()):
+                    result['umowy'].append(entry)
+        # Orders
+        zamowienia = wt.findall('fa:Zamowienia', self.NS)
+        if zamowienia:
+            result['zamowienia'] = []
+            for z in zamowienia:
+                entry = {
+                    'data': self._text(z, 'fa:DataZamowienia'),
+                    'numer': self._text(z, 'fa:NrZamowienia'),
+                }
+                if any(v for v in entry.values()):
+                    result['zamowienia'].append(entry)
+        # Batch numbers
+        partie = wt.findall('fa:NrPartiiTowaru', self.NS)
+        if partie:
+            result['nr_partii'] = [self._sanitize_text(p.text.strip()) for p in partie
+                                    if p.text and p.text.strip()]
+        # Delivery terms (Incoterms)
+        result['warunki_dostawy'] = self._text(wt, 'fa:WarunkiDostawy')
+        # Contractual exchange rate
+        result['kurs_umowny'] = self._text(wt, 'fa:KursUmowny')
+        result['waluta_umowna'] = self._text(wt, 'fa:WalutaUmowna')
+        # Transport
+        transporty = wt.findall('fa:Transport', self.NS)
+        if transporty:
+            result['transport'] = []
+            for tr in transporty:
+                t_entry = {}
+                t_entry['rodzaj'] = self._text(tr, 'fa:RodzajTransportu')
+                t_entry['transport_inny'] = self._text(tr, 'fa:TransportInny')
+                t_entry['opis_innego'] = self._text(tr, 'fa:OpisInnegoTransportu')
+                t_entry['nr_zlecenia'] = self._text(tr, 'fa:NrZleceniaTransportu')
+                t_entry['opis_ladunku'] = self._text(tr, 'fa:OpisLadunku')
+                t_entry['ladunek_inny'] = self._text(tr, 'fa:LadunekInny')
+                t_entry['opis_innego_ladunku'] = self._text(tr, 'fa:OpisInnegoLadunku')
+                t_entry['jednostka_opakowania'] = self._text(tr, 'fa:JednostkaOpakowania')
+                t_entry['data_rozp'] = self._text(tr, 'fa:DataGodzRozpTransportu')
+                t_entry['data_zak'] = self._text(tr, 'fa:DataGodzZakTransportu')
+                # Carrier
+                przewoznik = tr.find('fa:Przewoznik', self.NS)
+                if przewoznik is not None:
+                    dane = przewoznik.find('fa:DaneIdentyfikacyjne', self.NS)
+                    if dane is not None:
+                        t_entry['przewoznik_nazwa'] = self._text(dane, 'fa:Nazwa')
+                        t_entry['przewoznik_nip'] = self._text(dane, 'fa:NIP')
+                if any(v for v in t_entry.values()):
+                    result['transport'].append(t_entry)
+        # Intermediary
+        result['podmiot_posredniczacy'] = self._text(wt, 'fa:PodmiotPosredniczacy')
+        return result
 
     def _parse_annotations(self) -> Dict:
         ann = {}
@@ -376,6 +494,7 @@ class InvoiceXMLParser:
         ann['p17'] = self._text(adnotacje, 'fa:P_17')
         ann['p18'] = self._text(adnotacje, 'fa:P_18')
         ann['p18a'] = self._text(adnotacje, 'fa:P_18A')
+        ann['p23'] = self._text(adnotacje, 'fa:P_23')
 
         zwolnienie = adnotacje.find('fa:Zwolnienie', self.NS)
         if zwolnienie is not None:
@@ -383,6 +502,39 @@ class InvoiceXMLParser:
             ann['p19a'] = self._text(zwolnienie, 'fa:P_19A')
             ann['p19b'] = self._text(zwolnienie, 'fa:P_19B')
             ann['p19c'] = self._text(zwolnienie, 'fa:P_19C')
+
+        # Margin scheme (PMarzy)
+        pmarzy = adnotacje.find('fa:PMarzy', self.NS)
+        if pmarzy is not None:
+            ann['p_pmarzy'] = self._text(pmarzy, 'fa:P_PMarzy')
+            ann['p_pmarzy_2'] = self._text(pmarzy, 'fa:P_PMarzy_2')
+            ann['p_pmarzy_3_1'] = self._text(pmarzy, 'fa:P_PMarzy_3_1')
+            ann['p_pmarzy_3_2'] = self._text(pmarzy, 'fa:P_PMarzy_3_2')
+            ann['p_pmarzy_3_3'] = self._text(pmarzy, 'fa:P_PMarzy_3_3')
+
+        # New transport vehicles (NoweSrodkiTransportu)
+        nst = adnotacje.find('fa:NoweSrodkiTransportu', self.NS)
+        if nst is not None:
+            ann['p22'] = self._text(nst, 'fa:P_22')
+            ann['p_42_5'] = self._text(nst, 'fa:P_42_5')
+            vehicles = nst.findall('fa:NowySrodekTransportu', self.NS)
+            if vehicles:
+                ann['nowe_srodki'] = []
+                for v in vehicles:
+                    veh = {}
+                    for fld, tag in [
+                        ('p22a', 'fa:P_22A'), ('marka', 'fa:P_22BMK'),
+                        ('model', 'fa:P_22BMD'), ('pojemnosc', 'fa:P_22BK'),
+                        ('nr_id', 'fa:P_22BNR'), ('rok_prod', 'fa:P_22BRP'),
+                        ('masa', 'fa:P_22B'), ('przebieg', 'fa:P_22B1'),
+                        ('data_dopuszczenia', 'fa:P_22C'),
+                        ('liczba_godz', 'fa:P_22D'),
+                    ]:
+                        val = self._text(v, tag)
+                        if val:
+                            veh[fld] = val
+                    if veh:
+                        ann['nowe_srodki'].append(veh)
 
         return ann
 
@@ -410,6 +562,172 @@ class InvoiceXMLParser:
                 ft['rejestry'].append(entry)
 
         return ft
+
+    def _parse_podmiot3(self) -> List[Dict]:
+        """Parse Podmiot3 (additional parties)."""
+        parties = []
+        for p3 in self.root.findall('.//fa:Podmiot3', self.NS):
+            entry = {}
+            dane = p3.find('fa:DaneIdentyfikacyjne', self.NS)
+            if dane is not None:
+                entry['nip'] = self._text(dane, 'fa:NIP')
+                entry['nazwa'] = self._text(dane, 'fa:Nazwa')
+                entry['kod_ue'] = self._text(dane, 'fa:KodUE')
+                entry['nr_vat_ue'] = self._text(dane, 'fa:NrVatUE')
+                entry['nr_id'] = self._text(dane, 'fa:NrID')
+            adres = p3.find('fa:Adres', self.NS)
+            if adres is not None:
+                entry['kod_kraju'] = self._text(adres, 'fa:KodKraju')
+                entry['adres_l1'] = self._text(adres, 'fa:AdresL1')
+                entry['adres_l2'] = self._text(adres, 'fa:AdresL2')
+            entry['nr_eori'] = self._text(p3, 'fa:NrEORI')
+            entry['rola_inna'] = self._text(p3, 'fa:Rola/fa:RolaInna')
+            entry['opis_roli'] = self._text(p3, 'fa:Rola/fa:OpisRoli')
+            entry['udzial'] = self._text(p3, 'fa:Udzial')
+            entry['nr_klienta'] = self._text(p3, 'fa:NrKlienta')
+            if any(v for v in entry.values()):
+                parties.append(entry)
+        return parties
+
+    def _parse_dodatkowy_opis(self) -> List[Dict]:
+        """Parse DodatkowyOpis key-value pairs."""
+        result = []
+        fa = self.root.find('.//fa:Fa', self.NS)
+        if fa is None:
+            return result
+        for do in fa.findall('fa:DodatkowyOpis', self.NS):
+            klucz = self._text(do, 'fa:Klucz')
+            wartosc = self._text(do, 'fa:Wartosc')
+            if klucz or wartosc:
+                result.append({'klucz': klucz, 'wartosc': wartosc})
+        return result
+
+    def _parse_dane_fa_korygowanej(self) -> List[Dict]:
+        """Parse DaneFaKorygowanej (corrected invoice references)."""
+        result = []
+        fa = self.root.find('.//fa:Fa', self.NS)
+        if fa is None:
+            return result
+        for dfk in fa.findall('fa:DaneFaKorygowanej', self.NS):
+            entry = {
+                'nr_ksef': self._text(dfk, 'fa:NrKSeFFaKorygowanej'),
+                'nr_faktury': self._text(dfk, 'fa:NrFaKorygowanej'),
+                'data_wyst': self._text(dfk, 'fa:DataWystFaKorygowanej'),
+            }
+            if any(v for v in entry.values()):
+                result.append(entry)
+        return result
+
+    def _parse_faktury_zaliczkowe(self) -> List[Dict]:
+        """Parse FakturaZaliczkowa (advance invoice references)."""
+        result = []
+        fa = self.root.find('.//fa:Fa', self.NS)
+        if fa is None:
+            return result
+        for fz in fa.findall('fa:FakturaZaliczkowa', self.NS):
+            entry = {
+                'nr_ksef': self._text(fz, 'fa:NrKSeFFaZaliczkowej'),
+                'nr_faktury': self._text(fz, 'fa:NrFaZaliczkowej'),
+            }
+            if any(v for v in entry.values()):
+                result.append(entry)
+        return result
+
+    def _parse_zaliczki_czesciowe(self) -> List[Dict]:
+        """Parse ZaliczkaCzesciowa (partial advance payments under Fa)."""
+        result = []
+        fa = self.root.find('.//fa:Fa', self.NS)
+        if fa is None:
+            return result
+        for zc in fa.findall('fa:ZaliczkaCzesciowa', self.NS):
+            entry = {
+                'p6z': self._text(zc, 'fa:P_6Z'),
+                'p15z': self._text(zc, 'fa:P_15Z'),
+                'kurs_waluty': self._text(zc, 'fa:KursWalutyZW'),
+            }
+            if any(v for v in entry.values()):
+                result.append(entry)
+        return result
+
+    def _parse_rozliczenie(self) -> Dict:
+        """Parse Rozliczenie (surcharges and deductions)."""
+        roz = {}
+        rozliczenie = self.root.find('.//fa:Fa/fa:Rozliczenie', self.NS)
+        if rozliczenie is None:
+            return roz
+        # Surcharges
+        obciazenia = rozliczenie.findall('fa:Obciazenia', self.NS)
+        if obciazenia:
+            roz['obciazenia'] = []
+            for o in obciazenia:
+                roz['obciazenia'].append({
+                    'kwota': self._text(o, 'fa:Kwota'),
+                    'powod': self._text(o, 'fa:Powod'),
+                })
+        roz['suma_obciazen'] = self._text(rozliczenie, 'fa:SumaObciazen')
+        # Deductions
+        odliczenia = rozliczenie.findall('fa:Odliczenia', self.NS)
+        if odliczenia:
+            roz['odliczenia'] = []
+            for o in odliczenia:
+                roz['odliczenia'].append({
+                    'kwota': self._text(o, 'fa:Kwota'),
+                    'powod': self._text(o, 'fa:Powod'),
+                })
+        roz['suma_odliczen'] = self._text(rozliczenie, 'fa:SumaOdliczen')
+        roz['do_zaplaty'] = self._text(rozliczenie, 'fa:DoZaplaty')
+        roz['do_rozliczenia'] = self._text(rozliczenie, 'fa:DoRozliczenia')
+        return roz
+
+    def _parse_zamowienie(self) -> Dict:
+        """Parse Zamowienie (order for advance invoices)."""
+        zam = {}
+        zamowienie = self.root.find('.//fa:Zamowienie', self.NS)
+        if zamowienie is None:
+            return zam
+        zam['wartosc'] = self._text(zamowienie, 'fa:WartoscZamowienia')
+        wiersze = zamowienie.findall('fa:ZamowienieWiersz', self.NS)
+        if wiersze:
+            zam['wiersze'] = []
+            for w in wiersze:
+                entry = {}
+                for field, tag in [
+                    ('nr', 'fa:NrWierszaZam'), ('p7z', 'fa:P_7Z'),
+                    ('indeks', 'fa:IndeksZ'), ('p8az', 'fa:P_8AZ'),
+                    ('p8bz', 'fa:P_8BZ'), ('p9az', 'fa:P_9AZ'),
+                    ('p11z', 'fa:P_11NettoZ'), ('p11vatz', 'fa:P_11VatZ'),
+                    ('p12z', 'fa:P_12Z'),
+                ]:
+                    val = self._text(w, tag)
+                    if val:
+                        entry[field] = val
+                zam['wiersze'].append(entry)
+        return zam
+
+    def _parse_zalacznik(self) -> List[Dict]:
+        """Parse Zalacznik (attachment data blocks)."""
+        result = []
+        for blok in self.root.findall('.//fa:Zalacznik/fa:BlokDanych', self.NS):
+            entry = {'naglowek': self._text(blok, 'fa:ZNaglowek')}
+            # Metadata
+            meta = blok.findall('fa:MetaDane', self.NS)
+            if meta:
+                entry['metadane'] = []
+                for m in meta:
+                    entry['metadane'].append({
+                        'klucz': self._text(m, 'fa:Klucz'),
+                        'wartosc': self._text(m, 'fa:Wartosc'),
+                    })
+            # Text paragraphs
+            tekst = blok.find('fa:Tekst', self.NS)
+            if tekst is not None:
+                akapity = tekst.findall('fa:Akapit', self.NS)
+                if akapity:
+                    entry['akapity'] = [self._sanitize_text(a.text.strip()) for a in akapity
+                                        if a.text and a.text.strip()]
+            if any(v for k, v in entry.items() if k != 'naglowek'):
+                result.append(entry)
+        return result
 
 
 class InvoicePDFGenerator:
@@ -453,7 +771,7 @@ class InvoicePDFGenerator:
         doc = SimpleDocTemplate(
             buffer if output_path is None else output_path,
             pagesize=A4, rightMargin=12*mm, leftMargin=12*mm,
-            topMargin=12*mm, bottomMargin=12*mm)
+            topMargin=12*mm, bottomMargin=18*mm)
 
         story = []
         story.extend(self._ksef_branding(data))
@@ -506,15 +824,23 @@ class InvoicePDFGenerator:
 
         story.append(Spacer(1, 6*mm))
         story.extend(self._parties(data))
+        story.extend(self._podmiot3_section(data))
+        story.extend(self._correction_info(data))
         story.append(Spacer(1, 6*mm))
         story.extend(self._items_table(data))
         story.append(Spacer(1, 4*mm))
         story.extend(self._vat_summary(data))
         story.append(Spacer(1, 4*mm))
         story.extend(self._total_amount(data))
+        story.extend(self._rozliczenie_section(data))
         story.append(Spacer(1, 4*mm))
+        story.extend(self._zaliczki_section(data))
         story.extend(self._payment(data))
         story.extend(self._annotations(data))
+        story.extend(self._dodatkowy_opis_section(data))
+        story.extend(self._warunki_transakcji_section(data))
+        story.extend(self._zamowienie_section(data))
+        story.extend(self._zalacznik_section(data))
         story.extend(self._footer(data))
 
         page_footer = self._make_page_footer(timezone)
@@ -561,7 +887,7 @@ class InvoicePDFGenerator:
             if value:
                 rows.append([
                     Paragraph(label, self.styles['FieldLabel']),
-                    Paragraph(f'<b>{value}</b>', self.styles['FieldValue'])
+                    Paragraph(f'<b>{self._rl_escape(value)}</b>', self.styles['FieldValue'])
                 ])
 
         add_row('Kod waluty:', h.get('kod_waluty'))
@@ -603,28 +929,43 @@ class InvoicePDFGenerator:
         ]))
         return [t]
 
+    @staticmethod
+    def _rl_escape(value) -> str:
+        """Escape special chars for ReportLab Paragraph XML parser.
+
+        ReportLab Paragraph uses an internal XML/SAX parser that requires
+        &amp; for literal ampersands, &lt;/&gt; for angle brackets, etc.
+        Without this, raw '&' in company names causes SAXParseException.
+        """
+        return html.escape(str(value), quote=False) if value else ''
+
     def _party_html(self, title: str, p: Dict) -> 'Paragraph':
+        e = self._rl_escape
         h = f'<b>{title}</b><br/>'
         if p.get('nip'):
-            prefix = f"{p['prefiks']} " if p.get('prefiks') else ''
-            h += f'NIP: {prefix}<b>{p["nip"]}</b><br/>'
+            prefix = f"{e(p['prefiks'])} " if p.get('prefiks') else ''
+            h += f'NIP: {prefix}<b>{e(p["nip"])}</b><br/>'
         if p.get('kod_ue') and p.get('nr_vat_ue'):
-            h += f'VAT UE: {p["kod_ue"]} {p["nr_vat_ue"]}<br/>'
+            h += f'VAT UE: {e(p["kod_ue"])} {e(p["nr_vat_ue"])}<br/>'
         if p.get('nr_id'):
-            h += f'ID: {p.get("kod_kraju_id", "")} {p["nr_id"]}<br/>'
+            h += f'ID: {e(p.get("kod_kraju_id", ""))} {e(p["nr_id"])}<br/>'
         if p.get('nazwa'):
-            h += f'{p["nazwa"]}<br/>'
+            h += f'{e(p["nazwa"])}<br/>'
         if p.get('kod_kraju'):
-            h += f'Kod kraju: {p["kod_kraju"]}<br/>'
+            h += f'Kod kraju: {e(p["kod_kraju"])}<br/>'
         if p.get('adres_l1'):
-            h += f'{p["adres_l1"]}'
+            h += f'{e(p["adres_l1"])}'
             if p.get('adres_l2'):
-                h += f' {p["adres_l2"]}'
+                h += f' {e(p["adres_l2"])}'
             h += '<br/>'
+        if p.get('nr_eori'):
+            h += f'EORI: {e(p["nr_eori"])}<br/>'
+        if p.get('gln'):
+            h += f'GLN: {e(p["gln"])}<br/>'
         if p.get('email'):
-            h += f'Email: {p["email"]}<br/>'
+            h += f'Email: {e(p["email"])}<br/>'
         if p.get('telefon'):
-            h += f'Tel: {p["telefon"]}<br/>'
+            h += f'Tel: {e(p["telefon"])}<br/>'
         return Paragraph(h, self.styles['PartyInfo'])
 
     def _items_table(self, data: Dict) -> List:
@@ -683,7 +1024,7 @@ class InvoicePDFGenerator:
                     val = VAT_RATE_LABELS.get(val, val)
                 style = self.styles['TDR'] if align == 'r' else (
                     self.styles['TDC'] if align == 'c' else self.styles['TD'])
-                row.append(Paragraph(str(val), style))
+                row.append(Paragraph(self._rl_escape(val), style))
             tdata.append(row)
 
         t = Table(tdata, colWidths=widths)
@@ -703,6 +1044,9 @@ class InvoicePDFGenerator:
         if not vs:
             return []
 
+        resolved = _resolve_vat_summary_labels(data.get('items', []))
+        has_w = any(vs.get(f'P_14_{s}W') for s in ('1', '2', '3', '4'))
+
         elements = [Paragraph('Podliczenie VAT', self.styles['Section'])]
 
         header = [
@@ -710,23 +1054,33 @@ class InvoicePDFGenerator:
             Paragraph('Warto\u015b\u0107 netto', self.styles['TH']),
             Paragraph('Kwota VAT', self.styles['TH']),
         ]
+        if has_w:
+            header.append(Paragraph('Kwota VAT (PLN)', self.styles['TH']))
         tdata = [header]
 
-        for label, p13_field, p14_field in VAT_SUMMARY_ROWS:
+        for label, p13_field, p14_field, p14w_field in VAT_SUMMARY_ROWS:
             net = vs.get(p13_field)
             if not net:
                 continue
+            display_label = resolved.get(p13_field, label)
             vat = vs.get(p14_field, '') if p14_field else ''
-            tdata.append([
-                Paragraph(label, self.styles['TDC']),
+            row = [
+                Paragraph(display_label, self.styles['TDC']),
                 Paragraph(self._fmt_amt(net), self.styles['TDR']),
                 Paragraph(self._fmt_amt(vat) if vat else '', self.styles['TDR']),
-            ])
+            ]
+            if has_w:
+                vat_w = vs.get(p14w_field, '') if p14w_field else ''
+                row.append(Paragraph(self._fmt_amt(vat_w) if vat_w else '', self.styles['TDR']))
+            tdata.append(row)
 
         if len(tdata) <= 1:
             return []
 
-        t = Table(tdata, colWidths=[40*mm, 40*mm, 40*mm])
+        col_w = [35*mm, 38*mm, 38*mm]
+        if has_w:
+            col_w.append(38*mm)
+        t = Table(tdata, colWidths=col_w)
         t.setStyle(TableStyle([
             ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#e0e0e0')),
             ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
@@ -745,7 +1099,7 @@ class InvoicePDFGenerator:
         if not p15:
             return []
 
-        currency = h.get('kod_waluty', '')
+        currency = self._rl_escape(h.get('kod_waluty', ''))
         currency_suffix = f' {currency}' if currency else ''
 
         rodzaj = h.get('rodzaj', 'VAT')
@@ -789,7 +1143,7 @@ class InvoicePDFGenerator:
             if value:
                 rows.append([
                     Paragraph(label, self.styles['SmallBold']),
-                    Paragraph(value, self.styles['Small'])
+                    Paragraph(self._rl_escape(value), self.styles['Small'])
                 ])
 
         # Paid flag
@@ -868,11 +1222,12 @@ class InvoicePDFGenerator:
             ('p17', 'Samofakturowanie'),
             ('p18', 'Odwrotne obci\u0105\u017cenie'),
             ('p18a', 'Mechanizm podzielonej p\u0142atno\u015bci'),
+            ('p23', 'Procedura uproszczona (drugi sprzedawca)'),
         ]
         for key, label in labels:
             val = ann.get(key)
             if val:
-                txt = 'Tak' if val == '1' else ('Nie' if val == '2' else val)
+                txt = 'Tak' if val == '1' else ('Nie' if val == '2' else self._rl_escape(val))
                 rows.append([
                     Paragraph(f'{label}:', self.styles['SmallBold']),
                     Paragraph(txt, self.styles['Small'])
@@ -890,7 +1245,57 @@ class InvoicePDFGenerator:
                 if ann.get(key):
                     rows.append([
                         Paragraph(f'  {label}:', self.styles['Small']),
-                        Paragraph(ann[key], self.styles['Small'])
+                        Paragraph(self._rl_escape(ann[key]), self.styles['Small'])
+                    ])
+
+        # Margin scheme (PMarzy)
+        if ann.get('p_pmarzy') == '1':
+            rows.append([
+                Paragraph('Procedura marży:', self.styles['SmallBold']),
+                Paragraph('Tak', self.styles['Small'])
+            ])
+            margin_types = [
+                ('p_pmarzy_2', 'Usługi turystyki'),
+                ('p_pmarzy_3_1', 'Towary używane'),
+                ('p_pmarzy_3_2', 'Dzieła sztuki'),
+                ('p_pmarzy_3_3', 'Przedmioty kolekcjonerskie i antyki'),
+            ]
+            for key, label in margin_types:
+                if ann.get(key) == '1':
+                    rows.append([
+                        Paragraph(f'  {label}:', self.styles['Small']),
+                        Paragraph('Tak', self.styles['Small'])
+                    ])
+
+        # New transport vehicles
+        if ann.get('p22') == '1':
+            rows.append([
+                Paragraph('Nowy środek transportu:', self.styles['SmallBold']),
+                Paragraph('Tak', self.styles['Small'])
+            ])
+            if ann.get('p_42_5') == '1':
+                rows.append([
+                    Paragraph('  Art. 42 ust. 5:', self.styles['Small']),
+                    Paragraph('Tak', self.styles['Small'])
+                ])
+            for veh in ann.get('nowe_srodki', []):
+                parts = []
+                if veh.get('marka'):
+                    parts.append(veh['marka'])
+                if veh.get('model'):
+                    parts.append(veh['model'])
+                if veh.get('nr_id'):
+                    parts.append(f'Nr ID: {veh["nr_id"]}')
+                if veh.get('rok_prod'):
+                    parts.append(f'Rok: {veh["rok_prod"]}')
+                if veh.get('pojemnosc'):
+                    parts.append(f'Poj.: {veh["pojemnosc"]} cm³')
+                if veh.get('przebieg'):
+                    parts.append(f'Przebieg: {veh["przebieg"]} km')
+                if parts:
+                    rows.append([
+                        Paragraph('  Pojazd:', self.styles['Small']),
+                        Paragraph(self._rl_escape(', '.join(parts)), self.styles['Small'])
                     ])
 
         if not rows:
@@ -905,6 +1310,287 @@ class InvoicePDFGenerator:
         elements.append(t)
         return elements
 
+    # --- New section builders (FA(3) compliance) ---
+
+    def _podmiot3_section(self, data: Dict) -> List:
+        """Render Podmiot3 (additional parties)."""
+        parties = data.get('podmiot3', [])
+        if not parties:
+            return []
+        elements = [Spacer(1, 3*mm)]
+        for p in parties:
+            role = self._rl_escape(p.get('opis_roli') or p.get('rola_inna', ''))
+            title = f'<b>PODMIOT TRZECI</b>{f" — {role}" if role else ""}'
+            elements.append(self._party_html(title, p))
+            if p.get('udzial'):
+                elements.append(Paragraph(
+                    f'Udział: {self._rl_escape(p["udzial"])}%', self.styles['Small']))
+        return elements
+
+    def _correction_info(self, data: Dict) -> List:
+        """Render correction invoice details."""
+        h = data.get('header', {})
+        dane = data.get('dane_korygowanej', [])
+        if not h.get('przyczyna_korekty') and not dane:
+            return []
+        elements = [Spacer(1, 3*mm),
+                     Paragraph('Dane korekty', self.styles['Section'])]
+        rows = []
+        if h.get('przyczyna_korekty'):
+            rows.append([
+                Paragraph('Przyczyna korekty:', self.styles['SmallBold']),
+                Paragraph(self._rl_escape(h['przyczyna_korekty']), self.styles['Small'])
+            ])
+        if h.get('typ_korekty'):
+            typ_map = {'1': 'Korekta wartości', '2': 'Korekta danych',
+                        '3': 'Korekta wartości i danych'}
+            rows.append([
+                Paragraph('Typ korekty:', self.styles['SmallBold']),
+                Paragraph(self._rl_escape(typ_map.get(h['typ_korekty'], h['typ_korekty'])),
+                           self.styles['Small'])
+            ])
+        for d in dane:
+            nr = self._rl_escape(d.get('nr_ksef') or d.get('nr_faktury', ''))
+            data_txt = self._rl_escape(d.get('data_wyst', ''))
+            rows.append([
+                Paragraph('Faktura korygowana:', self.styles['SmallBold']),
+                Paragraph(f'{nr} ({data_txt})' if data_txt else nr,
+                           self.styles['Small'])
+            ])
+        if rows:
+            t = Table(rows, colWidths=[50*mm, 136*mm])
+            t.setStyle(TableStyle([
+                ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+                ('TOPPADDING', (0, 0), (-1, -1), 1),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 1),
+            ]))
+            elements.append(t)
+        return elements
+
+    def _rozliczenie_section(self, data: Dict) -> List:
+        """Render Rozliczenie (surcharges and deductions)."""
+        roz = data.get('rozliczenie', {})
+        if not roz:
+            return []
+        elements = [Spacer(1, 3*mm),
+                     Paragraph('Rozliczenie', self.styles['Section'])]
+        rows = []
+
+        def add(label, value):
+            if value:
+                rows.append([
+                    Paragraph(label, self.styles['SmallBold']),
+                    Paragraph(self._rl_escape(value), self.styles['Small'])
+                ])
+
+        for o in roz.get('obciazenia', []):
+            add('Obciążenie:', f'{self._fmt_amt(o.get("kwota", ""))} — {o.get("powod", "")}')
+        if roz.get('suma_obciazen'):
+            add('Suma obciążeń:', self._fmt_amt(roz['suma_obciazen']))
+        for o in roz.get('odliczenia', []):
+            add('Odliczenie:', f'{self._fmt_amt(o.get("kwota", ""))} — {o.get("powod", "")}')
+        if roz.get('suma_odliczen'):
+            add('Suma odliczeń:', self._fmt_amt(roz['suma_odliczen']))
+        if roz.get('do_zaplaty'):
+            add('Do zapłaty:', self._fmt_amt(roz['do_zaplaty']))
+        if roz.get('do_rozliczenia'):
+            add('Do rozliczenia:', self._fmt_amt(roz['do_rozliczenia']))
+
+        if rows:
+            t = Table(rows, colWidths=[50*mm, 136*mm])
+            t.setStyle(TableStyle([
+                ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+                ('TOPPADDING', (0, 0), (-1, -1), 1),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 1),
+            ]))
+            elements.append(t)
+        return elements
+
+    def _zaliczki_section(self, data: Dict) -> List:
+        """Render advance invoice references and partial advance payments."""
+        elements = []
+        # Advance invoice references
+        fz_list = data.get('faktury_zaliczkowe', [])
+        if fz_list:
+            elements.append(Spacer(1, 3*mm))
+            elements.append(Paragraph('Faktury zaliczkowe', self.styles['Section']))
+            for fz in fz_list:
+                nr = fz.get('nr_ksef') or fz.get('nr_faktury', '')
+                if nr:
+                    elements.append(Paragraph(self._rl_escape(nr), self.styles['Small']))
+
+        # Partial advance payments
+        zc_list = data.get('zaliczki_czesciowe', [])
+        if zc_list:
+            elements.append(Spacer(1, 3*mm))
+            elements.append(Paragraph('Zaliczki częściowe', self.styles['Section']))
+            rows = []
+            for zc in zc_list:
+                parts = []
+                if zc.get('p15z'):
+                    parts.append(f'Kwota: {self._fmt_amt(zc["p15z"])}')
+                if zc.get('p6z'):
+                    parts.append(f'Data: {zc["p6z"]}')
+                if zc.get('kurs_waluty'):
+                    parts.append(f'Kurs: {zc["kurs_waluty"]}')
+                if parts:
+                    elements.append(Paragraph(self._rl_escape(' | '.join(parts)), self.styles['Small']))
+
+        return elements
+
+    def _dodatkowy_opis_section(self, data: Dict) -> List:
+        """Render DodatkowyOpis (additional key-value descriptions)."""
+        opisy = data.get('dodatkowy_opis', [])
+        if not opisy:
+            return []
+        elements = [Spacer(1, 3*mm),
+                     Paragraph('Informacje dodatkowe', self.styles['Section'])]
+        tdata = [[
+            Paragraph('Klucz', self.styles['TH']),
+            Paragraph('Wartość', self.styles['TH']),
+        ]]
+        for o in opisy:
+            tdata.append([
+                Paragraph(self._rl_escape(o.get('klucz', '')), self.styles['TD']),
+                Paragraph(self._rl_escape(o.get('wartosc', '')), self.styles['TD']),
+            ])
+        t = Table(tdata, colWidths=[50*mm, 136*mm])
+        t.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#e0e0e0')),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+            ('TOPPADDING', (0, 0), (-1, -1), 2),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 2),
+        ]))
+        elements.append(t)
+        return elements
+
+    def _zamowienie_section(self, data: Dict) -> List:
+        """Render Zamowienie (order for advance invoices)."""
+        zam = data.get('zamowienie', {})
+        if not zam:
+            return []
+        elements = [Spacer(1, 3*mm),
+                     Paragraph('Zamówienie', self.styles['Section'])]
+        if zam.get('wartosc'):
+            elements.append(Paragraph(
+                f'Wartość zamówienia: {self._fmt_amt(zam["wartosc"])}',
+                self.styles['SmallBold']))
+        wiersze = zam.get('wiersze', [])
+        if wiersze:
+            header = [
+                Paragraph('Lp.', self.styles['TH']),
+                Paragraph('Nazwa', self.styles['TH']),
+                Paragraph('J.m.', self.styles['TH']),
+                Paragraph('Ilość', self.styles['TH']),
+                Paragraph('Cena netto', self.styles['TH']),
+                Paragraph('Wart. netto', self.styles['TH']),
+                Paragraph('Stawka', self.styles['TH']),
+            ]
+            tdata = [header]
+            for w in wiersze:
+                tdata.append([
+                    Paragraph(self._rl_escape(w.get('nr', '')), self.styles['TDC']),
+                    Paragraph(self._rl_escape(w.get('p7z', '')), self.styles['TD']),
+                    Paragraph(self._rl_escape(w.get('p8az', '')), self.styles['TDC']),
+                    Paragraph(self._rl_escape(self._fmt_amt(w.get('p8bz', ''))), self.styles['TDR']),
+                    Paragraph(self._rl_escape(self._fmt_amt(w.get('p9az', ''))), self.styles['TDR']),
+                    Paragraph(self._rl_escape(self._fmt_amt(w.get('p11z', ''))), self.styles['TDR']),
+                    Paragraph(self._rl_escape(VAT_RATE_LABELS.get(w.get('p12z', ''), w.get('p12z', ''))),
+                              self.styles['TDC']),
+                ])
+            t = Table(tdata, colWidths=[10*mm, 60*mm, 15*mm, 20*mm, 27*mm, 27*mm, 20*mm])
+            t.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#e0e0e0')),
+                ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                ('TOPPADDING', (0, 0), (-1, -1), 2),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 2),
+            ]))
+            elements.append(t)
+        return elements
+
+    def _zalacznik_section(self, data: Dict) -> List:
+        """Render Zalacznik (attachment data blocks)."""
+        bloki = data.get('zalacznik', [])
+        if not bloki:
+            return []
+        elements = [Spacer(1, 3*mm),
+                     Paragraph('Załączniki', self.styles['Section'])]
+        for blok in bloki:
+            if blok.get('naglowek'):
+                elements.append(Paragraph(self._rl_escape(blok['naglowek']), self.styles['SmallBold']))
+            for m in blok.get('metadane', []):
+                elements.append(Paragraph(
+                    f'{self._rl_escape(m.get("klucz", ""))}: {self._rl_escape(m.get("wartosc", ""))}',
+                    self.styles['Small']))
+            for a in blok.get('akapity', []):
+                elements.append(Paragraph(self._rl_escape(a), self.styles['Small']))
+            elements.append(Spacer(1, 2*mm))
+        return elements
+
+    def _warunki_transakcji_section(self, data: Dict) -> List:
+        """Render WarunkiTransakcji (transaction conditions)."""
+        wt = data.get('payment', {}).get('warunki_transakcji', {})
+        if not wt:
+            return []
+        elements = [Spacer(1, 3*mm),
+                     Paragraph('Warunki transakcji', self.styles['Section'])]
+        rows = []
+
+        def add(label, value):
+            if value:
+                rows.append([
+                    Paragraph(label, self.styles['SmallBold']),
+                    Paragraph(self._rl_escape(value), self.styles['Small'])
+                ])
+
+        for u in wt.get('umowy', []):
+            nr = u.get('numer', '')
+            data_u = u.get('data', '')
+            add('Umowa:', f'{nr} ({data_u})' if data_u else nr)
+        for z in wt.get('zamowienia', []):
+            nr = z.get('numer', '')
+            data_z = z.get('data', '')
+            add('Zamówienie:', f'{nr} ({data_z})' if data_z else nr)
+        for p in wt.get('nr_partii', []):
+            add('Nr partii towaru:', p)
+        add('Warunki dostawy:', wt.get('warunki_dostawy'))
+        if wt.get('kurs_umowny'):
+            waluta = wt.get('waluta_umowna', '')
+            add('Kurs umowny:', f'{wt["kurs_umowny"]} {waluta}'.strip())
+        for tr in wt.get('transport', []):
+            rodzaj = tr.get('rodzaj', '')
+            if tr.get('transport_inny') == '1':
+                rodzaj = tr.get('opis_innego', 'inny')
+            if rodzaj:
+                add('Transport:', rodzaj)
+            if tr.get('przewoznik_nazwa'):
+                add('  Przewoźnik:', tr['przewoznik_nazwa'])
+            if tr.get('nr_zlecenia'):
+                add('  Nr zlecenia:', tr['nr_zlecenia'])
+            ladunek = tr.get('opis_ladunku', '')
+            if tr.get('ladunek_inny') == '1':
+                ladunek = tr.get('opis_innego_ladunku', 'inny')
+            if ladunek:
+                add('  Ładunek:', ladunek)
+            if tr.get('data_rozp'):
+                add('  Rozpoczęcie:', tr['data_rozp'])
+            if tr.get('data_zak'):
+                add('  Zakończenie:', tr['data_zak'])
+        if wt.get('podmiot_posredniczacy') == '1':
+            add('Podmiot pośredniczący:', 'Tak (art. 22 ust. 2d)')
+
+        if rows:
+            t = Table(rows, colWidths=[50*mm, 136*mm])
+            t.setStyle(TableStyle([
+                ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+                ('TOPPADDING', (0, 0), (-1, -1), 1),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 1),
+            ]))
+            elements.append(t)
+        return elements
+
     def _footer(self, data: Dict) -> List:
         ft = data.get('footer', {})
         h = data.get('header', {})
@@ -914,7 +1600,7 @@ class InvoicePDFGenerator:
         if ft.get('informacje'):
             elements.append(Spacer(1, 3*mm))
             for info in ft['informacje']:
-                elements.append(Paragraph(info, self.styles['Small']))
+                elements.append(Paragraph(self._rl_escape(info), self.styles['Small']))
 
         # Registries
         if ft.get('rejestry'):
@@ -930,7 +1616,7 @@ class InvoicePDFGenerator:
                 if r.get('bdo'):
                     parts.append(f'BDO: {r["bdo"]}')
                 if parts:
-                    elements.append(Paragraph(' | '.join(parts), self.styles['Small']))
+                    elements.append(Paragraph(self._rl_escape(' | '.join(parts)), self.styles['Small']))
 
         # Creation timestamp
         if h.get('data_wytworzenia'):
@@ -958,7 +1644,7 @@ class InvoicePDFGenerator:
             tz_label = tz_name
 
         stamp = now.strftime('%y.%m.%d %H:%M:%S')
-        text = f'Wygenerowane przez KSeF Monitor v0.2 | {stamp} {tz_label}'
+        text = f'Wygenerowane przez KSeF Monitor v0.3 | {stamp} {tz_label}'
         font = self.font
 
         def _draw(canvas_obj, doc):
@@ -1050,15 +1736,30 @@ class InvoicePDFGenerator:
         if not val:
             return ''
         try:
-            return f'{float(val):.2f}'
+            num = float(val)
+            formatted = f'{num:,.2f}'
+            # Polish norms: ',' as decimal separator, '\u00a0' (non-breaking space) as thousands separator
+            formatted = formatted.replace(',', '\u00a0').replace('.', ',')
+            return formatted
         except (ValueError, TypeError):
             return val
 
 
+try:
+    from xhtml2pdf import pisa as _pisa_check
+    XHTML2PDF_AVAILABLE = True
+except ImportError:
+    XHTML2PDF_AVAILABLE = False
+
+
 def generate_invoice_pdf(xml_content: str, ksef_number: str = '',
                          output_path: str = None, environment: str = '',
-                         timezone: str = '') -> BytesIO:
+                         timezone: str = '',
+                         template_dir: str = None) -> BytesIO:
     """Generate PDF from KSeF invoice XML.
+
+    Uses HTML template rendering (xhtml2pdf) when available, with automatic
+    fallback to direct ReportLab generation.
 
     Args:
         xml_content: Raw XML string of the KSeF invoice
@@ -1066,12 +1767,25 @@ def generate_invoice_pdf(xml_content: str, ksef_number: str = '',
         output_path: File path to write PDF (if None, returns BytesIO)
         environment: KSeF environment ('test', 'demo', 'prod') for QR code URL
         timezone: IANA timezone name for generation timestamp (default: Europe/Warsaw)
+        template_dir: Custom PDF template directory (overrides built-in default)
     """
     parser = InvoiceXMLParser(xml_content)
     invoice_data = parser.parse()
     if ksef_number:
         invoice_data['ksef_metadata']['ksef_number'] = ksef_number
 
+    # Try template-based rendering first (xhtml2pdf)
+    if XHTML2PDF_AVAILABLE:
+        try:
+            from .invoice_pdf_template import InvoicePDFTemplateRenderer
+            renderer = InvoicePDFTemplateRenderer(custom_templates_dir=template_dir)
+            return renderer.render(invoice_data, ksef_number=ksef_number,
+                                   xml_content=xml_content, environment=environment,
+                                   timezone=timezone, output_path=output_path)
+        except Exception as e:
+            logger.warning(f"Template PDF rendering failed, falling back to ReportLab: {e}")
+
+    # Fallback: existing ReportLab generator
     generator = InvoicePDFGenerator()
     return generator.generate(invoice_data, output_path,
                               xml_content=xml_content, environment=environment,

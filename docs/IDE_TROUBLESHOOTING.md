@@ -83,9 +83,12 @@ KSeF_Monitor/
 │   ├── ksef_client.py
 │   ├── invoice_monitor.py
 │   ├── invoice_pdf_generator.py
-│   ├── logging_config.py
-│   ├── prometheus_metrics.py
+│   ├── invoice_pdf_template.py
+│   ├── template_renderer.py
 │   ├── scheduler.py
+│   ├── prometheus_metrics.py
+│   ├── logging_config.py
+│   ├── templates/             ← Built-in Jinja2 templates
 │   └── notifiers/
 │       ├── __init__.py        ← Must exist!
 │       ├── base_notifier.py

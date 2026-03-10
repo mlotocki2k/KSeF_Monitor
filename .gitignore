@@ -40,12 +40,15 @@ invoice_*.pdf
 invoice_*.xml
 faktura*.pdf
 faktura*.xml
+examples/test_output_*.pdf
 
 # .github/ is tracked — workflows and community health files
 
 #TODO
 TODO.md
 
+# Claude Code conversation starter
 CLAUDE.md
-*.sh
 
+# scripts 
+*.sh

@@ -1,0 +1,39 @@
+{
+    "blocks": [
+        {
+            "type": "header",
+            "text": {
+                "type": "plain_text",
+                "text": "{{ priority_emoji }} {{ title | json_escape }}"
+            }
+        },
+        {
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": "{% if subject_type == 'Subject1' %}Do: {{ buyer_name | json_escape }} - NIP {{ buyer_nip }}{% elif subject_type == 'Subject2' %}Od: {{ seller_name | json_escape }} - NIP {{ seller_nip }}{% else %}Od: {{ seller_name | json_escape }} - NIP {{ seller_nip }}\nDo: {{ buyer_name | json_escape }} - NIP {{ buyer_nip }}{% endif %}\nNr Faktury: {{ invoice_number | json_escape }}\nData: {{ issue_date | date }}\nBrutto: *{{ gross_amount | money_raw }} {{ currency }}*\nNumer KSeF: {{ ksef_number | json_escape }}"
+            }
+        }
+        {% if url %}
+        ,{
+            "type": "actions",
+            "elements": [
+                {
+                    "type": "button",
+                    "text": {
+                        "type": "plain_text",
+                        "text": "View in KSeF"
+                    },
+                    "url": "{{ url | json_escape }}"
+                }
+            ]
+        }
+        {% endif %}
+    ],
+    "attachments": [
+        {
+            "color": "{{ priority_color }}",
+            "fallback": "{{ title | json_escape }}"
+        }
+    ]
+}

@@ -3,10 +3,11 @@ Discord Notification Service
 Sends notifications via Discord webhooks with rich embeds
 """
 
+import json
 import logging
 import requests
-from datetime import datetime
-from typing import Optional
+from datetime import datetime, timezone
+from typing import Any, Dict, Optional
 
 from .base_notifier import BaseNotifier
 
@@ -32,6 +33,7 @@ class DiscordNotifier(BaseNotifier):
         Args:
             config: ConfigManager instance or dict with notifications configuration
         """
+        super().__init__()
         notifications_config = config.get("notifications") or {}
         discord_config = notifications_config.get("discord") or {}
 
@@ -79,7 +81,7 @@ class DiscordNotifier(BaseNotifier):
                 "title": title[:256],  # Discord title max length
                 "description": message[:4096],  # Discord description max length
                 "color": color,
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
                 "footer": {
                     "text": "KSeF Invoice Monitor"
                 }
@@ -98,11 +100,12 @@ class DiscordNotifier(BaseNotifier):
             if self.avatar_url:
                 payload["avatar_url"] = self.avatar_url
 
-            # Send to Discord
-            response = requests.post(
+            # Send to Discord (redirects disabled for SSRF protection)
+            response = self.session.post(
                 self.webhook_url,
                 json=payload,
-                timeout=self.timeout
+                timeout=self.timeout,
+                allow_redirects=False
             )
             response.raise_for_status()
 
@@ -112,7 +115,40 @@ class DiscordNotifier(BaseNotifier):
         except requests.exceptions.RequestException as e:
             logger.error(f"Failed to send Discord notification: {e}")
             if hasattr(e, 'response') and e.response is not None:
-                logger.error(f"Discord API response: {e.response.text}")
+                logger.error(f"Discord API response status: {e.response.status_code}")
+            return False
+        except Exception as e:
+            logger.error(f"Unexpected error sending Discord notification: {e}")
+            return False
+
+    def _send_rendered(self, rendered: str, context: Dict[str, Any]) -> bool:
+        """Send Discord notification from rendered JSON template."""
+        if not self.is_configured:
+            logger.error("Discord not configured - notification not sent")
+            return False
+
+        try:
+            embed = json.loads(rendered)
+            payload = {
+                "username": self.username,
+                "embeds": [embed],
+            }
+            if self.avatar_url:
+                payload["avatar_url"] = self.avatar_url
+
+            response = self.session.post(self.webhook_url, json=payload, timeout=self.timeout, allow_redirects=False)
+            response.raise_for_status()
+
+            logger.info(f"Discord notification sent: {context.get('title')}")
+            return True
+
+        except json.JSONDecodeError as e:
+            logger.error(f"Invalid JSON from Discord template: {e}")
+            return False
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Failed to send Discord notification: {e}")
+            if hasattr(e, 'response') and e.response is not None:
+                logger.error(f"Discord API response status: {e.response.status_code}")
             return False
         except Exception as e:
             logger.error(f"Unexpected error sending Discord notification: {e}")

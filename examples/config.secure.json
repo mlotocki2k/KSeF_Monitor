@@ -56,11 +56,21 @@
     "save_xml": false,
     "save_pdf": false,
     "output_dir": "/data/invoices",
-    "description": "File storage settings. Set save_xml/save_pdf to true to save invoice files. output_dir is auto-created."
+    "folder_structure": "",
+    "file_name_pattern": "{type}_{date}_{invoice_number}",
+    "file_exists_strategy": "skip",
+    "pdf_templates_dir": "/data/pdf_templates",
+    "description": "File storage settings. save_xml/save_pdf: enable saving invoice files. output_dir: auto-created. folder_structure: subfolder pattern ({year}/{month}/{day}/{type}), empty = flat. file_name_pattern: naming pattern ({type}/{date}/{invoice_number}/{ksef}/{ksef_short}/{seller_nip}/{buyer_nip}). file_exists_strategy: skip/rename/overwrite (default: skip). pdf_templates_dir: optional custom HTML/CSS template for PDF."
   },
   "prometheus": {
     "enabled": true,
     "port": 8000,
-    "description": "Prometheus metrics endpoint on /metrics. Set enabled: false to disable."
+    "bind_address": "0.0.0.0",
+    "description": "Prometheus metrics endpoint on /metrics. bind_address: '0.0.0.0' for Docker (default), '127.0.0.1' for bare metal. Set enabled: false to disable."
+  },
+  "database": {
+    "enabled": true,
+    "path": "/data/invoices.db",
+    "description": "SQLite database for invoice metadata. Set enabled: false to use JSON state only."
   }
 }

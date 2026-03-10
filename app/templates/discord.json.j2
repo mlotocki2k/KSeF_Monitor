@@ -1,0 +1,12 @@
+{
+    "title": "{{ title | json_escape }}",
+    "description": "{% if subject_type == 'Subject1' %}Do: {{ buyer_name | json_escape }} - NIP {{ buyer_nip }}{% elif subject_type == 'Subject2' %}Od: {{ seller_name | json_escape }} - NIP {{ seller_nip }}{% else %}Od: {{ seller_name | json_escape }} - NIP {{ seller_nip }}\nDo: {{ buyer_name | json_escape }} - NIP {{ buyer_nip }}{% endif %}\nNr Faktury: {{ invoice_number | json_escape }}\nData: {{ issue_date | date }}\nBrutto: **{{ gross_amount | money_raw }} {{ currency }}**\nNumer KSeF: {{ ksef_number | json_escape }}",
+    "color": {{ priority_color_int }},
+    "timestamp": "{{ timestamp }}",
+    "footer": {
+        "text": "KSeF Invoice Monitor"
+    }
+    {% if url %}
+    ,"url": "{{ url | json_escape }}"
+    {% endif %}
+}

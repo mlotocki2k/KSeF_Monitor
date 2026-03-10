@@ -1,4 +1,4 @@
-# KSeF Invoice Monitor v0.2
+# KSeF Invoice Monitor v0.3
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
@@ -7,7 +7,7 @@
 [![Prometheus](https://img.shields.io/badge/Prometheus-metrics-orange?logo=prometheus)](docs/PROJECT_STRUCTURE.md)
 [![GitHub Actions](https://img.shields.io/github/actions/workflow/status/mlotocki2k/KSeF_Monitor/docker-publish.yml?branch=test&label=build)](https://github.com/mlotocki2k/KSeF_Monitor/actions)
 
-Monitor faktur w Krajowym Systemie e-Faktur (KSeF). Aplikacja cyklicznie pobiera metadata faktur z API KSeF v2 i wysyła powiadomienia o nowych fakturach sprzedażowych i/lub zakupowych przez **5 kanałów notyfikacji**.
+Monitor faktur w Krajowym Systemie e-Faktur (KSeF). Aplikacja cyklicznie pobiera metadata faktur z API KSeF v2 i wysyła powiadomienia o nowych fakturach sprzedażowych i/lub zakupowych przez **5 kanałów notyfikacji** z **konfigurowalnym systemem szablonów Jinja2**.
 
 **Obsługiwane kanały:**
 - 📱 **Pushover** - powiadomienia mobilne
@@ -43,63 +43,75 @@ Szczegóły konfiguracji: [config.example.json](examples/config.example.json) | 
 ```
 KSeF_Monitor/
 ├── main.py                      # Entry point — logging, signal handling, bootstrap
-├── test_invoice_pdf.py          # Test script for PDF generation
 ├── app/                         # Application modules
 │   ├── __init__.py
 │   ├── config_manager.py        # Wczytanie i walidacja config.json
 │   ├── secrets_manager.py       # Sekretne wartości z env / Docker secrets / config
-│   ├── ksef_client.py           # Klient API KSeF v2.1/v2.2 (autentykacja + paginacja)
-│   ├── invoice_monitor.py       # Główna pętla monitorowania + formatowanie
-│   ├── invoice_pdf_generator.py # XML parser + PDF generator
-│   ├── logging_config.py        # Logging setup z timezone
+│   ├── ksef_client.py           # Klient API KSeF v2.2.0 (autentykacja + paginacja)
+│   ├── invoice_monitor.py       # Główna pętla monitorowania + kontekst szablonów
+│   ├── invoice_pdf_generator.py # XML parser + ReportLab PDF generator (fallback)
+│   ├── invoice_pdf_template.py  # HTML/CSS template PDF renderer (xhtml2pdf)
+│   ├── template_renderer.py     # Silnik szablonów Jinja2
 │   ├── prometheus_metrics.py    # Prometheus metrics endpoint
 │   ├── scheduler.py             # Elastyczny system schedulowania (5 trybów)
+│   ├── database.py              # SQLite + SQLAlchemy 2.0 ORM (metadane, stan, logi)
+│   ├── logging_config.py        # Logging setup z timezone
+│   ├── templates/               # Wbudowane szablony Jinja2
+│   │   ├── invoice_pdf.html.j2  # Szablon PDF faktury (HTML/CSS)
+│   │   ├── pushover.txt.j2      # Plain text (Pushover)
+│   │   ├── email.html.j2        # HTML (Email)
+│   │   ├── slack.json.j2        # Block Kit JSON (Slack)
+│   │   ├── discord.json.j2      # Embed JSON (Discord)
+│   │   └── webhook.json.j2      # Payload JSON (Webhook)
 │   └── notifiers/               # Multi-channel notification system
 │       ├── __init__.py
-│       ├── base_notifier.py     # Abstract base class dla notifierów
+│       ├── base_notifier.py     # Abstract base + render_and_send()
 │       ├── notification_manager.py  # Facade zarządzający wieloma kanałami
 │       ├── pushover_notifier.py     # Powiadomienia mobilne Pushover
 │       ├── discord_notifier.py      # Webhook Discord z rich embeds
 │       ├── slack_notifier.py        # Webhook Slack z Block Kit
 │       ├── email_notifier.py        # SMTP email z HTML
 │       └── webhook_notifier.py      # Generyczny HTTP endpoint
-├── spec/                        # API specifications
-│   └── openapi.json             # KSeF API v2.2.0 OpenAPI spec
 ├── docs/                        # Documentation
-│   ├── INDEX.md                 # Documentation index
 │   ├── QUICKSTART.md            # Quick start guide
 │   ├── KSEF_TOKEN.md            # Tworzenie tokena KSeF (read-only)
 │   ├── NOTIFICATIONS.md         # Konfiguracja powiadomień (5 kanałów)
+│   ├── TEMPLATES.md             # Szablony Jinja2 powiadomień
 │   ├── SECURITY.md              # Security best practices
 │   ├── TESTING.md               # Testing guide
 │   ├── PDF_GENERATION.md        # Generowanie PDF faktur
-│   ├── ROADMAP.md               # Project roadmap
+│   ├── PDF_TEMPLATES.md         # Szablony HTML/CSS dla PDF
 │   ├── PROJECT_STRUCTURE.md     # Project architecture
-│   └── IDE_TROUBLESHOOTING.md   # IDE setup help
-├── .github/                     # GitHub community & CI
-│   ├── ISSUE_TEMPLATE/          # Issue templates (bug, feature)
-│   ├── PULL_REQUEST_TEMPLATE.md # PR template
-│   └── workflows/               # GitHub Actions (CI/CD)
+│   ├── ROADMAP.md               # Project roadmap
+│   ├── IDE_TROUBLESHOOTING.md   # IDE setup help
+│   └── INDEX.md                 # Documentation index
+├── spec/                        # API specifications
+│   ├── openapi.json             # KSeF API v2.2.0 OpenAPI spec
+│   └── schemat_FA(3)_v1-0E.xsd # Schemat FA(3) faktury
 ├── examples/                    # Example configuration files
 │   ├── config.example.json      # Configuration template
 │   ├── config.secure.json       # Config for Docker secrets
 │   └── .env.example             # Environment variables template
+├── .github/                     # GitHub community & CI
+│   ├── ISSUE_TEMPLATE/          # Issue templates (bug, feature)
+│   ├── PULL_REQUEST_TEMPLATE.md # PR template
+│   └── workflows/               # GitHub Actions (5 workflows)
+├── db_admin.py                  # Database administration CLI tool
+├── alembic.ini                  # Alembic migration configuration
+├── alembic/                     # Database migration scripts
 ├── CONTRIBUTING.md              # How to contribute
 ├── CODE_OF_CONDUCT.md           # Community guidelines
 ├── pyproject.toml               # Python project metadata
 ├── requirements.txt             # Python dependencies
-├── Dockerfile                   # Docker image definition
+├── Dockerfile                   # Docker image definition (OCI labels)
 ├── docker-compose.yml           # Basic Docker Compose setup
 ├── docker-compose.env.yml       # Docker Compose with .env
 ├── docker-compose.secrets.yml   # Docker Compose with secrets
 ├── LICENSE                      # MIT License
-├── README.md                    # This file
-└── data/                        # Runtime data (auto-created, gitignored)
-    ├── last_check.json          # Application state
-    └── invoices/                # Saved invoices (XML, PDF, UPO)
+└── README.md                    # This file
 ```
 
-Katalog `data/` powstaje w runtime i zawiera plik stanu `last_check.json` oraz zapisane faktury (jeśli `storage.save_xml` lub `storage.save_pdf` jest włączone).
+Katalog `data/` powstaje w runtime i zawiera bazę danych `invoices.db` oraz legacy plik stanu `last_check.json`.
 
 ---
 
@@ -108,10 +120,16 @@ Katalog `data/` powstaje w runtime i zawiera plik stanu `last_check.json` oraz z
 - 📖 [QUICKSTART.md](docs/QUICKSTART.md) — Szybki start w 5 minut
 - 🔑 [KSEF_TOKEN.md](docs/KSEF_TOKEN.md) — Tworzenie tokena KSeF (krok po kroku, uprawnienia read-only)
 - 🔔 [NOTIFICATIONS.md](docs/NOTIFICATIONS.md) — Konfiguracja powiadomień (5 kanałów, tworzenie webhooków)
+- 🎨 [TEMPLATES.md](docs/TEMPLATES.md) — Szablony Jinja2 powiadomień (zmienne, filtry, przykłady)
 - 🔒 [SECURITY.md](docs/SECURITY.md) — Najlepsze praktyki bezpieczeństwa
 - 🧪 [TESTING.md](docs/TESTING.md) — Przewodnik testowania
+- 📄 [PDF_GENERATION.md](docs/PDF_GENERATION.md) — Generowanie PDF faktur
+- 🎨 [PDF_TEMPLATES.md](docs/PDF_TEMPLATES.md) — Szablony PDF faktur (HTML/CSS, v0.3)
 - 🏗️ [PROJECT_STRUCTURE.md](docs/PROJECT_STRUCTURE.md) — Architektura projektu
 - 💻 [IDE_TROUBLESHOOTING.md](docs/IDE_TROUBLESHOOTING.md) — Pomoc z konfiguracją IDE
+- 💾 [DATABASE.md](docs/DATABASE.md) — Baza danych SQLite (konfiguracja, tabele, db_admin.py)
+- 💾 [DATABASE_DESIGN.md](docs/DATABASE_DESIGN.md) — Wielofazowy projekt schematu bazy
+- 🗺️ [ROADMAP.md](docs/ROADMAP.md) — Roadmap projektu
 - 📚 [INDEX.md](docs/INDEX.md) — Indeks dokumentacji
 
 ---
@@ -136,8 +154,13 @@ Katalog `data/` powstaje w runtime i zawiera plik stanu `last_check.json` oraz z
 | `cryptography` | 46.0.5 | RSA-OAEP encryption tokena w auth flow |
 | `pytz` | 2026.1.post1 | Obsługa stref czasowych (timezone support) |
 | `prometheus-client` | 0.24.1 | Eksport metryk Prometheus |
-| `reportlab` | 4.4.10 | Generowanie PDF faktur (włączane w sekcji `storage`) |
+| `Jinja2` | >=3.1.0 | Silnik szablonów powiadomień i PDF |
+| `defusedxml` | >=0.7.1 | Bezpieczne parsowanie XML faktur (ochrona przed XXE) |
+| `reportlab` | 4.4.10 | Generowanie PDF faktur (silnik fallback) |
 | `qrcode` | 8.2 | Generowanie QR Code Type I na fakturach PDF |
+| `xhtml2pdf` | >=0.2.16 | Renderowanie HTML/CSS do PDF (silnik primary) |
+| `SQLAlchemy` | >=2.0.0 | ORM do bazy danych SQLite (metadane faktur, stan, logi) |
+| `alembic` | >=1.13.0 | Migracje schematu bazy danych |
 
 ---
 
@@ -170,6 +193,7 @@ System powiadomień obsługuje **5 kanałów** jednocześnie. Możesz włączyć
 | `channels` | Lista włączonych kanałów: `["pushover", "discord", "slack", "email", "webhook"]` |
 | `message_priority` | Priority dla nowych faktur. `-2` cisza \| `-1` cicho \| `0` normalne \| `1` wysoka \| `2` pilne (Pushover). |
 | `test_notification` | `true` wysyła testowe powiadomienie przy starcie. |
+| `templates_dir` | Opcjonalny katalog z własnymi szablonami Jinja2 (nadpisują wbudowane). Domyślnie: brak (wbudowane szablony). Szczegóły: [TEMPLATES.md](docs/TEMPLATES.md) |
 
 **Konfiguracja kanałów:**
 
@@ -309,17 +333,17 @@ System powiadomień obsługuje **5 kanałów** jednocześnie. Możesz włączyć
 ```
 
 Pełna dokumentacja: [docs/NOTIFICATIONS.md](docs/NOTIFICATIONS.md)
+Szablony powiadomień: [docs/TEMPLATES.md](docs/TEMPLATES.md)
 
 ### Sekcja `monitoring`
 
 | Pole | Default | Opis |
 |---|---|---|
-| `subject_types` | `["Subject1"]` | Typy faktur do monitorowania. `Subject1` = sprzedażowe (Ty = sprzedawca), `Subject2` = zakupowe (Ty = nabywca). Jedno zapytanie API na każdy typ. |
+| `subject_types` | `["Subject1", "Subject2"]` | Typy faktur do monitorowania. `Subject1` = sprzedażowe (Ty = sprzedawca), `Subject2` = zakupowe (Ty = nabywca). Jedno zapytanie API na każdy typ. |
 | `date_type` | `"Invoicing"` | Typ daty w zakresie zapytania. Dozwolone wartości: `Issue` (data wystawienia), `Invoicing` (data przyjęcia w KSeF), `PermanentStorage` (data trwałego zapisu). Fallback na `Invoicing` przy niepoprawnej wartości. |
 | `timezone` | `"Europe/Warsaw"` | Strefa czasowa używana do wszystkich operacji z datami. Nazwa według standardu IANA (np. `Europe/Warsaw`, `America/New_York`). Zobacz [listę stref czasowych](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones). Fallback na `Europe/Warsaw` przy niepoprawnej wartości. |
-| `logging_level` | `"INFO"` | Poziom logowania. Dozwolone wartości: `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`. |
-
-**Uwaga:** Pola `message_priority` i `test_notification` zostały przeniesione do sekcji `notifications`. Stary zapis w `monitoring` nadal działa (backwards compatibility), ale zalecana lokalizacja to `notifications`.
+| `message_priority` | `0` | Priority powiadomień Pushover dla nowych faktur. `-2` cisza \| `-1` cicho \| `0` normalne \| `1` wysoka \| `2` pilne (wymaga potwierdzenia). Fallback na `0`. |
+| `test_notification` | `false` | Jeśli `true` — wysyła testowe powiadomienie przy starcie aplikacji. |
 
 ### Sekcja `schedule`
 
@@ -389,6 +413,9 @@ Konfiguracja zapisywania plików faktur (XML, PDF). Domyślnie wyłączone.
 | `save_xml` | `false` | Zapisuj pliki XML faktur (źródłowe dane z KSeF) oraz UPO (dla faktur sprzedażowych). |
 | `save_pdf` | `false` | Generuj i zapisuj pliki PDF faktur (wymaga `reportlab`). |
 | `output_dir` | `"/data/invoices"` | Katalog docelowy dla zapisanych plików. Tworzony automatycznie jeśli nie istnieje. |
+| `folder_structure` | `""` | Wzorzec podfolderów z placeholderami: `{year}`, `{month}`, `{day}`, `{type}`. Pusty = płaski katalog. |
+| `file_name_pattern` | `"{type}_{date}_{invoice_number}"` | Wzorzec nazw plików. Placeholdery: `{type}` (sprz/zak/upo), `{date}` (YYYYMMDD), `{invoice_number}`, `{ksef}`, `{ksef_short}`, `{seller_nip}`, `{buyer_nip}`. |
+| `file_exists_strategy` | `"skip"` | Co zrobić gdy plik już istnieje: `skip` (pomiń), `rename` (dodaj suffix `_1`, `_2`...), `overwrite` (nadpisz). |
 
 **Przykład konfiguracji:**
 
@@ -397,25 +424,74 @@ Konfiguracja zapisywania plików faktur (XML, PDF). Domyślnie wyłączone.
   "storage": {
     "save_xml": true,
     "save_pdf": true,
-    "output_dir": "/data/invoices"
+    "output_dir": "/data/invoices",
+    "folder_structure": "{year}/{month}",
+    "file_name_pattern": "{type}_{date}_{invoice_number}"
   }
 }
 ```
 
-**Nazewnictwo plików:**
+**Wzorce `folder_structure`:**
+
+| Wzorzec | Wynik |
+|---|---|
+| `""` (domyślnie) | `/data/invoices/sprz_20260227_FV-123_2026.pdf` |
+| `"{year}/{month}"` | `/data/invoices/2026/02/sprz_20260227_FV-123_2026.pdf` |
+| `"{year}/{month}/{day}"` | `/data/invoices/2026/02/27/sprz_20260227_FV-123_2026.pdf` |
+| `"{type}/{year}/{month}"` | `/data/invoices/sprzedaz/2026/02/sprz_20260227_FV-123_2026.pdf` |
+
+Dostępne placeholdery: `{year}` (rok), `{month}` (miesiąc 01-12), `{day}` (dzień 01-31), `{type}` (`sprzedaz`/`zakup`).
+
+**Wzorce `file_name_pattern`:**
+
+| Wzorzec | Wynik (XML) |
+|---|---|
+| `"{type}_{date}_{invoice_number}"` (domyślnie) | `sprz_20260227_FV-123_2026.xml` |
+| `"{type}_{seller_nip}_{date}_{invoice_number}"` | `sprz_9730842472_20260227_FV-123_2026.xml` |
+| `"{date}_{type}_{ksef_short}"` | `20260227_sprz_456-78.xml` |
+
+Dostępne placeholdery: `{type}` (sprz/zak/upo), `{date}` (YYYYMMDD), `{invoice_number}`, `{ksef}` (pełny numer KSeF), `{ksef_short}` (ostatnie 6 znaków), `{seller_nip}`, `{buyer_nip}`. Znaki niedozwolone w systemie plików są automatycznie zamieniane na `_`.
+
+**Nazewnictwo plików** (domyślny pattern):
 ```
-sprz_<numer_ksef>_<data>.xml    — XML faktury sprzedażowej
-sprz_<numer_ksef>_<data>.pdf    — PDF faktury sprzedażowej
-zak_<numer_ksef>_<data>.xml     — XML faktury zakupowej
-zak_<numer_ksef>_<data>.pdf     — PDF faktury zakupowej
-UPO_sprz_<numer_ksef>_<data>.xml — UPO (tylko faktury sprzedażowe)
+sprz_20260227_FV-123_2026.xml    — XML faktury sprzedażowej
+sprz_20260227_FV-123_2026.pdf    — PDF faktury sprzedażowej
+zak_20260227_FV-456_2026.xml     — XML faktury zakupowej
+zak_20260227_FV-456_2026.pdf     — PDF faktury zakupowej
+upo_20260227_FV-123_2026.xml     — UPO (tylko faktury sprzedażowe)
 ```
 
 **Uwagi:**
 - Jeśli oba flagi `save_xml` i `save_pdf` są `false`, żadne pliki nie są pobierane/generowane
 - Generowanie PDF wymaga biblioteki `reportlab` (w `requirements.txt`)
-- Katalog `output_dir` jest tworzony automatycznie przy pierwszym zapisie
+- Katalog `output_dir` i podfoldery są tworzone automatycznie przy pierwszym zapisie
 - UPO (Urzędowe Poświadczenie Odbioru) zapisywane jest razem z XML (zależne od `save_xml`)
+
+### Sekcja `database`
+
+SQLite baza danych do przechowywania metadanych faktur, stanu monitoringu i logu powiadomień.
+
+| Pole | Default | Opis |
+|---|---|---|
+| `enabled` | `true` | Włącz/wyłącz bazę danych. Wyłączenie powoduje fallback na `last_check.json`. |
+| `path` | `"/data/invoices.db"` | Ścieżka do pliku SQLite (tworzony automatycznie). |
+
+**Przykład konfiguracji:**
+
+```json
+{
+  "database": {
+    "enabled": true,
+    "path": "/data/invoices.db"
+  }
+}
+```
+
+Baza jest **opcjonalna** — monitor działa bez niej, ale traci trwałe przechowywanie metadanych faktur, log powiadomień, error tracking i deduplikację.
+
+Tabele: `invoices` (metadane faktur), `monitor_state` (stan per NIP + subject_type), `notification_log` (historia powiadomień z deduplikacją).
+
+Zarządzanie: `python db_admin.py status|invoices|stats|errors|...` — szczegóły: [docs/DATABASE.md](docs/DATABASE.md)
 
 ### Sekcja `prometheus`
 
@@ -425,6 +501,7 @@ Eksport metryk dla systemów monitorowania (Prometheus, Grafana, etc.)
 |---|---|---|
 | `enabled` | `true` | Włącz/wyłącz endpoint metryk Prometheus |
 | `port` | `8000` | Port HTTP dla endpointu `/metrics` |
+| `bind_address` | `"0.0.0.0"` | Adres sieciowy do nasłuchu. `0.0.0.0` dla Dockera (domyślnie), `127.0.0.1` dla bare metal |
 
 **Dostępne metryki:**
 
@@ -440,10 +517,18 @@ Eksport metryk dla systemów monitorowania (Prometheus, Grafana, etc.)
 {
   "prometheus": {
     "enabled": true,
-    "port": 8000
+    "port": 8000,
+    "bind_address": "0.0.0.0"
   }
 }
 ```
+
+**Bind address:**
+
+| Środowisko | `bind_address` | Uwagi |
+|---|---|---|
+| Docker (domyślnie) | `"0.0.0.0"` | Wymagane, aby metryki były dostępne spoza kontenera. Bezpieczeństwo zapewnia port mapping w `docker-compose.yml` (`127.0.0.1:8000:8000`). |
+| Bare metal / VM | `"127.0.0.1"` | Metryki dostępne tylko lokalnie. Zalecane gdy Prometheus działa na tym samym hoście. |
 
 **Dostęp do metryk:**
 ```bash
@@ -589,6 +674,16 @@ docker restart ksef-invoice-monitor      # restart
 docker stop ksef-invoice-monitor         # stop
 ```
 
+### Wymuszenie sprawdzenia poza harmonogramem
+
+Aby natychmiast sprawdzić nowe faktury bez restartu kontenera i bez czekania na harmonogram:
+
+```bash
+docker kill -s SIGUSR1 ksef-invoice-monitor
+```
+
+W logach pojawi się: `Manual trigger received — checking for new invoices...`
+
 ---
 
 ## Przepływ autentykacji KSeF API v2
@@ -613,8 +708,7 @@ Autentykacja (metoda `KSeFClient.authenticate()`) składa się z 5 kroków:
 
 4.  GET   /v2/auth/{referenceNumber}
         header: Authorization: Bearer <authenticationToken.token>
-        → polling z eksponencjalnym backoff (1s, 2s, 4s, 8s, max 10s)
-          aż status.code == 200 (max 15 prób)
+        → polling co 2s, aż status.code == 200  (max 10 prób)
 
 5.  POST  /v2/auth/token/redeem
         header: Authorization: Bearer <authenticationToken.token>
@@ -645,19 +739,22 @@ Endpoint: `POST /v2/invoices/query/metadata`
 - `dateType` pochodzi z pola `date_type` w konfiguracji.
 - Daty w formacie ISO 8601 z sufixem `Z` (UTC).
 - Wszystkie daty są konwertowane z skonfigurowanej strefy czasowej (`timezone`) do UTC przed wysłaniem do API.
-- `dateRange` jest ograniczony do max 90 dni (limit KSeF API — 3 miesiące).
-- `pageSize` i `pageOffset` są wysyłane jako query parameters (nie w body).
-- Paginacja: max 250 rekordów na stronę, safety limit 10 000 rekordów.
+- `dateRange` ograniczony do max 90 dni (limit KSeF API).
+- `pageSize` i `pageOffset` przekazywane jako **query params** (nie w body) — zgodnie ze specyfikacją API.
+- Wszystkie zapytania podlegają rate limiting (10/s, 30/min, 120/h). Szczegóły: [docs/KSEF_API_LIMITATIONS.md](docs/KSEF_API_LIMITATIONS.md)
 
-Przykładowy request:
+**Paginacja:**
+- `pageSize: 250` (max dozwolone przez KSeF API, min 10).
+- `hasMore=false` → koniec danych.
+- `hasMore=true`, `isTruncated=false` → następna strona (`pageOffset++`).
+- `hasMore=true`, `isTruncated=true` → zawężenie `dateRange.from` do daty ostatniej faktury, reset `pageOffset=0` (limit 10 000 rekordów).
+
+Przykładowe zapytanie:
 
 ```
 POST /v2/invoices/query/metadata?pageSize=250&pageOffset=0&sortOrder=Asc
-```
 
 Body:
-
-```json
 {
   "subjectType": "Subject1",
   "dateRange": {
@@ -690,7 +787,7 @@ Wszystkie kanały otrzymują te same tytuły:
 Do: <nazwa nabywcy> - NIP <NIP>
 Nr Faktury: <numer faktury>
 Data: <data wystawienia>
-Brutto: <kwota brutto>
+Brutto: 1 234,56 PLN
 Numer KSeF: <numer KSeF>
 ```
 
@@ -700,7 +797,7 @@ Numer KSeF: <numer KSeF>
 Od: <nazwa sprzedawcy> - NIP <NIP>
 Nr Faktury: ...
 Data: ...
-Brutto: ...
+Brutto: 1 234,56 PLN
 Numer KSeF: ...
 ```
 
@@ -711,9 +808,11 @@ Od: <sprzedawca> - NIP ...
 Do: <nabywca>   - NIP ...
 Nr Faktury: ...
 Data: ...
-Brutto: ...
+Brutto: 1 234,56 PLN
 Numer KSeF: ...
 ```
+
+> **Uwaga:** Format powiadomień jest konfigurowalny przez szablony Jinja2. Szczegóły: [TEMPLATES.md](docs/TEMPLATES.md)
 
 ### Pozostałe powiadomienia
 
@@ -742,7 +841,20 @@ Więcej szczegółów: [docs/NOTIFICATIONS.md](docs/NOTIFICATIONS.md)
 
 ## Stan aplikacji
 
-Plik `data/last_check.json` przechowuje stan między restartami:
+### Baza danych (v0.3+, domyślnie włączona)
+
+Stan monitoringu przechowywany jest w SQLite (`data/invoices.db`):
+- **`monitor_state`** — per NIP + subject_type: timestamp ostatniego sprawdzenia, licznik faktur, error tracking
+- **`invoices`** — metadane wszystkich faktur z deduplikacją po `ksef_number`
+- **`notification_log`** — historia wysłanych powiadomień z deduplikacją
+
+Przy pierwszym uruchomieniu z włączoną bazą dane z `last_check.json` są automatycznie migrowane.
+
+Administracja bazą: `python db_admin.py <komenda>` — szczegóły: [docs/DATABASE.md](docs/DATABASE.md)
+
+### Legacy: last_check.json (fallback)
+
+Plik `data/last_check.json` jest nadal zapisywany dla kompatybilności wstecznej:
 
 ```json
 {
@@ -752,8 +864,9 @@ Plik `data/last_check.json` przechowuje stan między restartami:
 ```
 
 - `last_check` — ISO 8601 timestamp ostatniego sprawdzenia. Kolejne zapytanie zacznie zakres od tej daty.
-- `seen_invoices` — hashes MD5 (`ksefNumber_invoiceNumber`) faktur dla których powiadomienie wysłano. Max 1000 najnowszych pozycji.
+- `seen_invoices` — hashes SHA-256 (`ksefNumber`) faktur dla których powiadomienie wysłano. Max 1000 najnowszych pozycji.
 - Przy pierwszym uruchomieniu (brak pliku lub brak `last_check`) zakres zapytania to ostatnie 24 godziny.
+- Gdy baza danych jest włączona (`database.enabled: true`), `monitor_state` ma priorytet nad JSON.
 
 ---
 
@@ -771,9 +884,10 @@ Plik `data/last_check.json` przechowuje stan między restartami:
 | `/v2/auth/sessions/current` | DELETE | Revoke sesji |
 | `/v2/invoices/query/metadata` | POST | Zapytanie o metadata faktur |
 | `/v2/invoices/ksef/{ksefNumber}` | GET | Pobranie XML faktury |
-| `/v2/invoices/upo/ksef/{ksefReferenceNumber}` | GET | Pobranie UPO (Urzędowe Poświadczenie Odbioru) |
 
 Dokumentacja API: https://api.ksef.mf.gov.pl/docs/v2/
+
+> **Ograniczenia API:** Rate limiting (10/s, 30/min, 120/h), max 90 dni zakres dat, truncation przy 10k rekordów, brak batch download. Pełna lista: [docs/KSEF_API_LIMITATIONS.md](docs/KSEF_API_LIMITATIONS.md)
 
 ---
 
@@ -783,40 +897,40 @@ Moduł do pobierania XML faktur z KSeF i konwersji do PDF według oficjalnego wz
 
 **Włączenie** — ustaw w `config.json`:
 ```json
-{"storage": {"save_pdf": true, "save_xml": true}}
+{"storage": {"save_pdf": true, "save_xml": true, "folder_structure": "{year}/{month}"}}
 ```
 
 ### Funkcjonalność
 
 - ✅ Pobieranie XML faktury po numerze KSeF (endpoint `GET /v2/invoices/ksef/{ksefNumber}`)
-- ✅ Parser XML faktury FA_VAT (wszystkie główne sekcje)
-- ✅ Generator PDF według oficjalnego wzoru KSeF (XSD/XSL)
+- ✅ Parser XML faktury FA(3) (pełna zgodność ze schematem v1-0E)
+- ✅ Dwa silniki PDF: xhtml2pdf (szablon HTML/CSS, primary) + ReportLab (fallback)
+- ✅ Konfigurowalny szablon PDF (HTML/CSS, Jinja2) z możliwością podmiany
 - ✅ QR Code Type I (weryfikacja faktury)
 - ✅ Polskie znaki diakrytyczne (DejaVu Sans / Arial)
 - ✅ Stopka z datą generowania i strefą czasową
 - ✅ Automatyczny zapis PDF/XML dla nowych faktur (sekcja `storage`)
+- ✅ Konfigurowalna struktura folderów (`folder_structure` z placeholderami)
+- ✅ Konfigurowalne nazwy plików (`file_name_pattern` z 7 placeholderami)
 - ✅ Skrypt testowy do manualnego generowania PDF
 
 ### Użycie - Skrypt testowy
 
 ```bash
 # Podstawowe użycie - pobierz XML i wygeneruj PDF
-python test_invoice_pdf.py <numer-ksef>
+python examples/test_invoice_pdf.py <numer-ksef>
 
 # Przykład
-python test_invoice_pdf.py 1234567890-20240101-ABCDEF123456-AB
+python examples/test_invoice_pdf.py 1234567890-20240101-ABCDEF123456-AB
 
 # Z własną nazwą pliku
-python test_invoice_pdf.py 1234567890-20240101-ABCDEF123456-AB -o moja_faktura.pdf
-
-# Z własnym plikiem konfiguracyjnym
-python test_invoice_pdf.py 1234567890-20240101-ABCDEF123456-AB -c /path/to/config.json
+python examples/test_invoice_pdf.py 1234567890-20240101-ABCDEF123456-AB -o moja_faktura.pdf
 
 # Tylko XML (bez PDF)
-python test_invoice_pdf.py 1234567890-20240101-ABCDEF123456-AB --xml-only
+python examples/test_invoice_pdf.py 1234567890-20240101-ABCDEF123456-AB --xml-only
 
 # Debug mode
-python test_invoice_pdf.py 1234567890-20240101-ABCDEF123456-AB --debug
+python examples/test_invoice_pdf.py 1234567890-20240101-ABCDEF123456-AB --debug
 ```
 
 ### Użycie programatyczne
@@ -859,8 +973,10 @@ Generator tworzy PDF według wzoru KSeF zawierający:
 | Plik | Opis |
 |------|------|
 | `app/ksef_client.py` | Metoda `get_invoice_xml()` - pobieranie XML |
-| `app/invoice_pdf_generator.py` | Parser XML + generator PDF |
-| `test_invoice_pdf.py` | Skrypt testowy CLI |
+| `app/invoice_pdf_generator.py` | Parser XML FA(3) + ReportLab PDF generator (fallback) |
+| `app/invoice_pdf_template.py` | HTML/CSS template renderer (xhtml2pdf, primary) |
+| `app/templates/invoice_pdf.html.j2` | Szablon HTML/CSS faktury |
+| `examples/test_invoice_pdf.py` | Skrypt testowy CLI |
 
 ### Walidacja numeru KSeF
 
@@ -871,7 +987,7 @@ Przykład: `1234567890-20240101-ABCDEF123456-AB`
 - `NIP` - 10 cyfr
 - `YYYYMMDD` - data (8 cyfr)
 - `RANDOM` - identyfikator alfanumeryczny
-- `XX` - sufiks (2 znaki alfanumeryczne)
+- `XX` - sufiks (2 wielkie litery)
 
 ### Troubleshooting
 
@@ -893,17 +1009,15 @@ pip install reportlab
 **Invalid KSeF number format**
 ```bash
 # Poprawny format
-python test_invoice_pdf.py 1234567890-20240101-ABCDEF123456-AB
+python examples/test_invoice_pdf.py 1234567890-20240101-ABCDEF123456-AB
 
 # Niepoprawne
-python test_invoice_pdf.py 123456789020240101ABCDEF123456AB  # brak myślników
-python test_invoice_pdf.py 12345-20240101-ABCDEF123456-AB     # NIP za krótki
+python examples/test_invoice_pdf.py 123456789020240101ABCDEF123456AB  # brak myślników
+python examples/test_invoice_pdf.py 12345-20240101-ABCDEF123456-AB     # NIP za krótki
 ```
 
 ### Przyszłe funkcje (planowane)
 
-Funkcje które będą dodane w przyszłości:
-- 🔜 Katalog archiwum PDF z datową strukturą (np. `invoices/2024/01/`)
 - 🔜 Załączanie PDF do powiadomień email
 - 🔜 Batch download - pobieranie wielu faktur naraz
 - 🔜 CLI interaktywny do przeglądania i pobierania faktur

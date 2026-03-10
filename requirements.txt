@@ -4,6 +4,17 @@ cryptography==46.0.5
 prometheus-client==0.24.1
 pytz==2026.1.post1
 
+# Notification templates
+Jinja2>=3.1.6,<4.0.0
+
+# Security
+defusedxml>=0.7.1,<1.0.0
+
 # PDF generation
 reportlab==4.4.10
 qrcode==8.2
+xhtml2pdf>=0.2.16,<1.0.0
+
+# Database
+SQLAlchemy>=2.0.0,<3.0.0
+alembic>=1.13.0,<2.0.0

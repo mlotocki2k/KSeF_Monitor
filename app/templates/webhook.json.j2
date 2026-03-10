@@ -1,0 +1,25 @@
+{
+    "title": "{{ title | json_escape }}",
+    "message": "{% if subject_type == 'Subject1' %}Do: {{ buyer_name | json_escape }} - NIP {{ buyer_nip }}{% elif subject_type == 'Subject2' %}Od: {{ seller_name | json_escape }} - NIP {{ seller_nip }}{% else %}Od: {{ seller_name | json_escape }} - NIP {{ seller_nip }}\nDo: {{ buyer_name | json_escape }} - NIP {{ buyer_nip }}{% endif %}\nNr Faktury: {{ invoice_number | json_escape }}\nData: {{ issue_date | date }}\nBrutto: {{ gross_amount | money_raw }} {{ currency }}\nNumer KSeF: {{ ksef_number | json_escape }}",
+    "priority": {{ priority }},
+    "priority_name": "{{ priority_name }}",
+    "timestamp": "{{ timestamp }}",
+    "source": "ksef-monitor",
+    "invoice": {
+        "ksef_number": "{{ ksef_number | json_escape }}",
+        "invoice_number": "{{ invoice_number | json_escape }}",
+        "issue_date": "{{ issue_date }}",
+        "gross_amount": {{ gross_amount | default(0, true) }},
+        "net_amount": {{ net_amount | default(0, true) }},
+        "vat_amount": {{ vat_amount | default(0, true) }},
+        "currency": "{{ currency }}",
+        "seller_name": "{{ seller_name | json_escape }}",
+        "seller_nip": "{{ seller_nip }}",
+        "buyer_name": "{{ buyer_name | json_escape }}",
+        "buyer_nip": "{{ buyer_nip }}",
+        "subject_type": "{{ subject_type }}"
+    }
+    {% if url %}
+    ,"url": "{{ url | json_escape }}"
+    {% endif %}
+}

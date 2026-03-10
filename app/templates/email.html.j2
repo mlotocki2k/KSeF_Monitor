@@ -1,0 +1,58 @@
+{% set priority_badges = {
+    -2: ("Lowest", "#808080"),
+    -1: ("Low", "#808080"),
+     0: ("Normal", "#36a64f"),
+     1: ("High", "#ff9900"),
+     2: ("Emergency", "#e74c3c"),
+} %}
+{% set badge_text, badge_color = priority_badges.get(priority, ("Normal", "#36a64f")) %}
+<html>
+<head>
+    <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+        .header { background-color: #f4f4f4; padding: 15px; border-radius: 5px; margin-bottom: 20px; }
+        .priority { background-color: {{ badge_color }}; color: white; padding: 5px 10px; border-radius: 3px; display: inline-block; margin-bottom: 10px; }
+        .content { background-color: #ffffff; padding: 20px; border: 1px solid #ddd; border-radius: 5px; }
+        .field-label { color: #666; font-weight: bold; }
+        .amount { font-size: 1.1em; font-weight: bold; }
+        .footer { margin-top: 20px; padding-top: 20px; border-top: 1px solid #ddd; color: #666; font-size: 12px; }
+        .button { background-color: #007bff; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block; margin-top: 10px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="priority">{{ priority_emoji }} {{ badge_text }}</div>
+            <h2 style="margin: 10px 0 0 0;">{{ title }}</h2>
+        </div>
+        <div class="content">
+            {% if subject_type == "Subject1" %}
+            <p><span class="field-label">Do:</span> {{ buyer_name }} - NIP {{ buyer_nip }}</p>
+            {% elif subject_type == "Subject2" %}
+            <p><span class="field-label">Od:</span> {{ seller_name }} - NIP {{ seller_nip }}</p>
+            {% else %}
+            <p><span class="field-label">Od:</span> {{ seller_name }} - NIP {{ seller_nip }}</p>
+            <p><span class="field-label">Do:</span> {{ buyer_name }} - NIP {{ buyer_nip }}</p>
+            {% endif %}
+            <p><span class="field-label">Nr Faktury:</span> {{ invoice_number }}</p>
+            <p><span class="field-label">Data:</span> {{ issue_date | date }}</p>
+            <p><span class="field-label">Brutto:</span> <span class="amount">{{ gross_amount | money_raw }} {{ currency }}</span></p>
+            {% if net_amount %}
+            <p><span class="field-label">Netto:</span> {{ net_amount | money_raw }} {{ currency }}</p>
+            {% endif %}
+            {% if vat_amount %}
+            <p><span class="field-label">VAT:</span> {{ vat_amount | money_raw }} {{ currency }}</p>
+            {% endif %}
+            <p><span class="field-label">Numer KSeF:</span> {{ ksef_number }}</p>
+            {% if url %}
+            <a href="{{ url }}" class="button">View in KSeF</a>
+            {% endif %}
+        </div>
+        <div class="footer">
+            <p>KSeF Invoice Monitor</p>
+            <p>This is an automated notification. Please do not reply to this email.</p>
+        </div>
+    </div>
+</body>
+</html>

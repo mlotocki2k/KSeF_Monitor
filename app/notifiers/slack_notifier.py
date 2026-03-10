@@ -3,9 +3,10 @@ Slack Notification Service
 Sends notifications via Slack Incoming Webhooks with Block Kit formatting
 """
 
+import json
 import logging
 import requests
-from typing import Optional
+from typing import Any, Dict, Optional
 
 from .base_notifier import BaseNotifier
 
@@ -31,6 +32,7 @@ class SlackNotifier(BaseNotifier):
         Args:
             config: ConfigManager instance or dict with notifications configuration
         """
+        super().__init__()
         notifications_config = config.get("notifications") or {}
         slack_config = notifications_config.get("slack") or {}
 
@@ -129,11 +131,12 @@ class SlackNotifier(BaseNotifier):
                 ]
             }
 
-            # Send to Slack
-            response = requests.post(
+            # Send to Slack (redirects disabled for SSRF protection)
+            response = self.session.post(
                 self.webhook_url,
                 json=payload,
-                timeout=self.timeout
+                timeout=self.timeout,
+                allow_redirects=False
             )
             response.raise_for_status()
 
@@ -143,7 +146,36 @@ class SlackNotifier(BaseNotifier):
         except requests.exceptions.RequestException as e:
             logger.error(f"Failed to send Slack notification: {e}")
             if hasattr(e, 'response') and e.response is not None:
-                logger.error(f"Slack API response: {e.response.text}")
+                logger.error(f"Slack API response status: {e.response.status_code}")
+            return False
+        except Exception as e:
+            logger.error(f"Unexpected error sending Slack notification: {e}")
+            return False
+
+    def _send_rendered(self, rendered: str, context: Dict[str, Any]) -> bool:
+        """Send Slack notification from rendered JSON template."""
+        if not self.is_configured:
+            logger.error("Slack not configured - notification not sent")
+            return False
+
+        try:
+            payload = json.loads(rendered)
+            payload["username"] = self.username
+            payload["icon_emoji"] = self.icon_emoji
+
+            response = self.session.post(self.webhook_url, json=payload, timeout=self.timeout, allow_redirects=False)
+            response.raise_for_status()
+
+            logger.info(f"Slack notification sent: {context.get('title')}")
+            return True
+
+        except json.JSONDecodeError as e:
+            logger.error(f"Invalid JSON from Slack template: {e}")
+            return False
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Failed to send Slack notification: {e}")
+            if hasattr(e, 'response') and e.response is not None:
+                logger.error(f"Slack API response status: {e.response.status_code}")
             return False
         except Exception as e:
             logger.error(f"Unexpected error sending Slack notification: {e}")

@@ -9,6 +9,8 @@
     "channels": ["pushover"],
     "message_priority": 0,
     "test_notification": true,
+    "templates_dir": "/data/templates",
+    "templates_description": "Optional: path to custom Jinja2 template directory. Templates found here override built-in defaults. Files: email.html.j2, slack.json.j2, discord.json.j2, pushover.txt.j2, webhook.json.j2",
     "description": "Multi-channel notification system. Enable one or more channels by listing them in 'channels' array. Secrets can be provided via config, environment variables, or Docker secrets.",
     "pushover": {
       "user_key": "your-pushover-user-key",
@@ -72,11 +74,21 @@
     "save_xml": false,
     "save_pdf": false,
     "output_dir": "/data/invoices",
-    "description": "File storage settings. save_xml: save invoice XML files. save_pdf: generate and save PDF files. output_dir: directory for saved files (auto-created if missing). Both default to false."
+    "folder_structure": "",
+    "file_name_pattern": "{type}_{date}_{invoice_number}",
+    "file_exists_strategy": "skip",
+    "pdf_templates_dir": "/data/pdf_templates",
+    "description": "File storage settings. save_xml/save_pdf: enable saving invoice XML/PDF files (default: false). output_dir: base directory for saved files (auto-created). folder_structure: subfolder pattern using placeholders {year}, {month}, {day}, {type}. Examples: '{year}/{month}' -> 2026/02/, '{type}/{year}/{month}/{day}' -> sprzedaz/2026/02/27/. Empty string = flat directory (default). file_name_pattern: file naming pattern using placeholders {type} (sprz/zak/upo), {date} (YYYYMMDD), {invoice_number}, {ksef} (full KSeF number), {ksef_short} (last 6 chars), {seller_nip}, {buyer_nip}. Default: '{type}_{date}_{invoice_number}'. file_exists_strategy: what to do when file already exists - 'skip' (default, log and skip), 'rename' (add _1, _2 suffix), 'overwrite' (replace existing). pdf_templates_dir: optional custom HTML/CSS template directory for PDF generation."
   },
   "prometheus": {
     "enabled": true,
     "port": 8000,
-    "description": "Prometheus metrics endpoint. Exposes /metrics on specified port. Metrics: ksef_last_check_timestamp (last API check), ksef_new_invoices_total (new invoices by subject_type), ksef_monitor_up (health status)"
+    "bind_address": "0.0.0.0",
+    "description": "Prometheus metrics endpoint. Exposes /metrics on specified port. bind_address: '0.0.0.0' for Docker (default), '127.0.0.1' for bare metal. Metrics: ksef_last_check_timestamp, ksef_new_invoices_total, ksef_monitor_up"
+  },
+  "database": {
+    "enabled": true,
+    "path": "/data/invoices.db",
+    "description": "SQLite database for invoice metadata persistence. path: location of DB file (auto-created). Set enabled: false to disable DB and use JSON state file only."
   }
 }

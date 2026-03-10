@@ -25,8 +25,9 @@ class KSeFClient:
     API_VERSION = "v2"
     VALID_DATE_TYPES = {"Issue", "Invoicing", "PermanentStorage"}
     # Rate limit retry settings
-    MAX_429_RETRIES = 3
+    MAX_429_RETRIES = 5
     DEFAULT_RETRY_AFTER = 30  # seconds
+    MAX_RETRY_AFTER = 1800  # cap: 30 minutes
 
     # Pagination settings for metadata queries
     PAGINATION_PAGE_SIZE = 250  # max allowed by KSeF API spec (min=10, max=250)
@@ -62,7 +63,9 @@ class KSeFClient:
         self.access_token = None
         self.refresh_token = None
         self._ksef_public_key = None
+        self.on_auth_failure = None  # Optional callback: on_auth_failure(status_code: int)
         self.session = requests.Session()
+        self.session.verify = True  # Explicit TLS certificate verification
 
         date_type = config.get("monitoring", "date_type")
         if date_type not in self.VALID_DATE_TYPES:
@@ -123,7 +126,7 @@ class KSeFClient:
                         retry_after = max(int(delta), 1)
                     except (ValueError, TypeError):
                         retry_after = self.DEFAULT_RETRY_AFTER
-            retry_after = min(retry_after, 120)  # cap at 2 minutes
+            retry_after = min(retry_after, self.MAX_RETRY_AFTER)
             logger.warning("Rate limited (429). Waiting %ds before retry %d/%d. %s",
                            retry_after, attempt + 1, self.MAX_429_RETRIES, details)
             time.sleep(retry_after)
@@ -197,6 +200,8 @@ class KSeFClient:
         if self.authenticate():
             return True
         logger.error("Re-authentication failed")
+        if self.on_auth_failure:
+            self.on_auth_failure(401)
         return False
 
     def authenticate(self) -> bool:
@@ -246,6 +251,8 @@ class KSeFClient:
 
         except Exception as e:
             logger.error(f"Authentication failed: {e}")
+            if self.on_auth_failure:
+                self.on_auth_failure(0)
             return False
     
     def _get_challenge(self) -> Optional[Dict]:

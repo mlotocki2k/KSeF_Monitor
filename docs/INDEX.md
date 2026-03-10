@@ -1,6 +1,6 @@
 # KSeF Invoice Monitor - Documentation Index
 
-**Version:** v0.2
+**Version:** v0.3
 **Based on:** KSeF API v2.2.0
 **License:** MIT
 
@@ -35,6 +35,7 @@ chmod +x setup.sh && ./setup.sh
 | Document | Description | Read When |
 |----------|-------------|-----------|
 | **[NOTIFICATIONS.md](NOTIFICATIONS.md)** | All 5 notification channels guide | Configuring notifications |
+| **[TEMPLATES.md](TEMPLATES.md)** | Jinja2 notification templates (v0.3) | Customizing notification format |
 
 ### 🔐 Security
 
@@ -56,11 +57,19 @@ chmod +x setup.sh && ./setup.sh
 | **[CODE_OF_CONDUCT.md](../CODE_OF_CONDUCT.md)** | Community guidelines | Before contributing |
 | **[Issues](https://github.com/mlotocki2k/KSeF_Monitor/issues)** | Report bugs or request features | Found an issue |
 
+### 💾 Database
+
+| Document | Description | Read When |
+|----------|-------------|-----------|
+| **[DATABASE.md](DATABASE.md)** | DB usage, config, db_admin.py CLI (v0.3) | Managing invoice database |
+| **[DATABASE_DESIGN.md](DATABASE_DESIGN.md)** | Full multi-phase schema design | Understanding DB architecture |
+
 ### 🏗️ Architecture & Development
 
 | Document | Description | Read When |
 |----------|-------------|-----------|
 | **[PROJECT_STRUCTURE.md](PROJECT_STRUCTURE.md)** | Architecture details | Understanding code organization |
+| **[KSEF_API_LIMITATIONS.md](KSEF_API_LIMITATIONS.md)** | KSeF API limits & constraints | Understanding API boundaries |
 | **[IDE_TROUBLESHOOTING.md](IDE_TROUBLESHOOTING.md)** | Fix IDE import errors | Seeing import warnings in IDE |
 
 **For Developers:**
@@ -73,13 +82,17 @@ chmod +x setup.sh && ./setup.sh
 | Document | Description | Read When |
 |----------|-------------|-----------|
 | **[PDF_GENERATION.md](PDF_GENERATION.md)** | PDF generation from KSeF invoices | Configuring file storage |
+| **[PDF_TEMPLATES.md](PDF_TEMPLATES.md)** | Custom invoice PDF templates (v0.3) | Customizing PDF appearance |
 
 **Features:**
 - ✅ Fetch invoice XML by KSeF number
-- ✅ Parse FA_VAT format
+- ✅ Parse FA(3) format (full schema compliance)
 - ✅ Generate PDF with QR code, Polish characters
+- ✅ Two rendering engines: xhtml2pdf (primary) + ReportLab (fallback)
 - ✅ Integrated with main app (config: `storage.save_pdf`)
-- ✅ Configurable output directory
+- ✅ Configurable output directory with folder structure patterns (v0.3)
+- ✅ Safe file writing: skip/rename/overwrite strategy (v0.3)
+- ✅ Custom HTML/CSS templates for PDF appearance (v0.3)
 
 ### 🧪 Testing & Quality
 
@@ -125,10 +138,15 @@ chmod +x setup.sh && ./setup.sh
 | **Start Monitor** | `docker-compose up -d` | [QUICKSTART.md](QUICKSTART.md) |
 | **View Logs** | `docker-compose logs -f` | [README.md](README.md) |
 | **Stop Monitor** | `docker-compose down` | [README.md](README.md) |
-| **Generate Invoice PDF** | `python test_invoice_pdf.py <ksef-number>` | [PDF_GENERATION.md](PDF_GENERATION.md) |
+| **Trigger Check** | `docker kill -s SIGUSR1 ksef-invoice-monitor` | [README.md](README.md) |
+| **Generate Invoice PDF** | `python examples/test_invoice_pdf.py <ksef-number>` | [PDF_GENERATION.md](PDF_GENERATION.md) |
 | **Test Setup** | See [TESTING.md](TESTING.md) | [TESTING.md](TESTING.md) |
 | **Fix IDE Errors** | See [IDE_TROUBLESHOOTING.md](IDE_TROUBLESHOOTING.md) | [IDE_TROUBLESHOOTING.md](IDE_TROUBLESHOOTING.md) |
 | **Secure Secrets** | See [SECURITY.md](SECURITY.md) | [SECURITY.md](SECURITY.md) |
+| **DB Status** | `python db_admin.py status` | [DATABASE.md](DATABASE.md) |
+| **List Invoices** | `python db_admin.py invoices` | [DATABASE.md](DATABASE.md) |
+| **DB Statistics** | `python db_admin.py stats` | [DATABASE.md](DATABASE.md) |
+| **Export Invoices** | `python db_admin.py export-invoices -o file.csv` | [DATABASE.md](DATABASE.md) |
 
 ### File Structure
 
@@ -136,53 +154,53 @@ chmod +x setup.sh && ./setup.sh
 KSeF_Monitor/
 ├── 📄 Documentation
 │   ├── README.md                    # Main documentation
-│   └── docs/
-│       ├── INDEX.md                 # This file
-│       ├── QUICKSTART.md            # Quick setup guide
-│       ├── KSEF_TOKEN.md            # KSeF token creation guide
-│       ├── NOTIFICATIONS.md         # Notification channels guide
-│       ├── SECURITY.md              # Security practices
-│       ├── TESTING.md               # Test guide
-│       ├── PDF_GENERATION.md        # PDF generation guide
-│       ├── ROADMAP.md               # Project roadmap
-│       ├── PROJECT_STRUCTURE.md     # Architecture
-│       └── IDE_TROUBLESHOOTING.md   # IDE fixes
+│   ├── docs/QUICKSTART.md          # Quick setup guide
+│   ├── docs/KSEF_TOKEN.md          # KSeF token creation guide
+│   ├── docs/NOTIFICATIONS.md       # Notification channels guide
+│   ├── docs/TEMPLATES.md           # Jinja2 templates guide
+│   ├── docs/SECURITY.md            # Security practices
+│   ├── docs/PDF_GENERATION.md      # PDF generation guide
+│   ├── docs/PDF_TEMPLATES.md       # Custom PDF templates guide
+│   ├── docs/PROJECT_STRUCTURE.md   # Architecture
+│   ├── docs/ROADMAP.md             # Project roadmap
+│   ├── docs/TESTING.md             # Test guide
+│   ├── docs/IDE_TROUBLESHOOTING.md # IDE fixes
+│   └── docs/INDEX.md               # This file
 │
 ├── 🚀 Application
 │   ├── main.py                     # Entry point
-│   ├── test_invoice_pdf.py         # PDF test script (CLI)
 │   └── app/                        # Application package
-│       ├── __init__.py
 │       ├── config_manager.py       # Configuration
 │       ├── secrets_manager.py      # Secrets handling
-│       ├── ksef_client.py          # KSeF API v2.1/v2.2 client
-│       ├── invoice_monitor.py      # Main monitoring loop
-│       ├── invoice_pdf_generator.py # XML parser + PDF generator
-│       ├── logging_config.py       # Logging with timezone
+│       ├── ksef_client.py          # KSeF API v2.2.0 client
+│       ├── invoice_monitor.py      # Main monitoring logic
+│       ├── invoice_pdf_generator.py # XML parser + ReportLab PDF (fallback)
+│       ├── invoice_pdf_template.py  # HTML/CSS → PDF via xhtml2pdf (primary)
+│       ├── template_renderer.py    # Jinja2 template engine
 │       ├── prometheus_metrics.py   # Prometheus metrics
 │       ├── scheduler.py            # Flexible scheduling (5 modes)
-│       └── notifiers/              # Multi-channel notifications
-│           ├── __init__.py
-│           ├── base_notifier.py
-│           ├── notification_manager.py
-│           ├── pushover_notifier.py
-│           ├── discord_notifier.py
-│           ├── slack_notifier.py
-│           ├── email_notifier.py
-│           └── webhook_notifier.py
+│       ├── database.py             # SQLite + SQLAlchemy 2.0 ORM (v0.3)
+│       ├── logging_config.py       # Logging with timezone
+│       ├── templates/              # Built-in Jinja2 templates (6 files)
+│       └── notifiers/              # Multi-channel notifications (5 channels)
 │
 ├── ⚙️ Configuration & Examples
 │   ├── examples/config.example.json # Config template (with secrets)
 │   ├── examples/config.secure.json  # Config template (without secrets)
 │   ├── examples/.env.example        # Environment template
+│   ├── examples/test_invoice_pdf.py # CLI test script for PDF
 │   ├── config.json                  # Your config (git-ignored)
 │   └── .env                         # Your secrets (git-ignored)
 │
 ├── 📋 Specs
-│   └── spec/openapi.json           # KSeF API v2.2.0 OpenAPI spec
+│   ├── spec/openapi.json           # KSeF API v2.2.0 OpenAPI spec (production)
+│   ├── spec/openapi-test.json      # KSeF API OpenAPI spec (test)
+│   ├── spec/openapi-demo.json      # KSeF API OpenAPI spec (demo)
+│   └── spec/schemat_FA(3)_v1-0E.xsd # FA(3) invoice XSD schema
 │
 ├── 🐳 Docker
-│   ├── Dockerfile                  # Image definition (OCI labels)
+│   ├── Dockerfile                  # Image definition (OCI labels, healthcheck)
+│   ├── entrypoint.sh               # Docker entrypoint (gosu, ownership fix)
 │   ├── docker-compose.yml          # Standard compose
 │   ├── docker-compose.env.yml      # With env vars
 │   ├── docker-compose.secrets.yml  # With Docker secrets
@@ -197,9 +215,19 @@ KSeF_Monitor/
 │       ├── PULL_REQUEST_TEMPLATE.md # PR template
 │       └── workflows/              # GitHub Actions (5 workflows)
 │
+├── 🔧 Scripts & Tools
+│   ├── setup.sh                    # Setup wizard
+│   ├── db_admin.py                 # Database administration CLI
+│   └── .gitignore                  # Git exclusions
+│
+├── 💾 Database Migrations
+│   ├── alembic.ini                 # Alembic configuration
+│   └── alembic/                    # Migration scripts
+│
 └── 💾 Data (created at runtime)
     └── data/
-        └── last_check.json         # Application state
+        ├── invoices.db             # SQLite database (v0.3)
+        └── last_check.json         # Legacy state (auto-migrated to DB)
 ```
 
 ---
@@ -286,11 +314,13 @@ Before running in production:
 
 ## 📊 Version Information
 
-**Current Version:** 2.0.0
+**Current Version:** v0.3
 
 **Features:**
-- ✅ Full KSeF API v2.0 support
+- ✅ Full KSeF API v2.2.0 support
 - ✅ Multi-channel notifications (5 channels)
+- ✅ Customizable Jinja2 notification templates (v0.3)
+- ✅ Polish monetary formatting (v0.3)
 - ✅ Prometheus metrics endpoint
 - ✅ Flexible scheduling system
 - ✅ Token-based authentication
@@ -301,7 +331,10 @@ Before running in production:
 - ✅ Docker deployment
 - ✅ Production ready
 - ✅ PDF invoice generation (with QR code, Polish characters)
-- ✅ Configurable XML/PDF file storage
+- ✅ Configurable XML/PDF file storage with folder structure patterns
+- ✅ SQLite database for invoice metadata + notification log (v0.3)
+- ✅ Database admin CLI tool: `db_admin.py` (v0.3)
+- ✅ Custom HTML/CSS invoice PDF templates (v0.3)
 
 **Requirements:**
 - Docker & Docker Compose

@@ -13,53 +13,67 @@
 ## v0.3 (Fundament: templating + DB) — w trakcie
 **Cel:** ustandaryzować komunikację i zacząć trwale trzymać dane o fakturach
 
-### 1) Powiadomienia oparte o template
-- [ ] System szablonów Jinja2 z osobnym szablonem per kanał (5 szablonów)
-- [ ] `TemplateRenderer` z custom filtrami (`money`, `money_raw`, `date`, `json_escape`)
-- [ ] Możliwość podmiany szablonów przez użytkownika (`templates_dir` w config)
-- [ ] Fallback na wbudowane domyślne szablony + plain text przy błędach
-- [ ] Polskie formatowanie kwot (`,` separator dziesiętny, spacja tysięcy, kod waluty)
-- [ ] Dokumentacja: [TEMPLATES.md](TEMPLATES.md) — zmienne, filtry, przykłady modyfikacji
+### 1) Powiadomienia oparte o template ✅
+- [x] System szablonów Jinja2 z osobnym szablonem per kanał (5 szablonów)
+- [x] `TemplateRenderer` z custom filtrami (`money`, `money_raw`, `date`, `json_escape`)
+- [x] Możliwość podmiany szablonów przez użytkownika (`templates_dir` w config)
+- [x] Fallback na wbudowane domyślne szablony + plain text przy błędach
+- [x] Polskie formatowanie kwot (`,` separator dziesiętny, spacja tysięcy, kod waluty)
+- [x] Dokumentacja: [TEMPLATES.md](TEMPLATES.md) — zmienne, filtry, przykłady modyfikacji
 
-### 2) Template generowania obrazu faktury
-- [ ] HTML/CSS template (Jinja2) → render do PDF przez xhtml2pdf
-- [ ] `InvoicePDFTemplateRenderer` z custom filtrami (`fmt_amt`, `vat_label`, `payment_method`)
-- [ ] Możliwość podmiany szablonu przez użytkownika (`pdf_templates_dir` w config storage)
-- [ ] Automatyczny fallback na ReportLab generator przy błędach lub braku xhtml2pdf
-- [ ] Dynamiczne kolumny tabeli pozycji (warunkowe wyświetlanie)
-- [ ] QR Code Type I jako base64 data URI w HTML
-- [ ] Dokumentacja: [PDF_TEMPLATES.md](PDF_TEMPLATES.md) — zmienne, filtry, CSS customizacja
+### 2) Template generowania obrazu faktury ✅
+- [x] HTML/CSS template (Jinja2) → render do PDF przez xhtml2pdf
+- [x] `InvoicePDFTemplateRenderer` z custom filtrami (`fmt_amt`, `vat_label`, `payment_method`)
+- [x] Możliwość podmiany szablonu przez użytkownika (`pdf_templates_dir` w config storage)
+- [x] Automatyczny fallback na ReportLab generator przy błędach lub braku xhtml2pdf
+- [x] Dynamiczne kolumny tabeli pozycji (warunkowe wyświetlanie)
+- [x] QR Code Type I jako base64 data URI w HTML
+- [x] Dokumentacja: [PDF_TEMPLATES.md](PDF_TEMPLATES.md) — zmienne, filtry, CSS customizacja
 
-### 3) Formatowanie/zapisywanie (struktura folderów)
-- [ ] Konfigurowalna struktura folderów (`folder_structure` w config storage)
-- [ ] Placeholdery: `{year}`, `{month}`, `{day}`, `{type}` (sprzedaz/zakup)
-- [ ] Walidacja wzorca w config_manager (tylko dozwolone placeholdery)
-- [ ] Path traversal guard na wynikowej ścieżce
-- [ ] Backward compatible: pusty string = flat directory (zachowanie domyślne)
+### 3) Formatowanie/zapisywanie (struktura folderów + nazwy plików) ✅
+- [x] Konfigurowalna struktura folderów (`folder_structure` w config storage)
+- [x] Placeholdery folderów: `{year}`, `{month}`, `{day}`, `{type}` (sprzedaz/zakup)
+- [x] Konfigurowalne nazwy plików (`file_name_pattern` w config storage)
+- [x] Placeholdery nazw: `{type}` (sprz/zak/upo), `{date}`, `{invoice_number}`, `{ksef}`, `{ksef_short}`, `{seller_nip}`, `{buyer_nip}`
+- [x] Walidacja wzorców w config_manager (tylko dozwolone placeholdery)
+- [x] Path traversal guard na wynikowej ścieżce
+- [x] Backward compatible: domyślny pattern `{type}_{date}_{invoice_number}`
 
-### 4) Safecheck na overwrite plików
-- [ ] Sprawdzanie czy plik (XML/PDF/UPO) już istnieje przed zapisem
-- [ ] Strategia: skip / rename / overwrite (konfiguracja)
+### 4) Safecheck na overwrite plików ✅
+- [x] Sprawdzanie czy plik (XML/PDF/UPO) już istnieje przed zapisem
+- [x] Strategia: skip / rename / overwrite (`file_exists_strategy` w config storage)
 
-### 5) Przeniesienie informacji o fakturach do bazy
-- model danych rozdzielony "per subject, per NIP"
-- indeksy pod najczęstsze zapytania (np. subject + nip + timestamp)
-- migracja: zapis przy pobraniu/detekcji faktury
+### 5) Przeniesienie informacji o fakturach do bazy ✅
+- [x] SQLite + WAL mode + SQLAlchemy 2.0 ORM + Alembic migracje
+- [x] Tabele: `invoices`, `monitor_state`, `notification_log` + indeksy
+- [x] Model danych rozdzielony "per subject, per NIP" (UNIQUE na `ksef_number`)
+- [x] Zapis metadanych przy detekcji faktury + ścieżki artefaktów
+- [x] Odczyt `last_check` z DB (monitor_state) z fallbackiem na JSON
+- [x] Automatyczna migracja `last_check.json` → DB (rename na `.json.migrated`)
+- [x] Notification log — dedup, diagnostyka, audyt powiadomień per kanał
+- [x] Error tracking w `monitor_state` (consecutive_errors, last_error)
+- [x] Konfiguracja: sekcja `database` w config (enabled, path)
+- [x] Design: [DATABASE_DESIGN.md](DATABASE_DESIGN.md)
+
+### 6) Dokumentacja ograniczeń API ✅
+- [x] Kompletna dokumentacja limitów KSeF API: [KSEF_API_LIMITATIONS.md](KSEF_API_LIMITATIONS.md)
+- [x] Plan globalnego rate limitera: [RATE_LIMITING_DESIGN.md](RATE_LIMITING_DESIGN.md)
 
 **Zależności:** v0.2
 **DoD:** powiadomienia i obraz faktury generują się wyłącznie z template; faktury lądują w DB i da się je filtrować per subject/NIP.
 
 ---
 
-## Infrastruktura i jakość (częściowo zrobione)
+## Infrastruktura i jakość ✅ (zrobione w ramach v0.3)
 Poprawki niezwiązane z konkretnymi feature'ami, ale krytyczne dla stabilności:
 
 ### Bezpieczeństwo
-- [ ] Re-audit: Docker hardening (M7, L1, N1-N5)
-- [ ] SHA-256 deduplication (zamiast MD5) w `seen_invoices`
-- [ ] Atomic state write (`last_check.json` — tmp + rename + fsync)
-- [ ] Path traversal guards w `_resolve_output_dir()` i `_save_invoice_artifacts()`
-- [ ] Input sanitization (`_sanitize_field()`) w template context
+- [x] Security audit: 22 findings (C1-C2, H1-H5, M1-M8, L1-L3) — naprawione
+- [x] Re-audit: Docker hardening (M7, L1, N1-N5)
+- [x] SHA-256 deduplication (zamiast MD5) w `seen_invoices`
+- [x] Atomic state write (`last_check.json` — tmp + rename + fsync)
+- [x] Path traversal guards w `_resolve_output_dir()` i `_save_invoice_artifacts()`
+- [x] Input sanitization (`_sanitize_field()`) w template context
 
 ### KSeF API client (#13-#17)
 - [x] **#13** Pełna paginacja `get_invoices_metadata()` — `hasMore`/`isTruncated`, max 250/page, safety limit 10 000
@@ -72,15 +86,18 @@ Poprawki niezwiązane z konkretnymi feature'ami, ale krytyczne dla stabilności:
 - [x] Fix: `dateRange` lowercase `from`/`to` (nie `From`/`To`)
 - [x] Warning przy naive datetime w state file
 
+### Operacje
+- [x] On-demand trigger: `docker kill -s SIGUSR1 <container>` — natychmiastowe sprawdzenie faktur poza harmonogramem
+
 ### Docker i CI
-- [ ] Entrypoint z dynamicznym ownership (`gosu`)
-- [ ] Named volume + config mount separation (`/config` vs `/data`)
+- [x] Entrypoint z dynamicznym ownership (`gosu`)
+- [x] Named volume + config mount separation (`/config` vs `/data`)
 - [x] 429 retry z backoff + parsowanie `Retry-After` (HTTP-date i sekundy)
 - [x] KSeF number validation regex
 - [x] CI: build & push Docker image (test + main)
 - [x] CI: automatyczne sprawdzanie outdated Python packages → issue + PR
 - [x] CI: sprawdzanie zmian OpenAPI spec KSeF (3 środowiska: test, demo, production) z Pushover notification
-- [ ] Deprecated `datetime.utcnow()` → `datetime.now(timezone.utc)`
+- [x] Deprecated `datetime.utcnow()` → `datetime.now(timezone.utc)`
 - [x] `prometheus-client` 0.23.1 → 0.24.1
 
 ### GitHub visibility & community
@@ -138,8 +155,34 @@ Poprawki niezwiązane z konkretnymi feature'ami, ale krytyczne dla stabilności:
 - możliwość zaznaczenia jednej lub wielu faktur do wygenerowania PDF
 - integracja z oficjalną biblioteką CIRFMF do wizualizacji PDF ([ksef-pdf-generator](https://github.com/CIRFMF/ksef-pdf-generator)) jako opcjonalny mikroserwis Docker (REST API: XML → PDF), obok wbudowanego generatora (xhtml2pdf/ReportLab)
 
+### 3) Push notyfikacje iOS — Monito KSeF (Cloudflare Worker)
+- nowy kanał powiadomień: natywne push notifications na iOS via aplikację **Monitor KSeF**
+- Aplikacja iOS: Monitor KSeF w trakcie review
+- Cloudflare Worker jako proxy do Apple Push Notification Service (APNs)
+  - Worker odbiera POST z KSeF Monitor (JSON payload) → wysyła do APNs
+  - Autentykacja Worker ↔ APNs via token-based auth (p8 key)
+  - Autentykacja Monitor → Worker via shared secret (header `Authorization`)
+- integracja z aplikacją Monitor KSeF:
+  - rejestracja device token w Worker (KV storage: device tokens per user)
+  - rich push notifications z danymi faktury (numer, kwota, kontrahent)
+  - push notification jest w roadmapie aplikacji iOS
+- konfiguracja w `config.json`:
+  ```json
+  {
+    "notifications": {
+      "channels": ["ios_push"],
+      "ios_push": {
+        "worker_url": "https://ksef-push.your-domain.workers.dev",
+        "worker_secret": "shared-secret"
+      }
+    }
+  }
+  ```
+- nowy notifier: `app/notifiers/ios_push_notifier.py` (POST JSON do Worker URL)
+- szablon Jinja2: `app/templates/ios_push.json.j2`
+
 **Zależności:** v0.4
-**DoD:** użytkownik widzi dashboard + listę + podgląd; initial load działa powtarzalnie bez duplikatów.
+**DoD:** użytkownik widzi dashboard + listę + podgląd; initial load działa powtarzalnie bez duplikatów; push notification dociera na iOS.
 
 ---
 
