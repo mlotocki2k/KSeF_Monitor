@@ -249,6 +249,7 @@ class TestNotificationManagerWithMockedNotifiers:
 
         nm = NotificationManager.__new__(NotificationManager)
         nm.config = mock_config
+        nm.db = None
         nm.template_renderer = MagicMock()
 
         notifier1 = MagicMock()
@@ -272,6 +273,7 @@ class TestNotificationManagerWithMockedNotifiers:
 
         nm = NotificationManager.__new__(NotificationManager)
         nm.config = mock_config
+        nm.db = None
 
         notifier1 = MagicMock()
         notifier1.channel_name = "Failing"
@@ -292,6 +294,7 @@ class TestNotificationManagerWithMockedNotifiers:
 
         nm = NotificationManager.__new__(NotificationManager)
         nm.config = mock_config
+        nm.db = None
 
         notifier1 = MagicMock()
         notifier1.channel_name = "Failing1"
@@ -312,6 +315,7 @@ class TestNotificationManagerWithMockedNotifiers:
 
         nm = NotificationManager.__new__(NotificationManager)
         nm.config = mock_config
+        nm.db = None
 
         notifier1 = MagicMock()
         notifier1.channel_name = "Crashing"
@@ -332,6 +336,7 @@ class TestNotificationManagerWithMockedNotifiers:
 
         nm = NotificationManager.__new__(NotificationManager)
         nm.config = mock_config
+        nm.db = None
         nm.template_renderer = MagicMock()
 
         notifier = MagicMock()
