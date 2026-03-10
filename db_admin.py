@@ -36,9 +36,19 @@ from sqlalchemy import func, inspect, text
 from app.database import Database, Invoice, MonitorState, NotificationLog
 
 
+def _default_db_path() -> str:
+    """Auto-detect DB path: /data/invoices.db (Docker) or data/invoices.db (local)."""
+    # Docker container: /data directory exists and is writable
+    if Path("/data").is_dir():
+        return "/data/invoices.db"
+    return "data/invoices.db"
+
+
 def get_db(args) -> Database:
-    """Get Database instance from --db argument."""
-    return Database(args.db)
+    """Get Database instance from --db argument. Creates tables if missing."""
+    db = Database(args.db)
+    db.create_tables()
+    return db
 
 
 def file_size_str(path: str) -> str:
@@ -677,8 +687,8 @@ def main():
         description="KSeF Monitor — Database Administration Tool",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    parser.add_argument("--db", default="data/invoices.db",
-                        help="Path to SQLite database (default: data/invoices.db)")
+    parser.add_argument("--db", default=_default_db_path(),
+                        help="Path to SQLite database (default: auto-detect)")
 
     sub = parser.add_subparsers(dest="command", help="Command to run")
 
