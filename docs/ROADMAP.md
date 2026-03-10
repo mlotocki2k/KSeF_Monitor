@@ -10,8 +10,8 @@
 
 ---
 
-## v0.3 (Fundament: templating + DB) — w trakcie
-**Cel:** ustandaryzować komunikację i zacząć trwale trzymać dane o fakturach
+## v0.3 ✅ (zrobione)
+**Cel:** ustandaryzować komunikację i zacząć trwale trzymać dane o fakturach (fundament: templating + DB)
 
 ### 1) Powiadomienia oparte o template ✅
 - [x] System szablonów Jinja2 z osobnym szablonem per kanał (5 szablonów)
@@ -112,7 +112,7 @@ Poprawki niezwiązane z konkretnymi feature'ami, ale krytyczne dla stabilności:
 
 ---
 
-## v0.4 (Stabilizacja + API pod UI) — propozycja
+## v0.4 (Stabilizacja + API pod UI)
 **Cel:** przygotować solidne backend API i jakość pod web UI + initial load
 
 - Warstwa API dla UI
@@ -129,6 +129,7 @@ Poprawki niezwiązane z konkretnymi feature'ami, ale krytyczne dla stabilności:
   - testy integracyjne (mock KSeF / sandbox)
 - Szkielet uprawnień
   - podstawowe auth (np. token) dla web UI/admin
+- Refaktoring i optymalizacja kodu
 
 **Zależności:** v0.3
 **DoD:** UI może bazować na stabilnym API; system jest odporny na retry i ma podstawową telemetrię operacyjną.
@@ -155,7 +156,7 @@ Poprawki niezwiązane z konkretnymi feature'ami, ale krytyczne dla stabilności:
 - możliwość zaznaczenia jednej lub wielu faktur do wygenerowania PDF
 - integracja z oficjalną biblioteką CIRFMF do wizualizacji PDF ([ksef-pdf-generator](https://github.com/CIRFMF/ksef-pdf-generator)) jako opcjonalny mikroserwis Docker (REST API: XML → PDF), obok wbudowanego generatora (xhtml2pdf/ReportLab)
 
-### 3) Push notyfikacje iOS — Monito KSeF (Cloudflare Worker)
+### 3) Push notyfikacje iOS — Monitor KSeF (Cloudflare Worker)
 - nowy kanał powiadomień: natywne push notifications na iOS via aplikację **Monitor KSeF**
 - Aplikacja iOS: Monitor KSeF w trakcie review
 - Cloudflare Worker jako proxy do Apple Push Notification Service (APNs)
@@ -188,6 +189,8 @@ Poprawki niezwiązane z konkretnymi feature'ami, ale krytyczne dla stabilności:
 
 ## v0.7 (Auto-update)
 **Cel:** wbudowany mechanizm aktualizacji bez potrzeby aktualizowania całego obrazu Docker
+
+- Automatyczny update aplikacji bez przebudowy obrazu Docker
 
 **Zależności:** v0.5
 
@@ -226,6 +229,14 @@ Poprawki niezwiązane z konkretnymi feature'ami, ale krytyczne dla stabilności:
 ## Do rozważenia
 - GUI do pobierania faktur przed v0.5?
 - Wystawienie endpointu dla Message Queue (MQ)
+- API na Cloudflare do generowania faktur PDF dla iOS, gdzie można używać własnego template
+  - Cloudflare Worker jako REST API: POST XML faktury → odpowiedź PDF (binary)
+  - Wbudowany domyślny template HTML/CSS (analogiczny do `invoice_pdf.html.j2`)
+  - Możliwość przesłania własnego template w requeście (lub przechowywanie w KV/R2)
+  - Parser FA(3) XML → kontekst Jinja2 → render HTML → PDF (via Puppeteer/wasm lub zewnętrzny renderer)
+  - Autentykacja: API key lub shared secret w nagłówku `Authorization`
+  - Użycie przez aplikację iOS Monitor KSeF: pobranie XML z KSeF → wysłanie do Worker → wyświetlenie PDF
+  - Opcjonalnie: cache wygenerowanych PDF w R2 (klucz: hash XML + template)
 - ~~Moduł sprawdzania `schemat_FA` — czy istnieje nowa wersja XSD i czy wpływa na aplikację~~ → zrobione (CI workflow, CRD + GitHub, FA(2)/FA(3) + Pushover)
 - ~~Moduł sprawdzania `openapi.json` czy jest nowy~~ → zrobione (CI workflow, 3 środowiska + Pushover)
 
