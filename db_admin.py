@@ -452,7 +452,7 @@ def cmd_set_last_check(args):
 
     for s in states:
         old_val = s.last_check
-        s.last_check = dt.isoformat()
+        s.last_check = dt
         s.updated_at = datetime.now(timezone.utc)
         print(f"  {s.nip} ({s.subject_type}): {old_val} → {dt.isoformat()}")
 
