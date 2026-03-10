@@ -25,8 +25,9 @@ class KSeFClient:
     API_VERSION = "v2"
     VALID_DATE_TYPES = {"Issue", "Invoicing", "PermanentStorage"}
     # Rate limit retry settings
-    MAX_429_RETRIES = 3
+    MAX_429_RETRIES = 5
     DEFAULT_RETRY_AFTER = 30  # seconds
+    MAX_RETRY_AFTER = 1800  # cap: 30 minutes
 
     # Pagination settings for metadata queries
     PAGINATION_PAGE_SIZE = 250  # max allowed by KSeF API spec (min=10, max=250)
@@ -123,7 +124,7 @@ class KSeFClient:
                         retry_after = max(int(delta), 1)
                     except (ValueError, TypeError):
                         retry_after = self.DEFAULT_RETRY_AFTER
-            retry_after = min(retry_after, 120)  # cap at 2 minutes
+            retry_after = min(retry_after, self.MAX_RETRY_AFTER)
             logger.warning("Rate limited (429). Waiting %ds before retry %d/%d. %s",
                            retry_after, attempt + 1, self.MAX_429_RETRIES, details)
             time.sleep(retry_after)
