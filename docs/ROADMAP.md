@@ -193,13 +193,43 @@ Poprawki niezwiązane z konkretnymi feature'ami, ale krytyczne dla stabilności:
 - nowy notifier: `app/notifiers/ios_push_notifier.py` (POST JSON do Worker URL)
 - szablon Jinja2: `app/templates/ios_push.json.j2`
 
+### 4) Obsługa wszystkich schematów faktur KSeF
+Cel: uniwersalny monitor i generator PDF dla każdego typu faktury w KSeF — nie tylko FA(3).
+
+**Obsługiwane schematy (per KSeF API v2.2):**
+| Schema | SchemaVersion | Typ | Opis |
+|---|---|---|---|
+| FA (2) | 1-0E | FA | Faktura VAT (starsza wersja) |
+| FA (3) | 1-0E | FA | Faktura VAT (aktualna) |
+| PEF (3) | 2-1 | PEF | Platforma Elektronicznego Fakturowania (zamówienia publiczne) |
+| PEF_KOR (3) | 2-1 | PEF | Korekta PEF |
+| FA_RR (1) | 1-0E | RR | Faktura VAT RR (rolnik ryczałtowy) |
+| FA_RR (1) | 1-1E | RR | Faktura VAT RR (nowa wersja, obowiązkowa od 01.04.2026) |
+
+**Zakres prac:**
+- [ ] Architektura multi-schema: bazowy `InvoiceXMLParser` (z v0.4) + parser per schemat (FA, PEF, RR)
+- [ ] Auto-detekcja schematu z namespace XML (bez konfiguracji — aplikacja rozpoznaje typ automatycznie)
+- [ ] Parser FA(2) — mapowanie pól na wspólny model danych (różnice vs FA(3))
+- [ ] Parser PEF(3) / PEF_KOR(3) — odmienna struktura (zamówienia publiczne, inne pola)
+- [ ] Parser FA_RR(1) — pola specyficzne: dane rolnika, stawka ryczałtu 7%, oświadczenie
+- [ ] Template PDF per schemat — osobny `invoice_pdf_{schema}.html.j2` z odpowiednim layoutem
+- [ ] Fallback: nieznany schemat → zapis XML bez PDF + warning w logu i powiadomieniu
+- [ ] Pobranie i wersjonowanie specyfikacji XSD dla nowych schematów w `spec/`
+- [ ] Aktualizacja szablonów powiadomień — informacja o typie schematu faktury
+- [ ] Dokumentacja: rozszerzenie PDF_TEMPLATES.md o nowe schematy
+
+**Uwagi:**
+- Bazuje na refaktoringu `InvoiceXMLParser` z v0.4 (wydzielenie parsera z `invoice_pdf_generator.py`)
+- Wspólny model danych (dataclass) z opcjonalnymi polami per schemat
+- CI workflow już monitoruje zmiany XSD — nowe schematy będą automatycznie wykrywane
+
 ### Zmiany API / schema
 - Obsługa ewentualnych nowych wersji KSeF API (breaking changes w endpointach, paginacji, autentykacji)
 - Wsparcie nowych wersji schematu FA — jeśli pojawi się FA(4) lub nowe pola w FA(3), adaptacja parsera XML i template PDF
 - Aktualizacja `spec/openapi.json` i `spec/schemat_FA(3)_v1-0E.xsd` do najnowszych wersji
 
 **Zależności:** v0.4
-**DoD:** użytkownik widzi dashboard + listę + podgląd; initial load działa powtarzalnie bez duplikatów; push notification dociera na iOS.
+**DoD:** użytkownik widzi dashboard + listę + podgląd; initial load działa powtarzalnie bez duplikatów; push notification dociera na iOS; PDF generuje się poprawnie dla każdego typu faktury obsługiwanego przez KSeF.
 
 ---
 
