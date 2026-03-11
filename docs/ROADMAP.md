@@ -10,8 +10,8 @@
 
 ---
 
-## v0.3 (Fundament: templating + DB) — w trakcie
-**Cel:** ustandaryzować komunikację i zacząć trwale trzymać dane o fakturach
+## v0.3 ✅ (zrobione)
+**Cel:** ustandaryzować komunikację i zacząć trwale trzymać dane o fakturach (fundament: templating + DB)
 
 ### 1) Powiadomienia oparte o template ✅
 - [x] System szablonów Jinja2 z osobnym szablonem per kanał (5 szablonów)
@@ -112,7 +112,7 @@ Poprawki niezwiązane z konkretnymi feature'ami, ale krytyczne dla stabilności:
 
 ---
 
-## v0.4 (Stabilizacja + API pod UI) — propozycja
+## v0.4 (Stabilizacja + API pod UI)
 **Cel:** przygotować solidne backend API i jakość pod web UI + initial load
 
 - Warstwa API dla UI
@@ -129,6 +129,18 @@ Poprawki niezwiązane z konkretnymi feature'ami, ale krytyczne dla stabilności:
   - testy integracyjne (mock KSeF / sandbox)
 - Szkielet uprawnień
   - podstawowe auth (np. token) dla web UI/admin
+- Refaktoring i optymalizacja kodu
+  - Rozbicie `check_for_new_invoices()` (~500 linii) na mniejsze klasy/metody (polling, dedup, artefakty, powiadomienia)
+  - Rozbicie `invoice_pdf_generator.py` (~1800 linii) — wydzielenie `InvoiceXMLParser` i `ReportLabPDFRenderer`
+  - Wyciągnięcie wspólnych stałych PDF (VAT_RATE_LABELS, QR_BASE_URLS, PAYMENT_METHODS) do osobnego modułu
+  - Eliminacja powtórzonego wzorca 401-retry w `ksef_client.py` → `_make_authenticated_request()`
+  - Uproszczenie walidacji w `config_manager.py` — data-driven validators zamiast 5 osobnych metod
+  - Deduplikacja logiki QR code i szukania fontów między `invoice_pdf_generator.py` a `invoice_pdf_template.py`
+
+### Zmiany API / schema
+- Śledzenie zmian KSeF OpenAPI spec (CI workflow monitoruje 3 środowiska)
+- Śledzenie zmian FA(3)/FA(2) XSD schema (CI workflow)
+- Ewentualna adaptacja do nowych wersji API jeśli pojawią się breaking changes
 
 **Zależności:** v0.3
 **DoD:** UI może bazować na stabilnym API; system jest odporny na retry i ma podstawową telemetrię operacyjną.
@@ -155,7 +167,7 @@ Poprawki niezwiązane z konkretnymi feature'ami, ale krytyczne dla stabilności:
 - możliwość zaznaczenia jednej lub wielu faktur do wygenerowania PDF
 - integracja z oficjalną biblioteką CIRFMF do wizualizacji PDF ([ksef-pdf-generator](https://github.com/CIRFMF/ksef-pdf-generator)) jako opcjonalny mikroserwis Docker (REST API: XML → PDF), obok wbudowanego generatora (xhtml2pdf/ReportLab)
 
-### 3) Push notyfikacje iOS — Monito KSeF (Cloudflare Worker)
+### 3) Push notyfikacje iOS — Monitor KSeF (Cloudflare Worker)
 - nowy kanał powiadomień: natywne push notifications na iOS via aplikację **Monitor KSeF**
 - Aplikacja iOS: Monitor KSeF w trakcie review
 - Cloudflare Worker jako proxy do Apple Push Notification Service (APNs)
@@ -224,6 +236,12 @@ Cel: uniwersalny monitor i generator PDF dla każdego typu faktury w KSeF — ni
 ## v0.7 (Auto-update)
 **Cel:** wbudowany mechanizm aktualizacji bez potrzeby aktualizowania całego obrazu Docker
 
+- Automatyczny update aplikacji bez przebudowy obrazu Docker
+
+### Zmiany API / schema
+- Mechanizm auto-update musi uwzględniać zmiany w schemacie DB (Alembic migracje przy update)
+- Walidacja kompatybilności nowej wersji z aktualnym schematem FA i API KSeF
+
 **Zależności:** v0.5
 
 ---
@@ -239,6 +257,10 @@ Cel: uniwersalny monitor i generator PDF dla każdego typu faktury w KSeF — ni
 - konfiguracja nazw plików (pattern, prefix)
 - konfiguracja folderów (folder_structure, output_dir)
 
+### Zmiany API / schema
+- UI do podglądu aktualnie używanej wersji API KSeF i schematu FA
+- Powiadomienie w panelu admin o wykrytych zmianach w specyfikacji (z CI workflow)
+
 **Zależności:** v0.5
 **DoD:** wszystko da się skonfigurować z UI, a zmiany wchodzą w życie bez ręcznych edycji configów (lub z kontrolowanym restartem usługi).
 
@@ -253,6 +275,10 @@ Cel: uniwersalny monitor i generator PDF dla każdego typu faktury w KSeF — ni
 - notifier: routing per NIP
 - monitoring: metryki per NIP
 
+### Zmiany API / schema
+- Rozszerzenie modelu DB o tenant_id (NIP) — migracja Alembic
+- Ewentualne nowe endpointy KSeF API per NIP (jeśli API wprowadzi multi-subject w jednej sesji)
+
 **Zależności:** v1.0
 **DoD:** można dodać drugi NIP i wszystko (import, lista, powiadomienia, metryki) działa niezależnie.
 
@@ -260,7 +286,23 @@ Cel: uniwersalny monitor i generator PDF dla każdego typu faktury w KSeF — ni
 
 ## Do rozważenia
 - GUI do pobierania faktur przed v0.5?
+  - Prosty interfejs webowy (Flask/FastAPI) do ręcznego pobrania faktury po numerze KSeF
+  - Pobranie XML + generacja PDF on-demand z podglądem w przeglądarce
+  - Bez pełnego dashboardu — tylko formularz „podaj numer KSeF → pobierz PDF"
 - Wystawienie endpointu dla Message Queue (MQ)
+  - Publikacja eventów o nowych fakturach do kolejki (RabbitMQ / Redis Streams / NATS)
+  - Event payload: metadane faktury (ksef_number, NIP, kwota, data, subject_type)
+  - Umożliwienie integracji z zewnętrznymi systemami (ERP, księgowość, automatyzacja)
+  - Konfiguracja w `config.json`: typ brokera, connection string, nazwa kolejki/topicu
+  - Retry + DLQ (Dead Letter Queue) dla nieudanych publishów
+- API na Cloudflare do generowania faktur PDF dla iOS, gdzie można używać własnego template
+  - Cloudflare Worker jako REST API: POST XML faktury → odpowiedź PDF (binary)
+  - Wbudowany domyślny template HTML/CSS (analogiczny do `invoice_pdf.html.j2`)
+  - Możliwość przesłania własnego template w requeście (lub przechowywanie w KV/R2)
+  - Parser FA(3) XML → kontekst Jinja2 → render HTML → PDF (via Puppeteer/wasm lub zewnętrzny renderer)
+  - Autentykacja: API key lub shared secret w nagłówku `Authorization`
+  - Użycie przez aplikację iOS Monitor KSeF: pobranie XML z KSeF → wysłanie do Worker → wyświetlenie PDF
+  - Opcjonalnie: cache wygenerowanych PDF w R2 (klucz: hash XML + template)
 - ~~Moduł sprawdzania `schemat_FA` — czy istnieje nowa wersja XSD i czy wpływa na aplikację~~ → zrobione (CI workflow, CRD + GitHub, FA(2)/FA(3) + Pushover)
 - ~~Moduł sprawdzania `openapi.json` czy jest nowy~~ → zrobione (CI workflow, 3 środowiska + Pushover)
 
