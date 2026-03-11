@@ -40,7 +40,7 @@ invoice_*.pdf
 invoice_*.xml
 faktura*.pdf
 faktura*.xml
-examples/*.pdf
+examples/test_output_*.pdf
 
 # .github/ is tracked — workflows and community health files
 
