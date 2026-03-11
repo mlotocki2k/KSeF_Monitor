@@ -62,6 +62,7 @@ class KSeFClient:
 
         self.access_token = None
         self.refresh_token = None
+        self.session_reference = None  # Session referenceNumber for UPO endpoints
         self._ksef_public_key = None
         self.on_auth_failure = None  # Optional callback: on_auth_failure(status_code: int)
         self.session = requests.Session()
@@ -246,7 +247,8 @@ class KSeFClient:
                 logger.error("Failed to redeem access token")
                 return False
 
-            logger.info("Authentication successful")
+            self.session_reference = reference_number
+            logger.info(f"Authentication successful (session: {reference_number})")
             return True
 
         except Exception as e:
@@ -704,6 +706,7 @@ class KSeFClient:
         finally:
             self.access_token = None
             self.refresh_token = None
+            self.session_reference = None
             self.session.close()
 
     # KSeF number format: NIP(10digits)-YYYYMMDD-RANDOM(6+ alnum)-SUFFIX(2 alnum)
@@ -783,8 +786,11 @@ class KSeFClient:
 
     def get_invoice_upo(self, ksef_number: str) -> Optional[Dict]:
         """
-        Get UPO (Urzędowe Poświadczenie Odbioru) for an invoice
-        Endpoint: GET /v2/invoices/upo/ksef/{ksefReferenceNumber}
+        Get UPO (Urzędowe Poświadczenie Odbioru) for an invoice.
+        Endpoint: GET /v2/sessions/{referenceNumber}/invoices/ksef/{ksefNumber}/upo
+
+        Requires session with Introspection or InvoiceWrite permission.
+        Tokens with InvoiceRead only will get 403.
 
         Args:
             ksef_number: KSeF invoice number
@@ -798,7 +804,12 @@ class KSeFClient:
                     logger.error("Cannot get UPO: authentication failed")
                     return None
 
-            url = f"{self.base_url}/{self.API_VERSION}/invoices/upo/ksef/{ksef_number}"
+            if not self.session_reference:
+                logger.error("Cannot get UPO: no session referenceNumber (re-authenticate)")
+                return None
+
+            url = (f"{self.base_url}/{self.API_VERSION}/sessions/"
+                   f"{self.session_reference}/invoices/ksef/{ksef_number}/upo")
 
             headers = {
                 "Authorization": f"Bearer {self.access_token}",
@@ -815,6 +826,13 @@ class KSeFClient:
                     return None
                 headers["Authorization"] = f"Bearer {self.access_token}"
                 response = self._request_with_retry("GET", url, headers=headers, timeout=30)
+
+            if response.status_code == 403:
+                logger.warning(
+                    f"UPO access denied for {ksef_number}: token lacks required permission "
+                    f"(Introspection or InvoiceWrite). Current token has InvoiceRead only."
+                )
+                return None
 
             if response.status_code == 404:
                 logger.info(f"No UPO available for {ksef_number}")
