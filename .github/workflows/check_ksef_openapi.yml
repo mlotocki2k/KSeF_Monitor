@@ -137,6 +137,8 @@ jobs:
               `- **URL:** ${envUrl}`,
               `- **Powód:** ${reason}`,
               "",
+              `**Changelog:** https://github.com/CIRFMF/ksef-docs/blob/main/api-changelog.md`,
+              "",
               "Sugestia:",
               `- pobierz aktualny spec i zaktualizuj \`${process.env.LOCAL_FILE}\`.`,
               `- jeśli zmiana na **${envName}** — przygotuj się na update produkcji.`
