@@ -71,7 +71,7 @@ class StatsSummary(BaseModel):
 
 
 class ApiStats(BaseModel):
-    """KSeF API call statistics."""
+    """KSeF Monitor API call statistics."""
 
     total_requests: int = 0
     error_count: int = 0

@@ -205,7 +205,7 @@ Integrated with `RateLimiter` — `acquire()` called before every HTTP request (
 - `Invoice` model — invoice metadata (ksef_number UNIQUE dedup, source field)
 - `MonitorState` model — per NIP + subject_type state (replaces `last_check.json`)
 - `NotificationLog` model — notification delivery audit + dedup
-- `ApiRequestLog` model — KSeF API call tracking (v0.4)
+- `ApiRequestLog` model — KSeF Monitor API call tracking (v0.4)
 - `InvoiceArtifact` model — artifact download status tracking (v0.4)
 - CRUD: `log_api_request()`, `get_api_stats()`, `create_artifact()`, `mark_artifact_downloaded/failed()`, `get_pending_artifacts()` (v0.4)
 - WAL mode + foreign keys + busy_timeout pragmas

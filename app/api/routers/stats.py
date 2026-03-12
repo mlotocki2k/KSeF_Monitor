@@ -70,7 +70,7 @@ def get_api_stats(
     request: Request,
     hours: int = Query(1, ge=1, le=24),
 ):
-    """Get KSeF API call statistics for the last N hours."""
+    """Get KSeF Monitor API call statistics for the last N hours."""
     db = request.app.state.db
     if not db:
         return JSONResponse(status_code=503, content={"detail": "Database not available"})

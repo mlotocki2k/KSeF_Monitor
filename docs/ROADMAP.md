@@ -129,7 +129,7 @@ Poprawki niezwiązane z konkretnymi feature'ami, ale krytyczne dla stabilności:
 - [x] Konfiguracja: sekcja `ksef.rate_limit` z defaults
 
 ### 3) Baza danych — Phase 2 ✅
-- [x] `ApiRequestLog` — śledzenie wywołań KSeF API (endpoint, status, timing)
+- [x] `ApiRequestLog` — śledzenie wywołań KSeF Monitor API (endpoint, status, timing)
 - [x] `InvoiceArtifact` — status pobierania artefaktów (pending/downloaded/failed, retry counter, SHA-256 hash)
 - [x] Rozszerzenie `Invoice` o pole `source`; CRUD metody; migracja Alembic
 

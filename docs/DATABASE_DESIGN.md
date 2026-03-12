@@ -270,7 +270,7 @@ Przy starcie aplikacji:
 
 ### Tabela `api_request_log` (nowa)
 
-Śledzenie wszystkich zapytań do KSeF API — diagnostyka, rate limiting, metryki.
+Śledzenie wszystkich zapytań KSeF Monitor API — diagnostyka, rate limiting, metryki.
 
 ```sql
 CREATE TABLE api_request_log (

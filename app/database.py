@@ -203,7 +203,7 @@ class NotificationLog(Base):
 
 
 class ApiRequestLog(Base):
-    """Log of KSeF API requests — for rate limiting diagnostics and stats.
+    """Log of KSeF Monitor API requests — for rate limiting diagnostics and stats.
 
     Only stores technical metadata (endpoint, status, timing).
     No request/response bodies — they may contain tokens or invoice data.
