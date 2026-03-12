@@ -203,20 +203,48 @@ class PushManager:
             logger.error("Failed to save push config: %s", e)
 
     def _log_pairing_info(self):
-        """Log pairing code on first run so user can pair without API access."""
-        logger.info(
-            "\n"
-            "╔══════════════════════════════════════════════════════╗\n"
-            "║           iOS Push — pairing code                   ║\n"
-            "║                                                      ║\n"
-            "║   Code:  %-8s                                   ║\n"
-            "║                                                      ║\n"
-            "║   Open Monitor KSeF app → Settings → Add instance   ║\n"
-            "║   and enter this code, or scan QR from:             ║\n"
-            "║   GET /api/v1/push/setup                            ║\n"
+        """Log pairing code and QR on first run so user can pair from Docker logs."""
+        qr_ascii = self._generate_qr_ascii()
+        lines = [
+            "",
+            "╔══════════════════════════════════════════════════════╗",
+            "║           iOS Push — pairing code                   ║",
+            "║                                                      ║",
+            "║   Code:  %-8s                                   ║" % self.pairing_code,
+            "║                                                      ║",
+            "║   Scan QR with Monitor KSeF app:                    ║",
+        ]
+        if qr_ascii:
+            for qr_line in qr_ascii.splitlines():
+                lines.append("║   %-50s ║" % qr_line)
+        lines += [
+            "║                                                      ║",
+            "║   Or enter code manually in app:                    ║",
+            "║   Settings → Add instance → Enter code              ║",
             "╚══════════════════════════════════════════════════════╝",
-            self.pairing_code,
-        )
+        ]
+        logger.info("\n".join(lines))
+
+    def _generate_qr_ascii(self) -> str:
+        """Generate QR code as ASCII art for terminal/log output."""
+        if not QRCODE_AVAILABLE or not self.pairing_code:
+            return ""
+        try:
+            import io
+            qr = qrcode.QRCode(
+                version=None,
+                error_correction=qrcode.constants.ERROR_CORRECT_M,
+                box_size=1,
+                border=1,
+            )
+            qr.add_data(f"{QR_PREFIX}{self.pairing_code}")
+            qr.make(fit=True)
+            buf = io.StringIO()
+            qr.print_ascii(out=buf)
+            return buf.getvalue().rstrip()
+        except Exception as e:
+            logger.debug("Could not generate ASCII QR: %s", e)
+            return ""
 
     def generate_qr_data_uri(self) -> str:
         """Generate QR code as base64 data URI for Web UI display.
