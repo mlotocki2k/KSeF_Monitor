@@ -1,10 +1,10 @@
 # Testing Guide
 
-Complete guide for testing your KSeF Invoice Monitor installation.
+Complete guide for testing your KSeF Monitor installation.
 
 ## Unit Tests (pytest)
 
-The project includes a comprehensive unit test suite (262 tests) covering configuration validation, invoice monitoring logic, file naming, API field mapping, template rendering, and more.
+The project includes a comprehensive unit test suite (395 tests) covering configuration validation, invoice monitoring logic, file naming, API field mapping, template rendering, rate limiting, database CRUD, REST API endpoints, authentication, and more.
 
 ### Running unit tests
 
@@ -29,7 +29,15 @@ pytest tests/ --cov=app --cov-report=term-missing
 tests/
 ├── conftest.py                 # Shared fixtures (mock_config, sample_invoice, etc.)
 ├── test_config_manager.py      # Config validation, defaults, file_exists_strategy, file_name_pattern
-└── test_invoice_monitor.py     # Monitor logic, deduplication, safe path, file naming, DB save, API fields
+├── test_invoice_monitor.py     # Monitor logic, deduplication, safe path, file naming, DB save, API fields
+├── test_logging_config.py      # Logging setup + Prometheus metrics initialization
+├── test_template_renderer.py   # Jinja2 template engine, filters, rendering
+├── test_rate_limiter.py        # Rate limiter: windows, acquire, pause, thread safety (v0.4)
+├── test_database_phase2.py     # DB phase 2: ApiRequestLog, InvoiceArtifact CRUD (v0.4)
+├── test_api_auth.py            # API auth: Bearer token, open access, security headers (v0.4)
+├── test_api_invoices.py        # API: pagination, filtering, sorting, detail, no data leaks (v0.4)
+├── test_api_stats.py           # API: summary stats, API stats, validation (v0.4)
+└── test_api_monitor.py         # API: health, monitor state, trigger (v0.4)
 ```
 
 ### CI
@@ -428,7 +436,7 @@ print(f'Query time: {query_time:.2f}s')
 docker-compose up -d
 
 # Check memory usage
-docker stats ksef-invoice-monitor --no-stream
+docker stats ksef-monitor --no-stream
 ```
 
 **Expected:** < 100MB memory usage

@@ -136,7 +136,7 @@ class EmailNotifier(BaseNotifier):
                     {f'<a href="{safe_url}" class="button">View in KSeF</a>' if safe_url else ''}
                 </div>
                 <div class="footer">
-                    <p>KSeF Invoice Monitor</p>
+                    <p>KSeF Monitor</p>
                     <p>This is an automated notification. Please do not reply to this email.</p>
                 </div>
             </div>

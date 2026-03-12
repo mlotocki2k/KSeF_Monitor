@@ -16,7 +16,6 @@ the caller should fall back to the ReportLab-based InvoicePDFGenerator.
 import base64
 import hashlib
 import logging
-import os
 from datetime import datetime
 from io import BytesIO
 from pathlib import Path
@@ -47,11 +46,11 @@ try:
 except ImportError:
     XHTML2PDF_AVAILABLE = False
 
-# Import shared constants and registered font names from invoice_pdf_generator
-from .invoice_pdf_generator import (
+# Import shared constants and utilities from pdf_constants module
+from .pdf_constants import (
     VAT_RATE_LABELS, PAYMENT_METHODS, INVOICE_TYPE_TITLES, QR_BASE_URLS,
-    VAT_SUMMARY_ROWS, _FONT_NAME, _FONT_NAME_BOLD,
-    _resolve_vat_summary_labels,
+    VAT_SUMMARY_ROWS, FONT_NAME, FONT_NAME_BOLD,
+    _resolve_vat_summary_labels, find_font_paths,
 )
 
 TEMPLATE_NAME = "invoice_pdf.html.j2"
@@ -233,12 +232,12 @@ class InvoicePDFTemplateRenderer:
             vat_rows.append({'label': display_label, 'net': net, 'vat': vat, 'vat_w': vat_w})
 
         # Font paths for @font-face (try common locations)
-        font_paths = self._find_font_paths()
+        font_paths = find_font_paths()
 
-        # ReportLab-registered font name (from invoice_pdf_generator module init)
+        # Font name from shared pdf_constants module
         # This ensures CSS uses the same font that ReportLab/xhtml2pdf knows about
-        font_name = _FONT_NAME
-        font_name_bold = _FONT_NAME_BOLD
+        font_name = FONT_NAME
+        font_name_bold = FONT_NAME_BOLD
 
         return {
             'header': header,
@@ -271,32 +270,6 @@ class InvoicePDFTemplateRenderer:
             'font_name': font_name,
             'font_name_bold': font_name_bold,
         }
-
-    @staticmethod
-    def _find_font_paths() -> Dict[str, str]:
-        """Find font paths supporting Polish characters for CSS @font-face."""
-        candidates = [
-            # Linux/Docker (DejaVu Sans)
-            ('/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
-             '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf'),
-            ('/usr/share/fonts/dejavu/DejaVuSans.ttf',
-             '/usr/share/fonts/dejavu/DejaVuSans-Bold.ttf'),
-            ('/usr/share/fonts/TTF/DejaVuSans.ttf',
-             '/usr/share/fonts/TTF/DejaVuSans-Bold.ttf'),
-            # macOS (Arial Unicode or Arial)
-            ('/Library/Fonts/Arial Unicode.ttf', None),
-            ('/System/Library/Fonts/Supplemental/Arial Unicode.ttf', None),
-            ('/System/Library/Fonts/Supplemental/Arial.ttf',
-             '/System/Library/Fonts/Supplemental/Arial Bold.ttf'),
-            ('/Library/Fonts/Arial.ttf', '/Library/Fonts/Arial Bold.ttf'),
-        ]
-        for regular, bold in candidates:
-            if os.path.exists(regular):
-                result = {'regular': regular}
-                if bold and os.path.exists(bold):
-                    result['bold'] = bold
-                return result
-        return {}
 
     @staticmethod
     def _generate_qr_data_uri(invoice_data: Dict, xml_content: str,

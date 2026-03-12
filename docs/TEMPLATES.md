@@ -301,7 +301,7 @@ Zamień opis tekstowy na [pola embed](https://discord.com/developers/docs/resour
     ],
     "timestamp": "{{ timestamp }}",
     "footer": {
-        "text": "KSeF Invoice Monitor"
+        "text": "KSeF Monitor"
     }
     {% if url %}
     ,"url": "{{ url | json_escape }}"

@@ -34,13 +34,13 @@
 - [x] Konfigurowalna struktura folderów (`folder_structure` w config storage)
 - [x] Placeholdery folderów: `{year}`, `{month}`, `{day}`, `{type}` (sprzedaz/zakup)
 - [x] Konfigurowalne nazwy plików (`file_name_pattern` w config storage)
-- [x] Placeholdery nazw: `{type}` (sprz/zak/upo), `{date}`, `{invoice_number}`, `{ksef}`, `{ksef_short}`, `{seller_nip}`, `{buyer_nip}`
+- [x] Placeholdery nazw: `{type}` (sprz/zak), `{date}`, `{invoice_number}`, `{ksef}`, `{ksef_short}`, `{seller_nip}`, `{buyer_nip}`
 - [x] Walidacja wzorców w config_manager (tylko dozwolone placeholdery)
 - [x] Path traversal guard na wynikowej ścieżce
 - [x] Backward compatible: domyślny pattern `{type}_{date}_{invoice_number}`
 
 ### 4) Safecheck na overwrite plików ✅
-- [x] Sprawdzanie czy plik (XML/PDF/UPO) już istnieje przed zapisem
+- [x] Sprawdzanie czy plik (XML/PDF) już istnieje przed zapisem
 - [x] Strategia: skip / rename / overwrite (`file_exists_strategy` w config storage)
 
 ### 5) Przeniesienie informacji o fakturach do bazy ✅
@@ -112,35 +112,39 @@ Poprawki niezwiązane z konkretnymi feature'ami, ale krytyczne dla stabilności:
 
 ---
 
-## v0.4 (Stabilizacja + API pod UI)
+## v0.4 ✅ (zrobione)
 **Cel:** przygotować solidne backend API i jakość pod web UI + initial load
 
-- Warstwa API dla UI
-  - endpointy: statystyki / lista / szczegóły / podgląd
-  - paginacja, sortowanie, filtrowanie (subject, nip, role: sprzedawca/kupujący, daty)
-- Idempotencja i deduplikacja
-  - klucz unikalny faktury, retry-safe zapisy
-- Obsługa błędów i retry
-  - polityka retry dla KSeF, timeouts, backoff
-- Metryki + logi "operacyjne"
-  - liczba nowych faktur/okno czasowe, błędy API, czasy odpowiedzi
-- Testy i CI
-  - testy jednostkowe logiki DB + templating
-  - testy integracyjne (mock KSeF / sandbox)
-- Szkielet uprawnień
-  - podstawowe auth (np. token) dla web UI/admin
-- Refaktoring i optymalizacja kodu
-  - Rozbicie `check_for_new_invoices()` (~500 linii) na mniejsze klasy/metody (polling, dedup, artefakty, powiadomienia)
-  - Rozbicie `invoice_pdf_generator.py` (~1800 linii) — wydzielenie `InvoiceXMLParser` i `ReportLabPDFRenderer`
-  - Wyciągnięcie wspólnych stałych PDF (VAT_RATE_LABELS, QR_BASE_URLS, PAYMENT_METHODS) do osobnego modułu
-  - Eliminacja powtórzonego wzorca 401-retry w `ksef_client.py` → `_make_authenticated_request()`
-  - Uproszczenie walidacji w `config_manager.py` — data-driven validators zamiast 5 osobnych metod
-  - Deduplikacja logiki QR code i szukania fontów między `invoice_pdf_generator.py` a `invoice_pdf_template.py`
+### 1) Refaktoring (bez zmian zachowania) ✅
+- [x] Rozbicie `invoice_pdf_generator.py` (1792 linii) na 3 moduły: `pdf_constants.py`, `invoice_xml_parser.py`, `invoice_pdf_generator.py`
+- [x] Unifikacja 401-retry w `ksef_client.py` → `_make_authenticated_request()`
+- [x] Rozbicie `check_for_new_invoices()` w `invoice_monitor.py` na mniejsze metody
+- [x] Data-driven walidacja w `config_manager.py` — `_CHANNEL_VALIDATORS`
+- [x] Deduplikacja logiki QR code i fontów między PDF generator a template
 
-### Zmiany API / schema
-- Śledzenie zmian KSeF OpenAPI spec (CI workflow monitoruje 3 środowiska)
-- Śledzenie zmian FA(3)/FA(2) XSD schema (CI workflow)
-- Ewentualna adaptacja do nowych wersji API jeśli pojawią się breaking changes
+### 2) Rate Limiter ✅
+- [x] `app/rate_limiter.py` — sliding window, 3 okna (10/s, 30/min, 120/h), thread-safe, fail-closed
+- [x] Integracja z `ksef_client.py` — `acquire()` przed każdym HTTP call
+- [x] `pause_until()` na 429 Retry-After, usunięcie `time.sleep(2)` z monitora
+- [x] Konfiguracja: sekcja `ksef.rate_limit` z defaults
+
+### 3) Baza danych — Phase 2 ✅
+- [x] `ApiRequestLog` — śledzenie wywołań KSeF API (endpoint, status, timing)
+- [x] `InvoiceArtifact` — status pobierania artefaktów (pending/downloaded/failed, retry counter, SHA-256 hash)
+- [x] Rozszerzenie `Invoice` o pole `source`; CRUD metody; migracja Alembic
+
+### 4) REST API (FastAPI) ✅
+- [x] `app/api/` — auth middleware (Bearer + `hmac.compare_digest`), security headers, CORS
+- [x] Endpointy: `/invoices` (paginacja, filtry, sort), `/invoices/{ksef_number}`, `/stats/summary`, `/stats/api`, `/monitor/health`, `/monitor/state`, `/monitor/trigger`, `/artifacts/pending`
+- [x] Swagger docs na `/docs`, `APIServer` w daemon thread, config sekcja `api`
+
+### 5) Auth + Metryki Prometheus ✅
+- [x] Token auth z Docker secrets / env / config, open access mode z WARNING
+- [x] 6 nowych metryk Prometheus (API requests, response time, rate limit, artifacts)
+
+### 6) Testy ✅
+- [x] 105 nowych testów (rate limiter, DB phase 2, API auth, invoices, stats, monitor)
+- [x] Łącznie: **396 testów**, 0 failures
 
 **Zależności:** v0.3
 **DoD:** UI może bazować na stabilnym API; system jest odporny na retry i ma podstawową telemetrię operacyjną.
@@ -160,6 +164,7 @@ Poprawki niezwiązane z konkretnymi feature'ami, ale krytyczne dla stabilności:
   - rate limiting / backoff między oknami (unikanie throttlingu API)
 
 ### 2) Interfejs webowy (odczyt)
+- pokazywanie health endpointa (api.kef.gov.pl be logowania zwraca status endpointa)
 - pokazywanie ile nowych faktur od ostatniego sprawdzenia: **per subject, per NIP**
 - pokazywanie ile ogólnie faktur: **per subject, per NIP** (sprzedawcy i kupującego)
 - lista wszystkich faktur (z bazy): filtry/sort/paginacja

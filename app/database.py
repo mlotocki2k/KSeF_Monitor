@@ -1,8 +1,9 @@
 """
-Database layer for KSeF Invoice Monitor.
+Database layer for KSeF Monitor.
 
 SQLite + WAL mode + SQLAlchemy 2.0 ORM.
 Phase 1 (v0.3): invoices, monitor_state, notification_log tables.
+Phase 2 (v0.4): api_request_log, invoice_artifacts tables.
 """
 
 import json
@@ -14,6 +15,8 @@ from typing import Any, Dict, List, Optional
 from sqlalchemy import (
     Boolean,
     DateTime,
+    Float,
+    ForeignKey,
     Index,
     Integer,
     Numeric,
@@ -22,6 +25,7 @@ from sqlalchemy import (
     UniqueConstraint,
     create_engine,
     event,
+    func,
     text,
 )
 from sqlalchemy.orm import (
@@ -84,6 +88,9 @@ class Invoice(Base):
     # Metadata flags
     is_self_invoicing: Mapped[bool] = mapped_column(Boolean, default=False)
     has_attachment: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    # Source tracking (v0.4)
+    source: Mapped[Optional[str]] = mapped_column(String, default="polling")
 
     # Artifact paths (relative)
     has_xml: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -193,6 +200,88 @@ class NotificationLog(Base):
 
     def __repr__(self) -> str:
         return f"<NotificationLog channel={self.channel!r} event={self.event_type!r}>"
+
+
+class ApiRequestLog(Base):
+    """Log of KSeF API requests — for rate limiting diagnostics and stats.
+
+    Only stores technical metadata (endpoint, status, timing).
+    No request/response bodies — they may contain tokens or invoice data.
+    """
+
+    __tablename__ = "api_request_log"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+
+    endpoint: Mapped[str] = mapped_column(String, nullable=False)
+    method: Mapped[str] = mapped_column(String(10), nullable=False)
+    nip: Mapped[Optional[str]] = mapped_column(String)
+
+    status_code: Mapped[Optional[int]] = mapped_column(Integer)
+    response_time_ms: Mapped[Optional[float]] = mapped_column(Float)
+    retry_count: Mapped[int] = mapped_column(Integer, default=0)
+    invoices_returned: Mapped[Optional[int]] = mapped_column(Integer)
+
+    requested_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(timezone.utc)
+    )
+
+    __table_args__ = (
+        Index("ix_api_log_requested", requested_at.desc()),
+        Index("ix_api_log_endpoint", "endpoint", "status_code"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<ApiRequestLog {self.method} {self.endpoint} status={self.status_code}>"
+
+
+class InvoiceArtifact(Base):
+    """Tracks download status of invoice artifacts (XML, PDF).
+
+    Supports resumable downloads: pending artifacts can be retried
+    in subsequent check cycles without re-downloading completed ones.
+    """
+
+    __tablename__ = "invoice_artifacts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+
+    invoice_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("invoices.id"), nullable=False
+    )
+    artifact_type: Mapped[str] = mapped_column(
+        String, nullable=False
+    )  # xml, pdf, upo
+
+    # Status: pending -> downloaded | failed | skipped
+    status: Mapped[str] = mapped_column(String, default="pending", nullable=False)
+    download_attempts: Mapped[int] = mapped_column(Integer, default=0)
+
+    # File info (populated on successful download)
+    file_path: Mapped[Optional[str]] = mapped_column(String)
+    file_hash: Mapped[Optional[str]] = mapped_column(String)  # SHA-256
+    file_size: Mapped[Optional[int]] = mapped_column(Integer)
+
+    # Error tracking
+    last_error: Mapped[Optional[str]] = mapped_column(Text)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(timezone.utc)
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+    __table_args__ = (
+        UniqueConstraint("invoice_id", "artifact_type", name="uq_artifact_invoice_type"),
+        Index("ix_artifact_status", "status"),
+        Index("ix_artifact_invoice", "invoice_id"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<InvoiceArtifact invoice_id={self.invoice_id} type={self.artifact_type!r} status={self.status!r}>"
 
 
 # ── Engine & Session ────────────────────────────────────────────────────────
@@ -350,6 +439,150 @@ class Database:
         session.add(log_entry)
         session.flush()
         return log_entry
+
+    # ── API Request Log ────────────────────────────────────────────────
+
+    def log_api_request(
+        self,
+        session: Session,
+        endpoint: str,
+        method: str,
+        nip: Optional[str] = None,
+        status_code: Optional[int] = None,
+        response_time_ms: Optional[float] = None,
+        retry_count: int = 0,
+        invoices_returned: Optional[int] = None,
+    ) -> ApiRequestLog:
+        """Log a KSeF API request for diagnostics and rate limit monitoring."""
+        entry = ApiRequestLog(
+            endpoint=endpoint[:200],
+            method=method[:10],
+            nip=nip,
+            status_code=status_code,
+            response_time_ms=response_time_ms,
+            retry_count=retry_count,
+            invoices_returned=invoices_returned,
+        )
+        session.add(entry)
+        session.flush()
+        return entry
+
+    def get_api_stats(self, session: Session, hours: int = 1) -> Dict[str, Any]:
+        """Get API request statistics for the last N hours."""
+        cutoff = datetime.now(timezone.utc)
+        from datetime import timedelta
+        cutoff = cutoff - timedelta(hours=hours)
+
+        rows = (
+            session.query(ApiRequestLog)
+            .filter(ApiRequestLog.requested_at >= cutoff)
+            .all()
+        )
+
+        total = len(rows)
+        errors = sum(1 for r in rows if r.status_code and r.status_code >= 400)
+        avg_time = (
+            sum(r.response_time_ms for r in rows if r.response_time_ms) / total
+            if total > 0
+            else 0.0
+        )
+
+        return {
+            "total_requests": total,
+            "error_count": errors,
+            "avg_response_time_ms": round(avg_time, 1),
+            "period_hours": hours,
+        }
+
+    # ── Invoice Artifacts ────────────────────────────────────────────────
+
+    def create_artifact(
+        self,
+        session: Session,
+        invoice_id: int,
+        artifact_type: str,
+        status: str = "pending",
+    ) -> Optional[InvoiceArtifact]:
+        """Create an artifact record. Returns None if already exists (UNIQUE constraint)."""
+        existing = (
+            session.query(InvoiceArtifact)
+            .filter_by(invoice_id=invoice_id, artifact_type=artifact_type)
+            .first()
+        )
+        if existing:
+            return None
+
+        artifact = InvoiceArtifact(
+            invoice_id=invoice_id,
+            artifact_type=artifact_type,
+            status=status,
+        )
+        session.add(artifact)
+        session.flush()
+        return artifact
+
+    def mark_artifact_downloaded(
+        self,
+        session: Session,
+        invoice_id: int,
+        artifact_type: str,
+        file_path: str,
+        file_hash: Optional[str] = None,
+        file_size: Optional[int] = None,
+    ) -> Optional[InvoiceArtifact]:
+        """Mark an artifact as successfully downloaded."""
+        artifact = (
+            session.query(InvoiceArtifact)
+            .filter_by(invoice_id=invoice_id, artifact_type=artifact_type)
+            .first()
+        )
+        if not artifact:
+            return None
+
+        artifact.status = "downloaded"
+        artifact.file_path = file_path
+        artifact.file_hash = file_hash
+        artifact.file_size = file_size
+        artifact.download_attempts = (artifact.download_attempts or 0) + 1
+        artifact.updated_at = datetime.now(timezone.utc)
+        session.flush()
+        return artifact
+
+    def mark_artifact_failed(
+        self,
+        session: Session,
+        invoice_id: int,
+        artifact_type: str,
+        error: str,
+    ) -> Optional[InvoiceArtifact]:
+        """Mark an artifact download as failed."""
+        artifact = (
+            session.query(InvoiceArtifact)
+            .filter_by(invoice_id=invoice_id, artifact_type=artifact_type)
+            .first()
+        )
+        if not artifact:
+            return None
+
+        artifact.status = "failed"
+        artifact.download_attempts = (artifact.download_attempts or 0) + 1
+        artifact.last_error = str(error)[:500]
+        artifact.updated_at = datetime.now(timezone.utc)
+        session.flush()
+        return artifact
+
+    def get_pending_artifacts(
+        self, session: Session, limit: int = 50
+    ) -> List[InvoiceArtifact]:
+        """Get artifacts that need downloading, ordered by creation time."""
+        return (
+            session.query(InvoiceArtifact)
+            .filter(InvoiceArtifact.status.in_(["pending", "failed"]))
+            .filter(InvoiceArtifact.download_attempts < 3)
+            .order_by(InvoiceArtifact.created_at)
+            .limit(limit)
+            .all()
+        )
 
     # ── State Migration ─────────────────────────────────────────────────
 

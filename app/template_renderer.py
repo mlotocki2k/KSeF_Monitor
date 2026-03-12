@@ -1,5 +1,5 @@
 """
-Template Renderer for KSeF Invoice Monitor
+Template Renderer for KSeF Monitor
 
 Jinja2-based template engine with custom filters for invoice notifications.
 Each notification channel (email, slack, discord, pushover, webhook) has its

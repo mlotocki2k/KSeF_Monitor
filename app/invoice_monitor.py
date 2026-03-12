@@ -7,7 +7,6 @@ import json
 import hashlib
 import logging
 import os
-import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -273,61 +272,13 @@ class InvoiceMonitor:
 
         try:
             for subject_type in self.subject_types:
-                # Determine date_from per subject_type
-                date_from = self._get_date_from(db_session, subject_type, state, now)
-                date_to = now
+                new_count, last_ksef_number = self._poll_subject_type(
+                    subject_type, db_session, state, seen_hashes, seen_entries, now
+                )
 
-                # Cap date_from to max 90 days back (KSeF API 3-month limit)
-                date_from = self._cap_date_from(date_from, now)
-
-                invoices = self.ksef.get_invoices_metadata(date_from, date_to, subject_type)
-                new_count = 0
-                last_ksef_number = None
-
-                for invoice in invoices:
-                    ksef_number = invoice.get('ksefNumber', '')
-
-                    # Dedup: DB-based or hash-based (mutually exclusive)
-                    is_new = True
-                    if use_db:
-                        existing = db_session.query(Invoice).filter_by(ksef_number=ksef_number).first()
-                        if existing:
-                            is_new = False
-                    else:
-                        invoice_hash = self.get_invoice_id_hash(invoice)
-                        if invoice_hash in seen_hashes:
-                            is_new = False
-                        else:
-                            seen_hashes.add(invoice_hash)
-                            seen_entries.append({"h": invoice_hash, "ts": now.isoformat()})
-
-                    if not is_new:
-                        continue
-
+                if new_count > 0:
                     found_any = True
-                    new_count += 1
-                    last_ksef_number = ksef_number
-
-                    # Save to DB
-                    invoice_id = None
-                    if use_db:
-                        invoice_id = self._save_invoice_to_db(db_session, invoice, subject_type)
-
-                    # Send notification
-                    context = self.build_template_context(invoice, subject_type)
-                    context["_invoice_id"] = invoice_id  # for notification_log
-                    success = self.notifier.send_invoice_notification(context)
-
-                    safe_ksef_log = str(ksef_number or 'N/A').replace('\n', ' ').replace('\r', ' ')
-                    if success:
-                        logger.info(f"Notification sent [{subject_type}] invoice: {safe_ksef_log}")
-                    else:
-                        logger.warning(f"Failed to send notification [{subject_type}] invoice: {safe_ksef_log}")
-
-                    # Save invoice artifacts (PDF, XML, UPO) with rate limit pause
-                    self._save_invoice_artifacts(invoice, subject_type, invoice_id=invoice_id, db_session=db_session)
-                    if self.save_xml or self.save_pdf:
-                        time.sleep(2)  # Rate limit: max 30 req/min API limit
+                    new_invoices_count[subject_type] = new_count
 
                 # Update monitor_state in DB
                 if use_db:
@@ -339,9 +290,6 @@ class InvoiceMonitor:
                         last_ksef_number=last_ksef_number,
                         new_invoices=new_count,
                     )
-
-                if new_count > 0:
-                    new_invoices_count[subject_type] = new_count
 
             # Commit DB transaction
             if use_db:
@@ -358,6 +306,84 @@ class InvoiceMonitor:
         if not found_any:
             logger.info("No new invoices found")
 
+        self._finalize_check_cycle(use_db, state, seen_entries, now, new_invoices_count)
+
+    def _poll_subject_type(self, subject_type: str, db_session, json_state: Dict,
+                           seen_hashes: set, seen_entries: list,
+                           now: datetime) -> tuple:
+        """Poll KSeF API for a single subject_type and process new invoices.
+
+        Returns:
+            Tuple of (new_count, last_ksef_number)
+        """
+        use_db = db_session is not None
+        date_from = self._get_date_from(db_session, subject_type, json_state, now)
+        date_to = now
+
+        # Cap date_from to max 90 days back (KSeF API 3-month limit)
+        date_from = self._cap_date_from(date_from, now)
+
+        invoices = self.ksef.get_invoices_metadata(date_from, date_to, subject_type)
+        new_count = 0
+        last_ksef_number = None
+
+        for invoice in invoices:
+            ksef_number = invoice.get('ksefNumber', '')
+
+            if not self._is_new_invoice(ksef_number, invoice, use_db, db_session,
+                                        seen_hashes, seen_entries, now):
+                continue
+
+            new_count += 1
+            last_ksef_number = ksef_number
+
+            self._process_new_invoice(invoice, subject_type, use_db, db_session)
+
+        return new_count, last_ksef_number
+
+    def _is_new_invoice(self, ksef_number: str, invoice: Dict, use_db: bool,
+                        db_session, seen_hashes: set, seen_entries: list,
+                        now: datetime) -> bool:
+        """Check if invoice is new (not seen before). Updates dedup state."""
+        if use_db:
+            existing = db_session.query(Invoice).filter_by(ksef_number=ksef_number).first()
+            return existing is None
+        else:
+            invoice_hash = self.get_invoice_id_hash(invoice)
+            if invoice_hash in seen_hashes:
+                return False
+            seen_hashes.add(invoice_hash)
+            seen_entries.append({"h": invoice_hash, "ts": now.isoformat()})
+            return True
+
+    def _process_new_invoice(self, invoice: Dict, subject_type: str,
+                             use_db: bool, db_session) -> None:
+        """Save invoice to DB, send notification, and save artifacts."""
+        ksef_number = invoice.get('ksefNumber', '')
+
+        # Save to DB
+        invoice_id = None
+        if use_db:
+            invoice_id = self._save_invoice_to_db(db_session, invoice, subject_type)
+
+        # Send notification
+        context = self.build_template_context(invoice, subject_type)
+        context["_invoice_id"] = invoice_id  # for notification_log
+        success = self.notifier.send_invoice_notification(context)
+
+        safe_ksef_log = str(ksef_number or 'N/A').replace('\n', ' ').replace('\r', ' ')
+        if success:
+            logger.info("Notification sent [%s] invoice: %s", subject_type, safe_ksef_log)
+        else:
+            logger.warning("Failed to send notification [%s] invoice: %s", subject_type, safe_ksef_log)
+
+        # Save invoice artifacts (PDF, XML)
+        # Rate limiting is handled globally by RateLimiter in ksef_client
+        self._save_invoice_artifacts(invoice, subject_type, invoice_id=invoice_id, db_session=db_session)
+
+    def _finalize_check_cycle(self, use_db: bool, state: Dict, seen_entries: list,
+                              now: datetime, new_invoices_count: Dict) -> None:
+        """Save state and update Prometheus metrics after a check cycle."""
         # Save JSON state only when DB is not active (fallback mode)
         if not use_db:
             state["last_check"] = now.isoformat()
@@ -595,7 +621,7 @@ class InvoiceMonitor:
         Args:
             invoice: Invoice metadata dict from KSeF API
             subject_type: Subject1 or Subject2
-            file_type: "invoice" or "upo"
+            file_type: "invoice"
 
         Returns:
             File name without extension
@@ -610,10 +636,7 @@ class InvoiceMonitor:
             or buyer.get("nip", "")
         )
 
-        if file_type == "upo":
-            type_val = "upo"
-        else:
-            type_val = "sprz" if subject_type == "Subject1" else "zak"
+        type_val = "sprz" if subject_type == "Subject1" else "zak"
 
         placeholders = {
             "type": type_val,
@@ -634,7 +657,7 @@ class InvoiceMonitor:
     def _save_invoice_artifacts(self, invoice: Dict, subject_type: str,
                                 invoice_id: Optional[int] = None, db_session=None):
         """
-        Save PDF, XML and UPO for a new invoice (if enabled in config).
+        Save PDF and XML for a new invoice (if enabled in config).
 
         Controlled by storage config:
             save_xml: save XML source files
@@ -716,26 +739,6 @@ class InvoiceMonitor:
             else:
                 logger.warning("reportlab not available - skipping PDF generation")
 
-        # For sales invoices (Subject1), fetch and save UPO (XML-based, follows save_xml flag)
-        if self.save_xml and subject_type == 'Subject1':
-            try:
-                upo_name = self._build_file_name(invoice, subject_type, file_type="upo")
-                upo_orig_path = target_dir / f"{upo_name}.xml"
-                upo_result = self.ksef.get_invoice_upo(ksef_number)
-                if upo_result:
-                    upo_path = self._resolve_safe_path(upo_orig_path)
-                    if upo_path:
-                        with open(upo_path, 'w', encoding='utf-8') as f:
-                            f.write(upo_result['xml_content'])
-                        logger.info(f"UPO saved: {upo_path}")
-                        self._update_artifact_in_db(db_session, invoice_id, "upo", upo_path)
-                    elif upo_orig_path.exists():
-                        # File exists on disk but was skipped — mark in DB
-                        self._update_artifact_in_db(db_session, invoice_id, "upo", upo_orig_path)
-                else:
-                    logger.info(f"No UPO available yet for {ksef_number}")
-            except Exception as e:
-                logger.error(f"Failed to fetch/save UPO for {ksef_number}: {e}")
 
     def _update_artifact_in_db(self, db_session, invoice_id: Optional[int],
                                artifact_type: str, file_path: Path):
@@ -753,9 +756,6 @@ class InvoiceMonitor:
             elif artifact_type == "pdf":
                 inv.has_pdf = True
                 inv.pdf_path = rel_path
-            elif artifact_type == "upo":
-                inv.has_upo = True
-                inv.upo_path = rel_path
         except Exception as e:
             logger.error(f"Failed to update artifact in DB: {e}")
 
@@ -765,7 +765,7 @@ class InvoiceMonitor:
         Continuously checks for new invoices at configured intervals
         """
         logger.info("=" * 60)
-        logger.info("KSeF Invoice Monitor started")
+        logger.info("KSeF Monitor started")
         logger.info("=" * 60)
         logger.info(f"Environment: {self.ksef.environment}")
         nip = self.ksef.nip or ""

@@ -21,9 +21,11 @@ Data analizy: 2026-02-20
 
 **Plik:** `app/invoice_monitor.py:254-256`
 
-**Problem:** `time.sleep(2)` po każdej fakturze to 30 req/min, ale `_save_invoice_artifacts()` wykonuje 1-3 zapytania API (XML + opcjonalnie UPO). Przy 10 fakturach = 20-30 requestów w ~20s = **60-90 req/min**, przekracza limit 30/min.
+**Problem:** `time.sleep(2)` po każdej fakturze to 30 req/min, ale `_save_invoice_artifacts()` wykonuje zapytanie API (XML). Przy 10 fakturach = 10-20 requestów w ~20s, co może przekraczać limit 30/min.
 
-**Rekomendacja:** Przenieść sleep między poszczególne zapytania API wewnątrz `_save_invoice_artifacts()`, nie między fakturami. Alternatywnie: token bucket / leaky bucket limiter.
+**Rekomendacja:** Token bucket / leaky bucket limiter.
+
+> **Status v0.4:** ✅ Naprawione — `RateLimiter` z 3 oknami (10/s, 30/min, 120/h) w `ksef_client.py`. Usunięty `time.sleep(2)`.
 
 ---
 
@@ -53,9 +55,11 @@ Data analizy: 2026-02-20
 
 **Pliki:** `app/ksef_client.py:466-476, 591-601, 657-667`
 
-**Problem:** Identyczny pattern 10-liniowy powtórzony 3x w `get_invoices_metadata()`, `get_invoice_xml()`, `get_invoice_upo()`.
+**Problem:** Identyczny pattern 10-liniowy powtórzony 3x w `get_invoices_metadata()`, `get_invoice_xml()`.
 
 **Rekomendacja:** Wyciągnąć do metody `_request_with_auth(method, url, **kwargs)` która opakowuje `_request_with_retry()` + obsługę 401.
+
+> **Status v0.4:** ✅ Naprawione — `_make_authenticated_request()` unifikuje 401-retry pattern.
 
 ---
 

@@ -1,4 +1,4 @@
-# KSeF Invoice Monitor v0.3
+# KSeF Monitor v0.4
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
@@ -54,8 +54,18 @@ KSeF_Monitor/
 │   ├── template_renderer.py     # Silnik szablonów Jinja2
 │   ├── prometheus_metrics.py    # Prometheus metrics endpoint
 │   ├── scheduler.py             # Elastyczny system schedulowania (5 trybów)
-│   ├── database.py              # SQLite + SQLAlchemy 2.0 ORM (metadane, stan, logi)
+│   ├── database.py              # SQLite + SQLAlchemy 2.0 ORM (metadane, stan, logi, artefakty)
+│   ├── rate_limiter.py          # Globalny rate limiter KSeF API (sliding window, 3 okna)
 │   ├── logging_config.py        # Logging setup z timezone
+│   ├── api/                     # REST API (FastAPI, v0.4)
+│   │   ├── __init__.py          # App factory (auth, security headers, CORS)
+│   │   ├── server.py            # Uvicorn daemon thread server
+│   │   ├── schemas.py           # Pydantic response models
+│   │   └── routers/             # API endpoints
+│   │       ├── invoices.py      # GET /api/v1/invoices (paginacja, filtry, sortowanie)
+│   │       ├── stats.py         # GET /api/v1/stats/summary, /stats/api
+│   │       ├── monitor.py       # GET /health, /state; POST /trigger
+│   │       └── artifacts.py     # GET /api/v1/artifacts/pending
 │   ├── templates/               # Wbudowane szablony Jinja2
 │   │   ├── invoice_pdf.html.j2  # Szablon PDF faktury (HTML/CSS)
 │   │   ├── pushover.txt.j2      # Plain text (Pushover)
@@ -161,6 +171,8 @@ Katalog `data/` powstaje w runtime i zawiera bazę danych `invoices.db` oraz leg
 | `xhtml2pdf` | >=0.2.16 | Renderowanie HTML/CSS do PDF (silnik primary) |
 | `SQLAlchemy` | >=2.0.0 | ORM do bazy danych SQLite (metadane faktur, stan, logi) |
 | `alembic` | >=1.13.0 | Migracje schematu bazy danych |
+| `fastapi` | >=0.115.0 | REST API pod UI (endpointy, Swagger docs) |
+| `uvicorn` | >=0.34.0 | ASGI server dla FastAPI (daemon thread) |
 
 ---
 
@@ -410,11 +422,11 @@ Konfiguracja zapisywania plików faktur (XML, PDF). Domyślnie wyłączone.
 
 | Pole | Default | Opis |
 |---|---|---|
-| `save_xml` | `false` | Zapisuj pliki XML faktur (źródłowe dane z KSeF) oraz UPO (dla faktur sprzedażowych). |
+| `save_xml` | `false` | Zapisuj pliki XML faktur (źródłowe dane z KSeF). |
 | `save_pdf` | `false` | Generuj i zapisuj pliki PDF faktur (wymaga `reportlab`). |
 | `output_dir` | `"/data/invoices"` | Katalog docelowy dla zapisanych plików. Tworzony automatycznie jeśli nie istnieje. |
 | `folder_structure` | `""` | Wzorzec podfolderów z placeholderami: `{year}`, `{month}`, `{day}`, `{type}`. Pusty = płaski katalog. |
-| `file_name_pattern` | `"{type}_{date}_{invoice_number}"` | Wzorzec nazw plików. Placeholdery: `{type}` (sprz/zak/upo), `{date}` (YYYYMMDD), `{invoice_number}`, `{ksef}`, `{ksef_short}`, `{seller_nip}`, `{buyer_nip}`. |
+| `file_name_pattern` | `"{type}_{date}_{invoice_number}"` | Wzorzec nazw plików. Placeholdery: `{type}` (sprz/zak), `{date}` (YYYYMMDD), `{invoice_number}`, `{ksef}`, `{ksef_short}`, `{seller_nip}`, `{buyer_nip}`. |
 | `file_exists_strategy` | `"skip"` | Co zrobić gdy plik już istnieje: `skip` (pomiń), `rename` (dodaj suffix `_1`, `_2`...), `overwrite` (nadpisz). |
 
 **Przykład konfiguracji:**
@@ -450,7 +462,7 @@ Dostępne placeholdery: `{year}` (rok), `{month}` (miesiąc 01-12), `{day}` (dzi
 | `"{type}_{seller_nip}_{date}_{invoice_number}"` | `sprz_9730842472_20260227_FV-123_2026.xml` |
 | `"{date}_{type}_{ksef_short}"` | `20260227_sprz_456-78.xml` |
 
-Dostępne placeholdery: `{type}` (sprz/zak/upo), `{date}` (YYYYMMDD), `{invoice_number}`, `{ksef}` (pełny numer KSeF), `{ksef_short}` (ostatnie 6 znaków), `{seller_nip}`, `{buyer_nip}`. Znaki niedozwolone w systemie plików są automatycznie zamieniane na `_`.
+Dostępne placeholdery: `{type}` (sprz/zak), `{date}` (YYYYMMDD), `{invoice_number}`, `{ksef}` (pełny numer KSeF), `{ksef_short}` (ostatnie 6 znaków), `{seller_nip}`, `{buyer_nip}`. Znaki niedozwolone w systemie plików są automatycznie zamieniane na `_`.
 
 **Nazewnictwo plików** (domyślny pattern):
 ```
@@ -458,14 +470,12 @@ sprz_20260227_FV-123_2026.xml    — XML faktury sprzedażowej
 sprz_20260227_FV-123_2026.pdf    — PDF faktury sprzedażowej
 zak_20260227_FV-456_2026.xml     — XML faktury zakupowej
 zak_20260227_FV-456_2026.pdf     — PDF faktury zakupowej
-upo_20260227_FV-123_2026.xml     — UPO (tylko faktury sprzedażowe)
 ```
 
 **Uwagi:**
 - Jeśli oba flagi `save_xml` i `save_pdf` są `false`, żadne pliki nie są pobierane/generowane
 - Generowanie PDF wymaga biblioteki `reportlab` (w `requirements.txt`)
 - Katalog `output_dir` i podfoldery są tworzone automatycznie przy pierwszym zapisie
-- UPO (Urzędowe Poświadczenie Odbioru) zapisywane jest razem z XML (zależne od `save_xml`)
 
 ### Sekcja `database`
 
@@ -1266,7 +1276,7 @@ Jeśli problem nie został rozwiązany:
 1. **Zbierz informacje:**
    ```bash
    # Wersja
-   docker logs ksef-invoice-monitor | grep "KSeF Invoice Monitor"
+   docker logs ksef-invoice-monitor | grep "KSeF Monitor"
 
    # Pełne logi (wyczyść sekrety przed udostępnieniem!)
    docker logs ksef-invoice-monitor > ksef-logs.txt

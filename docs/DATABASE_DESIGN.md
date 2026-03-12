@@ -109,10 +109,10 @@ CREATE TABLE invoices (
     -- Artefakty na dysku
     has_xml             BOOLEAN DEFAULT FALSE,
     has_pdf             BOOLEAN DEFAULT FALSE,
-    has_upo             BOOLEAN DEFAULT FALSE,   -- UPO dostępne tylko dla Subject1
+    has_upo             BOOLEAN DEFAULT FALSE,   -- kolumna zachowana, ale nieużywana (UPO nie jest pobierane)
     xml_path            TEXT,                     -- ścieżka względna do XML
     pdf_path            TEXT,                     -- ścieżka względna do PDF
-    upo_path            TEXT,                     -- ścieżka względna do UPO
+    upo_path            TEXT,                     -- kolumna zachowana, ale nieużywana
 
     -- Metadane
     created_at          DATETIME DEFAULT (datetime('now')),
@@ -313,7 +313,7 @@ CREATE TABLE invoice_artifacts (
     invoice_id          INTEGER NOT NULL REFERENCES invoices(id),
 
     -- Typ artefaktu
-    artifact_type       TEXT    NOT NULL,           -- xml / pdf / upo
+    artifact_type       TEXT    NOT NULL,           -- xml / pdf
 
     -- Status
     status              TEXT    DEFAULT 'pending',  -- pending / downloaded / failed / skipped
@@ -338,7 +338,7 @@ CREATE TABLE invoice_artifacts (
 - Obecny kod w `_save_invoice_artifacts()` nie wie co pobrano wcześniej — przy 500 fakturach i restarcie zaczyna od nowa
 - `status=pending` → trzeba pobrać, `downloaded` → pominąć, `failed` → retry
 - Rate limiting: wiadomo ile artefaktów do pobrania = ile API calls potrzeba
-- Zastępuje kolumny `has_xml/has_pdf/has_upo/xml_path/pdf_path/upo_path` z tabeli `invoices` (normalizacja)
+- Zastępuje kolumny `has_xml/has_pdf/xml_path/pdf_path` z tabeli `invoices` (normalizacja)
 
 ### Rozszerzenie `invoices` — nowe kolumny
 

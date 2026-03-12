@@ -1,5 +1,5 @@
 """
-Configuration Manager for KSeF Invoice Monitor
+Configuration Manager for KSeF Monitor
 Handles loading and validation of JSON configuration with secrets support
 """
 
@@ -154,6 +154,12 @@ class ConfigManager:
         # Set storage defaults
         self._apply_storage_defaults(config)
 
+        # Set rate limit defaults
+        self._apply_rate_limit_defaults(config)
+
+        # Set API defaults
+        self._apply_api_defaults(config)
+
     def _validate_schedule(self, schedule: Dict[str, Any]):
         """
         Validate schedule configuration based on mode
@@ -253,24 +259,14 @@ class ConfigManager:
             logger.warning("No notification channels enabled in config - notifications disabled")
             return
 
-        # Validate each enabled channel
-        valid_channels = ["pushover", "discord", "slack", "email", "webhook"]
+        # Validate each enabled channel using data-driven rules
         for channel in channels:
-            if channel not in valid_channels:
+            if channel not in self._CHANNEL_VALIDATORS:
                 logger.warning(f"Unknown notification channel: '{channel}' - skipping")
                 continue
 
-            # Validate channel-specific configuration
-            if channel == "pushover" and channel in notifications:
-                self._validate_pushover(notifications[channel])
-            elif channel == "discord" and channel in notifications:
-                self._validate_discord(notifications[channel])
-            elif channel == "slack" and channel in notifications:
-                self._validate_slack(notifications[channel])
-            elif channel == "email" and channel in notifications:
-                self._validate_email(notifications[channel])
-            elif channel == "webhook" and channel in notifications:
-                self._validate_webhook(notifications[channel])
+            if channel in notifications:
+                self._validate_channel(channel, notifications[channel])
 
         # Validate optional templates_dir
         templates_dir = notifications.get("templates_dir")
@@ -282,43 +278,41 @@ class ConfigManager:
                     f"Built-in defaults will be used."
                 )
 
-    def _validate_pushover(self, pushover: Dict[str, Any]):
-        """Validate Pushover configuration"""
-        if not pushover.get("user_key"):
-            logger.warning("Pushover enabled but 'user_key' not configured")
-        if not pushover.get("api_token"):
-            logger.warning("Pushover enabled but 'api_token' not configured")
+    # Data-driven channel validation rules
+    _CHANNEL_VALIDATORS = {
+        "pushover": {"required_warn": ["user_key", "api_token"]},
+        "discord":  {"required_warn": ["webhook_url"]},
+        "slack":    {"required_warn": ["webhook_url"]},
+        "email":    {"required_warn": ["smtp_server", "username", "password",
+                                        "from_address", "to_addresses"],
+                     "list_fields": ["to_addresses"]},
+        "webhook":  {"required_warn": ["url"],
+                     "enum_fields": {"method": ["GET", "POST", "PUT"]}},
+    }
 
-    def _validate_discord(self, discord: Dict[str, Any]):
-        """Validate Discord configuration"""
-        if not discord.get("webhook_url"):
-            logger.warning("Discord enabled but 'webhook_url' not configured")
+    def _validate_channel(self, channel_name: str, channel_config: Dict[str, Any]):
+        """Validate a notification channel config against its rules."""
+        rules = self._CHANNEL_VALIDATORS.get(channel_name, {})
 
-    def _validate_slack(self, slack: Dict[str, Any]):
-        """Validate Slack configuration"""
-        if not slack.get("webhook_url"):
-            logger.warning("Slack enabled but 'webhook_url' not configured")
+        # Check required fields (warn if missing)
+        for field in rules.get("required_warn", []):
+            if not channel_config.get(field):
+                logger.warning(f"{channel_name.capitalize()} enabled but '{field}' not configured")
 
-    def _validate_email(self, email: Dict[str, Any]):
-        """Validate Email configuration"""
-        required = ["smtp_server", "username", "password", "from_address", "to_addresses"]
-        missing = [field for field in required if not email.get(field)]
-        if missing:
-            logger.warning(f"Email enabled but missing fields: {', '.join(missing)}")
+        # Check list fields
+        for field in rules.get("list_fields", []):
+            val = channel_config.get(field)
+            if val and not isinstance(val, list):
+                raise ValueError(f"Field '{channel_name}.{field}' must be a list")
 
-        # Validate to_addresses is a list
-        to_addresses = email.get("to_addresses")
-        if to_addresses and not isinstance(to_addresses, list):
-            raise ValueError("Field 'email.to_addresses' must be a list")
-
-    def _validate_webhook(self, webhook: Dict[str, Any]):
-        """Validate Webhook configuration"""
-        if not webhook.get("url"):
-            logger.warning("Webhook enabled but 'url' not configured")
-
-        method = webhook.get("method", "POST").upper()
-        if method not in ["GET", "POST", "PUT"]:
-            raise ValueError(f"Invalid webhook method: '{method}'. Valid methods: GET, POST, PUT")
+        # Check enum fields
+        for field, valid_values in rules.get("enum_fields", {}).items():
+            val = channel_config.get(field, valid_values[0] if valid_values else "").upper()
+            if val not in valid_values:
+                raise ValueError(
+                    f"Invalid {channel_name} {field}: '{val}'. "
+                    f"Valid values: {', '.join(valid_values)}"
+                )
 
     def _validate_timezone(self, config: Dict[str, Any]):
         """
@@ -428,6 +422,38 @@ class ConfigManager:
                 )
 
         logger.info(f"Storage: save_xml={storage['save_xml']}, save_pdf={storage['save_pdf']}, output_dir={storage['output_dir']}")
+
+    def _apply_rate_limit_defaults(self, config: Dict[str, Any]):
+        """Apply defaults for KSeF API rate limiting (ksef.rate_limit section)."""
+        ksef = config.setdefault("ksef", {})
+        rl = ksef.setdefault("rate_limit", {})
+
+        defaults = {"per_second": 10, "per_minute": 30, "per_hour": 120}
+        for key, default_val in defaults.items():
+            val = rl.setdefault(key, default_val)
+            if not isinstance(val, int) or val <= 0:
+                logger.warning(
+                    f"Invalid rate_limit.{key}={val!r}, falling back to {default_val}"
+                )
+                rl[key] = default_val
+
+        logger.info(
+            f"Rate limits: {rl['per_second']}/s, {rl['per_minute']}/min, {rl['per_hour']}/h"
+        )
+
+    def _apply_api_defaults(self, config: Dict[str, Any]):
+        """Apply defaults for REST API section."""
+        api = config.setdefault("api", {})
+        api.setdefault("enabled", False)
+        api.setdefault("port", 8080)
+        api.setdefault("bind_address", "127.0.0.1")
+        api.setdefault("auth_token", "")
+
+        if api["enabled"]:
+            logger.info(
+                f"API: enabled on {api['bind_address']}:{api['port']}, "
+                f"auth={'enabled' if api['auth_token'] else 'DISABLED (open access)'}"
+            )
 
     _SENTINEL = object()
 

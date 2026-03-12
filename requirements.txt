@@ -18,3 +18,7 @@ xhtml2pdf>=0.2.16,<1.0.0
 # Database
 SQLAlchemy>=2.0.0,<3.0.0
 alembic>=1.13.0,<2.0.0
+
+# REST API
+fastapi>=0.115.0,<1.0.0
+uvicorn[standard]>=0.34.0,<1.0.0

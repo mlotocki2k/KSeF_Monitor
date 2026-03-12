@@ -1,5 +1,5 @@
 """
-KSeF Invoice Monitor Application Package
+KSeF Monitor Application Package
 Contains core modules for monitoring KSeF invoices
 """
 

@@ -1,6 +1,6 @@
 # Quick Start Guide
 
-Get your KSeF Invoice Monitor v0.3 running in 5 minutes!
+Get your KSeF Monitor v0.3 running in 5 minutes!
 
 ## Prerequisites
 
@@ -213,7 +213,7 @@ docker service logs -f ksef_ksef-monitor
 ### Expected output:
 ```
 ksef-monitor | ======================================================================
-ksef-monitor | KSeF Invoice Monitor v0.3
+ksef-monitor | KSeF Monitor v0.3
 ksef-monitor | Based on KSeF API v2.2.0 (github.com/CIRFMF/ksef-docs)
 ksef-monitor | Multi-channel notifications with Jinja2 templates
 ksef-monitor | ======================================================================

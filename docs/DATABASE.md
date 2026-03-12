@@ -39,8 +39,8 @@ Metadane faktur z API KSeF. Klucz deduplikacji: `ksef_number` (UNIQUE).
 | `currency` | TEXT | Kod waluty (domyślnie PLN) |
 | `seller_nip` / `seller_name` | TEXT | Dane sprzedawcy |
 | `buyer_nip` / `buyer_name` | TEXT | Dane nabywcy |
-| `has_xml` / `has_pdf` / `has_upo` | BOOLEAN | Czy artefakt został zapisany |
-| `xml_path` / `pdf_path` / `upo_path` | TEXT | Ścieżki do artefaktów |
+| `has_xml` / `has_pdf` | BOOLEAN | Czy artefakt został zapisany |
+| `xml_path` / `pdf_path` | TEXT | Ścieżki do artefaktów |
 | `raw_metadata` | TEXT | Pełny JSON z API (na przyszłość) |
 
 **Indeksy:** `(subject_type, seller_nip, issue_date)`, `(buyer_nip, issue_date)`, `(invoice_type)`, `(issue_date DESC)`
@@ -173,7 +173,7 @@ Total invoices: 127
   Top 5 sellers:
     9876543210    Dostawca Główny Sp. z o.o.      28 invoices
 
-  Artifacts: XML=127/127  PDF=45/127  UPO=45/127
+  Artifacts: XML=127/127  PDF=45/127
 
 === Notification Statistics ===
 Total notifications: 254

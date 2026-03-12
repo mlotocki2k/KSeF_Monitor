@@ -1,6 +1,6 @@
 # Security Guide - Protecting Sensitive Credentials
 
-This guide explains multiple methods to secure your API tokens and credentials for the KSeF Invoice Monitor v0.3.
+This guide explains multiple methods to secure your API tokens and credentials for the KSeF Monitor v0.3.
 
 **Protected Credentials:**
 - KSeF API token
@@ -548,7 +548,7 @@ docker stack deploy -c docker-compose.yml ksef
 
 ## Vulnerability Disclosure Policy
 
-If you discover a security vulnerability in KSeF Invoice Monitor, please report it responsibly:
+If you discover a security vulnerability in KSeF Monitor, please report it responsibly:
 
 1. **Do NOT open a public GitHub issue** for security vulnerabilities
 2. **Email the maintainer directly** or use [GitHub Security Advisories](https://github.com/mlotocki2k/KSeF_Monitor/security/advisories/new) to report privately
@@ -565,7 +565,7 @@ If you discover a security vulnerability in KSeF Invoice Monitor, please report 
 
 We will credit reporters in the release notes (unless anonymity is requested).
 
-**Scope:** This policy covers the KSeF Invoice Monitor application code, Docker configuration, and CI/CD pipelines. It does not cover the KSeF API itself (report those to the Ministry of Finance).
+**Scope:** This policy covers the KSeF Monitor application code, Docker configuration, and CI/CD pipelines. It does not cover the KSeF API itself (report those to the Ministry of Finance).
 
 ## Support
 

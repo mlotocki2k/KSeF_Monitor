@@ -1,6 +1,6 @@
 FROM python:3.11-slim@sha256:543d6cace00ffc96bc95d332493bb28a4332c6dd614aab5fcbd649ae8a7953d9
 
-LABEL org.opencontainers.image.title="KSeF Invoice Monitor" \
+LABEL org.opencontainers.image.title="KSeF Monitor" \
       org.opencontainers.image.description="Monitor faktur w Krajowym Systemie e-Faktur" \
       org.opencontainers.image.source="https://github.com/mlotocki2k/KSeF_Monitor" \
       org.opencontainers.image.licenses="MIT" \

@@ -194,6 +194,8 @@ class TestKSeFClientRequestWithRetry:
 
     def test_success_no_retry(self, client):
         """Successful request needs no retry."""
+        client.rate_limiter.acquire = MagicMock(return_value=0.0)
+
         mock_response = MagicMock()
         mock_response.status_code = 200
         client.session.request = MagicMock(return_value=mock_response)
@@ -201,10 +203,14 @@ class TestKSeFClientRequestWithRetry:
         result = client._request_with_retry("GET", "https://example.com")
         assert result.status_code == 200
         assert client.session.request.call_count == 1
+        client.rate_limiter.acquire.assert_called_once()
 
     @patch("app.ksef_client.time.sleep")
     def test_429_retry(self, mock_sleep, client):
         """429 triggers retry with Retry-After header."""
+        client.rate_limiter.acquire = MagicMock(return_value=0.0)
+        client.rate_limiter.pause_until = MagicMock()
+
         retry_response = MagicMock()
         retry_response.status_code = 429
         retry_response.headers = {"Retry-After": "5"}
@@ -220,10 +226,14 @@ class TestKSeFClientRequestWithRetry:
         result = client._request_with_retry("GET", "https://example.com")
         assert result.status_code == 200
         mock_sleep.assert_called_once_with(5)
+        client.rate_limiter.pause_until.assert_called_once_with(5)
 
     @patch("app.ksef_client.time.sleep")
     def test_429_exhausted(self, mock_sleep, client):
         """Returns 429 after max retries exhausted."""
+        client.rate_limiter.acquire = MagicMock(return_value=0.0)
+        client.rate_limiter.pause_until = MagicMock()
+
         retry_response = MagicMock()
         retry_response.status_code = 429
         retry_response.headers = {"Retry-After": "1"}
@@ -238,6 +248,9 @@ class TestKSeFClientRequestWithRetry:
     @patch("app.ksef_client.time.sleep")
     def test_429_default_retry_after(self, mock_sleep, client):
         """Uses default retry-after when header missing."""
+        client.rate_limiter.acquire = MagicMock(return_value=0.0)
+        client.rate_limiter.pause_until = MagicMock()
+
         retry_response = MagicMock()
         retry_response.status_code = 429
         retry_response.headers = {}
@@ -256,6 +269,9 @@ class TestKSeFClientRequestWithRetry:
     @patch("app.ksef_client.time.sleep")
     def test_429_retry_after_capped(self, mock_sleep, client):
         """Retry-After is capped at MAX_RETRY_AFTER (1800 seconds)."""
+        client.rate_limiter.acquire = MagicMock(return_value=0.0)
+        client.rate_limiter.pause_until = MagicMock()
+
         retry_response = MagicMock()
         retry_response.status_code = 429
         retry_response.headers = {"Retry-After": "3600"}

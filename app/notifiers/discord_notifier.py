@@ -83,7 +83,7 @@ class DiscordNotifier(BaseNotifier):
                 "color": color,
                 "timestamp": datetime.now(timezone.utc).isoformat(),
                 "footer": {
-                    "text": "KSeF Invoice Monitor"
+                    "text": "KSeF Monitor"
                 }
             }
 

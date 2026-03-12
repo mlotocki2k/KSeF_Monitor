@@ -1,5 +1,5 @@
 """
-Secrets Manager for KSeF Invoice Monitor
+Secrets Manager for KSeF Monitor
 Handles secure loading of sensitive credentials from various sources
 """
 

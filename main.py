@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-KSeF Invoice Monitor - Main Entry Point
+KSeF Monitor - Main Entry Point
 Monitors KSeF API for new invoices and sends multi-channel notifications
 
 Based on KSeF API v2.2.0 specification:
@@ -54,7 +54,7 @@ def main():
     global monitor
     
     logger.info("=" * 70)
-    logger.info("KSeF Invoice Monitor v0.3")
+    logger.info("KSeF Monitor v0.3")
     logger.info("Based on KSeF API v2.2.0 (github.com/CIRFMF/ksef-docs)")
     logger.info("Multi-channel notifications with Jinja2 templates")
     logger.info("=" * 70)

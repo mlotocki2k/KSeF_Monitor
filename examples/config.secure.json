@@ -2,7 +2,13 @@
   "ksef": {
     "environment": "test",
     "nip": "1234567890",
-    "description": "KSeF API Configuration. Environment: 'test', 'demo', or 'prod'. Token loaded from KSEF_TOKEN environment variable or Docker secret 'ksef_token'."
+    "description": "KSeF API Configuration. Environment: 'test', 'demo', or 'prod'. Token loaded from KSEF_TOKEN environment variable or Docker secret 'ksef_token'.",
+    "rate_limit": {
+      "per_second": 10,
+      "per_minute": 30,
+      "per_hour": 120,
+      "description": "Optional: KSeF API rate limits. Defaults match official limits. Lower these if sharing a token."
+    }
   },
   "notifications": {
     "channels": ["pushover"],
@@ -72,5 +78,11 @@
     "enabled": true,
     "path": "/data/invoices.db",
     "description": "SQLite database for invoice metadata. Set enabled: false to use JSON state only."
+  },
+  "api": {
+    "enabled": false,
+    "port": 8080,
+    "bind_address": "127.0.0.1",
+    "description": "REST API. auth_token loaded from API_AUTH_TOKEN env var or Docker secret 'api_auth_token'. Swagger docs at /docs."
   }
 }

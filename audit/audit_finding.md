@@ -1,4 +1,4 @@
-# Audyt Bezpieczeństwa — KSeF Invoice Monitor v0.3
+# Audyt Bezpieczeństwa — KSeF Monitor v0.3
 
 > Data audytu: 2026-02-20
 > Zakres: cały kod źródłowy, konfiguracja, Docker, CI/CD, zależności

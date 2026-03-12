@@ -123,9 +123,11 @@ class TestPrometheusMetrics:
         # Mock start_http_server to avoid port conflicts
         with patch("app.prometheus_metrics.start_http_server"):
             with patch("app.prometheus_metrics.Gauge") as MockGauge, \
-                 patch("app.prometheus_metrics.Counter") as MockCounter:
+                 patch("app.prometheus_metrics.Counter") as MockCounter, \
+                 patch("app.prometheus_metrics.Histogram") as MockHistogram:
                 MockGauge.return_value = MagicMock()
                 MockCounter.return_value = MagicMock()
+                MockHistogram.return_value = MagicMock()
 
                 pm = PrometheusMetrics(port=9999)
                 pm.monitor_up.set.assert_called_with(1)
@@ -133,9 +135,11 @@ class TestPrometheusMetrics:
     def test_update_last_check(self):
         """update_last_check sets gauge value."""
         with patch("app.prometheus_metrics.Gauge") as MockGauge, \
-             patch("app.prometheus_metrics.Counter") as MockCounter:
+             patch("app.prometheus_metrics.Counter") as MockCounter, \
+             patch("app.prometheus_metrics.Histogram") as MockHistogram:
             MockGauge.return_value = MagicMock()
             MockCounter.return_value = MagicMock()
+            MockHistogram.return_value = MagicMock()
 
             from app.prometheus_metrics import PrometheusMetrics
             pm = PrometheusMetrics(port=9998)
@@ -147,9 +151,11 @@ class TestPrometheusMetrics:
     def test_increment_new_invoices(self):
         """increment_new_invoices increments counter with label."""
         with patch("app.prometheus_metrics.Gauge") as MockGauge, \
-             patch("app.prometheus_metrics.Counter") as MockCounter:
+             patch("app.prometheus_metrics.Counter") as MockCounter, \
+             patch("app.prometheus_metrics.Histogram") as MockHistogram:
             MockGauge.return_value = MagicMock()
             MockCounter.return_value = MagicMock()
+            MockHistogram.return_value = MagicMock()
 
             from app.prometheus_metrics import PrometheusMetrics
             pm = PrometheusMetrics(port=9997)
@@ -160,9 +166,11 @@ class TestPrometheusMetrics:
     def test_increment_zero_skipped(self):
         """Zero count doesn't increment counter."""
         with patch("app.prometheus_metrics.Gauge") as MockGauge, \
-             patch("app.prometheus_metrics.Counter") as MockCounter:
+             patch("app.prometheus_metrics.Counter") as MockCounter, \
+             patch("app.prometheus_metrics.Histogram") as MockHistogram:
             MockGauge.return_value = MagicMock()
             MockCounter.return_value = MagicMock()
+            MockHistogram.return_value = MagicMock()
 
             from app.prometheus_metrics import PrometheusMetrics
             pm = PrometheusMetrics(port=9996)
@@ -173,9 +181,11 @@ class TestPrometheusMetrics:
     def test_shutdown_sets_down(self):
         """shutdown sets monitor_up to 0."""
         with patch("app.prometheus_metrics.Gauge") as MockGauge, \
-             patch("app.prometheus_metrics.Counter") as MockCounter:
+             patch("app.prometheus_metrics.Counter") as MockCounter, \
+             patch("app.prometheus_metrics.Histogram") as MockHistogram:
             MockGauge.return_value = MagicMock()
             MockCounter.return_value = MagicMock()
+            MockHistogram.return_value = MagicMock()
 
             from app.prometheus_metrics import PrometheusMetrics
             pm = PrometheusMetrics(port=9995)
@@ -187,9 +197,11 @@ class TestPrometheusMetrics:
         """Starting server twice logs warning."""
         with patch("app.prometheus_metrics.Gauge") as MockGauge, \
              patch("app.prometheus_metrics.Counter") as MockCounter, \
+             patch("app.prometheus_metrics.Histogram") as MockHistogram, \
              patch("app.prometheus_metrics.start_http_server"):
             MockGauge.return_value = MagicMock()
             MockCounter.return_value = MagicMock()
+            MockHistogram.return_value = MagicMock()
 
             from app.prometheus_metrics import PrometheusMetrics
             pm = PrometheusMetrics(port=9994)
@@ -201,9 +213,11 @@ class TestPrometheusMetrics:
     def test_bind_address_default(self):
         """Default bind_address is 0.0.0.0."""
         with patch("app.prometheus_metrics.Gauge") as MockGauge, \
-             patch("app.prometheus_metrics.Counter") as MockCounter:
+             patch("app.prometheus_metrics.Counter") as MockCounter, \
+             patch("app.prometheus_metrics.Histogram") as MockHistogram:
             MockGauge.return_value = MagicMock()
             MockCounter.return_value = MagicMock()
+            MockHistogram.return_value = MagicMock()
 
             from app.prometheus_metrics import PrometheusMetrics
             pm = PrometheusMetrics(port=9993)
@@ -213,9 +227,11 @@ class TestPrometheusMetrics:
         """Custom bind_address is passed to start_http_server."""
         with patch("app.prometheus_metrics.Gauge") as MockGauge, \
              patch("app.prometheus_metrics.Counter") as MockCounter, \
+             patch("app.prometheus_metrics.Histogram") as MockHistogram, \
              patch("app.prometheus_metrics.start_http_server") as mock_start:
             MockGauge.return_value = MagicMock()
             MockCounter.return_value = MagicMock()
+            MockHistogram.return_value = MagicMock()
 
             from app.prometheus_metrics import PrometheusMetrics
             pm = PrometheusMetrics(port=9992, bind_address='127.0.0.1')

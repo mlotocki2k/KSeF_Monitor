@@ -15,6 +15,12 @@ from cryptography.hazmat.primitives.asymmetric import padding as asym_padding
 from cryptography.hazmat.primitives import hashes
 from cryptography.x509 import load_der_x509_certificate
 
+# Handle imports for both package and direct execution
+try:
+    from .rate_limiter import RateLimiter
+except ImportError:
+    from app.rate_limiter import RateLimiter
+
 logger = logging.getLogger(__name__)
 
 
@@ -62,7 +68,6 @@ class KSeFClient:
 
         self.access_token = None
         self.refresh_token = None
-        self.session_reference = None  # Session referenceNumber for UPO endpoints
         self._ksef_public_key = None
         self.on_auth_failure = None  # Optional callback: on_auth_failure(status_code: int)
         self.session = requests.Session()
@@ -73,6 +78,14 @@ class KSeFClient:
             logger.warning(f"Invalid date_type '{date_type}', falling back to 'Invoicing'")
             date_type = "Invoicing"
         self.date_type = date_type
+
+        # Initialize rate limiter with configurable limits
+        rl_config = config.get("ksef", "rate_limit") or {}
+        self.rate_limiter = RateLimiter(
+            per_second=rl_config.get("per_second", 10) if isinstance(rl_config, dict) else 10,
+            per_minute=rl_config.get("per_minute", 30) if isinstance(rl_config, dict) else 30,
+            per_hour=rl_config.get("per_hour", 120) if isinstance(rl_config, dict) else 120,
+        )
 
         logger.info(f"KSeF client initialized for {self.environment} environment")
         logger.info(f"Base URL: {self.base_url}, date_type: {self.date_type}")
@@ -95,6 +108,11 @@ class KSeFClient:
             requests.HTTPError: If non-429 error or retries exhausted
         """
         for attempt in range(self.MAX_429_RETRIES + 1):
+            # Proactive rate limiting — acquire slot before sending request
+            wait = self.rate_limiter.acquire()
+            if wait > 0:
+                logger.debug("Rate limiter waited %.1fs before request", wait)
+
             response = self.session.request(method, url, **kwargs)
             if response.status_code != 429:
                 return response
@@ -128,6 +146,8 @@ class KSeFClient:
                     except (ValueError, TypeError):
                         retry_after = self.DEFAULT_RETRY_AFTER
             retry_after = min(retry_after, self.MAX_RETRY_AFTER)
+            # Inform rate limiter about server-enforced backoff
+            self.rate_limiter.pause_until(retry_after)
             logger.warning("Rate limited (429). Waiting %ds before retry %d/%d. %s",
                            retry_after, attempt + 1, self.MAX_429_RETRIES, details)
             time.sleep(retry_after)
@@ -186,6 +206,40 @@ class KSeFClient:
 
         # Format 3: fallback
         return f"status={status}"
+
+    def _make_authenticated_request(self, method: str, url: str,
+                                     on_failure=None, **kwargs) -> Optional[requests.Response]:
+        """
+        Make an authenticated HTTP request with automatic 401 token refresh.
+
+        Adds Authorization header, sends request via _request_with_retry(),
+        and retries once if 401 (expired token) with automatic refresh.
+
+        Args:
+            method: HTTP method (GET, POST, DELETE)
+            url: Request URL
+            on_failure: Value to return if auth fails (default None)
+            **kwargs: Passed to _request_with_retry() (json, params, timeout, etc.)
+
+        Returns:
+            Response object, or on_failure if authentication cannot be recovered
+        """
+        if not self.access_token:
+            if not self.authenticate():
+                return on_failure
+
+        headers = kwargs.pop("headers", {})
+        headers["Authorization"] = f"Bearer {self.access_token}"
+
+        response = self._request_with_retry(method, url, headers=headers, **kwargs)
+
+        if response.status_code == 401:
+            if not self._handle_401_refresh(response):
+                return on_failure
+            headers["Authorization"] = f"Bearer {self.access_token}"
+            response = self._request_with_retry(method, url, headers=headers, **kwargs)
+
+        return response
 
     def _handle_401_refresh(self, response: requests.Response) -> bool:
         """
@@ -247,7 +301,6 @@ class KSeFClient:
                 logger.error("Failed to redeem access token")
                 return False
 
-            self.session_reference = reference_number
             logger.info(f"Authentication successful (session: {reference_number})")
             return True
 
@@ -560,11 +613,6 @@ class KSeFClient:
             date_field = self._DATE_TYPE_TO_FIELD.get(self.date_type, "invoicingDate")
 
             while len(all_invoices) < self.PAGINATION_MAX_RECORDS:
-                headers = {
-                    "Content-Type": "application/json",
-                    "Authorization": f"Bearer {self.access_token}"
-                }
-
                 params = {
                     "pageSize": self.PAGINATION_PAGE_SIZE,
                     "pageOffset": page_offset,
@@ -574,20 +622,15 @@ class KSeFClient:
                 # Update dateRange.from for truncation narrowing
                 payload["dateRange"]["from"] = current_from_str
 
-                response = self._request_with_retry(
-                    "POST", url, json=payload, headers=headers,
-                    params=params, timeout=30
+                response = self._make_authenticated_request(
+                    "POST", url, on_failure=all_invoices,
+                    headers={"Content-Type": "application/json"},
+                    json=payload, params=params, timeout=30
                 )
 
-                # Handle token expiration inside pagination loop
-                if response.status_code == 401:
-                    if not self._handle_401_refresh(response):
-                        return all_invoices  # return what we have so far
-                    headers["Authorization"] = f"Bearer {self.access_token}"
-                    response = self._request_with_retry(
-                        "POST", url, json=payload, headers=headers,
-                        params=params, timeout=30
-                    )
+                # If auth failed, _make_authenticated_request returns on_failure (all_invoices)
+                if response is all_invoices:
+                    return all_invoices
 
                 response.raise_for_status()
 
@@ -706,7 +749,6 @@ class KSeFClient:
         finally:
             self.access_token = None
             self.refresh_token = None
-            self.session_reference = None
             self.session.close()
 
     # KSeF number format: NIP(10digits)-YYYYMMDD-RANDOM(6+ alnum)-SUFFIX(2 alnum)
@@ -736,28 +778,14 @@ class KSeFClient:
             return None
 
         try:
-            # Ensure we're authenticated
-            if not self.access_token:
-                if not self.authenticate():
-                    logger.error("Cannot get invoice: authentication failed")
-                    return None
-
             url = f"{self.base_url}/{self.API_VERSION}/invoices/ksef/{ksef_number}"
 
-            headers = {
-                "Authorization": f"Bearer {self.access_token}"
-            }
+            logger.info("Fetching invoice XML for KSeF number: %s", ksef_number)
 
-            logger.info(f"Fetching invoice XML for KSeF number: {ksef_number}")
-
-            response = self._request_with_retry("GET", url, headers=headers, timeout=30)
-
-            # Handle token expiration
-            if response.status_code == 401:
-                if not self._handle_401_refresh(response):
-                    return None
-                headers["Authorization"] = f"Bearer {self.access_token}"
-                response = self._request_with_retry("GET", url, headers=headers, timeout=30)
+            response = self._make_authenticated_request("GET", url, timeout=30)
+            if response is None:
+                logger.error("Cannot get invoice: authentication failed")
+                return None
 
             response.raise_for_status()
 
@@ -784,75 +812,3 @@ class KSeFClient:
             logger.error(f"Unexpected error while getting invoice XML: {e}")
             return None
 
-    def get_invoice_upo(self, ksef_number: str) -> Optional[Dict]:
-        """
-        Get UPO (Urzędowe Poświadczenie Odbioru) for an invoice.
-        Endpoint: GET /v2/sessions/{referenceNumber}/invoices/ksef/{ksefNumber}/upo
-
-        Requires session with Introspection or InvoiceWrite permission.
-        Tokens with InvoiceRead only will get 403.
-
-        Args:
-            ksef_number: KSeF invoice number
-
-        Returns:
-            Dict with 'xml_content' and 'ksef_number', or None if failed
-        """
-        try:
-            if not self.access_token:
-                if not self.authenticate():
-                    logger.error("Cannot get UPO: authentication failed")
-                    return None
-
-            if not self.session_reference:
-                logger.error("Cannot get UPO: no session referenceNumber (re-authenticate)")
-                return None
-
-            url = (f"{self.base_url}/{self.API_VERSION}/sessions/"
-                   f"{self.session_reference}/invoices/ksef/{ksef_number}/upo")
-
-            headers = {
-                "Authorization": f"Bearer {self.access_token}",
-                "Accept": "application/xml"
-            }
-
-            logger.info(f"Fetching UPO for KSeF number: {ksef_number}")
-
-            response = self._request_with_retry("GET", url, headers=headers, timeout=30)
-
-            # Handle token expiration
-            if response.status_code == 401:
-                if not self._handle_401_refresh(response):
-                    return None
-                headers["Authorization"] = f"Bearer {self.access_token}"
-                response = self._request_with_retry("GET", url, headers=headers, timeout=30)
-
-            if response.status_code == 403:
-                logger.warning(
-                    f"UPO access denied for {ksef_number}: token lacks required permission "
-                    f"(Introspection or InvoiceWrite). Current token has InvoiceRead only."
-                )
-                return None
-
-            if response.status_code == 404:
-                logger.info(f"No UPO available for {ksef_number}")
-                return None
-
-            response.raise_for_status()
-
-            xml_content = response.text
-            logger.info(f"UPO fetched successfully for {ksef_number} ({len(xml_content)} bytes)")
-
-            return {
-                'xml_content': xml_content,
-                'ksef_number': ksef_number
-            }
-
-        except requests.exceptions.RequestException as e:
-            logger.error(f"Failed to get UPO: {e}")
-            if hasattr(e, 'response') and e.response is not None:
-                logger.error(f"API error: {self._extract_api_error_details(e.response)}")
-            return None
-        except Exception as e:
-            logger.error(f"Unexpected error while getting UPO: {e}")
-            return None

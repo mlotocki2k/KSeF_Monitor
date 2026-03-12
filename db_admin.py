@@ -134,7 +134,7 @@ def cmd_invoices(args):
     # Header
     print(f"{'ID':>5}  {'KSeF Number':40s}  {'Type':8s}  {'Subject':9s}  "
           f"{'Issue Date':12s}  {'Gross':>12s}  {'Seller NIP':12s}  {'Buyer NIP':12s}  "
-          f"{'XML':3s} {'PDF':3s} {'UPO':3s}")
+          f"{'XML':3s} {'PDF':3s}")
     print("-" * 160)
 
     for inv in invoices:
@@ -144,8 +144,7 @@ def cmd_invoices(args):
               f"{(inv.issue_date or '-'):12s}  {gross:>12s}  "
               f"{(inv.seller_nip or '-'):12s}  {(inv.buyer_nip or '-'):12s}  "
               f"{'✓' if inv.has_xml else '·':3s} "
-              f"{'✓' if inv.has_pdf else '·':3s} "
-              f"{'✓' if inv.has_upo else '·':3s}")
+              f"{'✓' if inv.has_pdf else '·':3s}")
 
     total = session.query(func.count(Invoice.id)).scalar()
     print(f"\nShowing {len(invoices)} of {total} invoices")
@@ -193,8 +192,6 @@ def cmd_invoice_detail(args):
         ("XML Path", inv.xml_path),
         ("Has PDF", inv.has_pdf),
         ("PDF Path", inv.pdf_path),
-        ("Has UPO", inv.has_upo),
-        ("UPO Path", inv.upo_path),
         ("", ""),
         ("Created At", inv.created_at),
         ("Updated At", inv.updated_at),
@@ -327,8 +324,7 @@ def cmd_stats(args):
         # Artifact coverage
         xml_count = session.query(func.count(Invoice.id)).filter(Invoice.has_xml == True).scalar()
         pdf_count = session.query(func.count(Invoice.id)).filter(Invoice.has_pdf == True).scalar()
-        upo_count = session.query(func.count(Invoice.id)).filter(Invoice.has_upo == True).scalar()
-        print(f"\n  Artifacts: XML={xml_count}/{total}  PDF={pdf_count}/{total}  UPO={upo_count}/{total}")
+        print(f"\n  Artifacts: XML={xml_count}/{total}  PDF={pdf_count}/{total}")
 
     # Notification stats
     notif_total = session.query(func.count(NotificationLog.id)).scalar()
@@ -605,7 +601,7 @@ def cmd_export_invoices(args):
         "id", "ksef_number", "invoice_number", "invoice_type", "subject_type",
         "form_code", "issue_date", "gross_amount", "net_amount", "vat_amount",
         "currency", "seller_nip", "seller_name", "buyer_nip", "buyer_name",
-        "has_xml", "has_pdf", "has_upo", "created_at",
+        "has_xml", "has_pdf", "created_at",
     ]
 
     if args.format == "json":
