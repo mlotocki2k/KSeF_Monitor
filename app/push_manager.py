@@ -99,11 +99,14 @@ class PushManager:
 
         # First run: generate new credentials
         self._generate_credentials()
-        if self._register_instance():
-            self._save_to_db()
-            self._log_pairing_info()
-        else:
-            logger.error("Failed to register with Central Push Service")
+        registered = self._register_instance()
+        self._save_to_db()
+        self._log_pairing_info()
+        if not registered:
+            logger.warning(
+                "Could not register with Central Push Service — "
+                "credentials saved, registration will be retried on next push"
+            )
 
     # ── DB Storage ───────────────────────────────────────────────────────
 

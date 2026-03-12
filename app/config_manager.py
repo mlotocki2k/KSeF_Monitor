@@ -288,7 +288,7 @@ class ConfigManager:
                      "list_fields": ["to_addresses"]},
         "webhook":  {"required_warn": ["url"],
                      "enum_fields": {"method": ["GET", "POST", "PUT"]}},
-        "ios_push": {"required_warn": ["worker_url", "instance_id", "instance_key"]},
+        "ios_push": {"required_warn": ["worker_url"]},
     }
 
     def _validate_channel(self, channel_name: str, channel_config: Dict[str, Any]):

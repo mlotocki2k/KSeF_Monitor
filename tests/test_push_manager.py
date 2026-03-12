@@ -129,7 +129,8 @@ class TestPushManagerRegistration:
             assert payload["instance_key_hash"] == _sha256_hex(pm.instance_key)
             assert payload["pairing_code_hash"] == _sha256_hex(pm.pairing_code)
 
-    def test_register_failure_no_config_saved(self, tmp_path):
+    def test_register_failure_still_saves_config(self, tmp_path):
+        """Credentials are saved even if Worker registration fails."""
         with patch("app.push_manager.requests.Session") as MockSession:
             mock_session = MockSession.return_value
             mock_response = MagicMock()
@@ -138,7 +139,10 @@ class TestPushManagerRegistration:
 
             pm = PushManager(_make_config(), data_dir=str(tmp_path))
             config_path = tmp_path / "push_config.json"
-            assert not config_path.exists()
+            # Credentials saved to JSON (no DB provided)
+            assert config_path.exists()
+            assert pm.instance_id is not None
+            assert pm.pairing_code is not None
 
     def test_register_409_treated_as_success(self, tmp_path):
         with patch("app.push_manager.requests.Session") as MockSession:

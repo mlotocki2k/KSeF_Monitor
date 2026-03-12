@@ -106,6 +106,25 @@ def main():
         else:
             logger.info("Database disabled in configuration")
 
+        # Initialize Push Manager (iOS push notifications)
+        push_manager = None
+        ios_push_config = (config.get("notifications") or {}).get("ios_push")
+        if ios_push_config and ios_push_config.get("enabled"):
+            try:
+                from app.push_manager import PushManager
+                push_manager = PushManager(
+                    ios_push_config,
+                    data_dir="/data",
+                    db=database,
+                )
+                # Inject auto-generated credentials into config for IosPushNotifier
+                ios_push_config["instance_id"] = push_manager.instance_id
+                ios_push_config["instance_key"] = push_manager.instance_key
+                logger.info("✓ Push Manager initialized")
+            except Exception as e:
+                logger.warning(f"Failed to initialize Push Manager: {e}")
+                logger.info("Continuing without iOS push notifications")
+
         # Initialize notification manager
         logger.info("Initializing notification channels...")
         notification_manager = NotificationManager(config, database=database)
