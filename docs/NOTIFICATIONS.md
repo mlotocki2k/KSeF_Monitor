@@ -434,52 +434,67 @@ Przy pierwszym uruchomieniu PushManager:
 2. Rejestruje instancję w Worker (`POST /instances/register`) — wysyła tylko **hashe SHA-256**, nigdy plaintext
 3. Zapisuje credentials w `/data/push_config.json` (prawa `0o600`, tylko owner)
 
-W logach zobaczysz:
-```
-INFO - Generated new push credentials (instance: 550e8400-e29b-41d4-...)
-INFO - Instance registered with Central Push Service
-INFO - Push config saved to /data/push_config.json
-```
-
-#### Krok 3: Otwórz endpoint parowania
-
-Wejdź na endpoint REST API:
+W logach Docker zobaczysz **kod parowania i QR code** — wyświetlane **tylko raz**, przy pierwszym uruchomieniu:
 
 ```
-GET http://<docker-host>:8080/api/v1/push/setup
+╔══════════════════════════════════════════════════════╗
+║           iOS Push — pairing code                   ║
+║                                                      ║
+║   Code:  A1B2C3D4                                   ║
+║                                                      ║
+║   Scan QR with Monitor KSeF app:                    ║
+║    ▄▄▄▄▄▄▄  ▄▄▄  ▄▄▄▄▄▄▄                             ║
+║    █ ▄▄▄ █ ▀▄▀ ▀ █ ▄▄▄ █                             ║
+║    █ ███ █ ▄█ ██ █ ███ █                             ║
+║    ...                                               ║
+║                                                      ║
+║   Or enter code manually in app:                    ║
+║   Settings → Add instance → Enter code              ║
+╚══════════════════════════════════════════════════════╝
 ```
 
-Odpowiedź:
-```json
-{
-  "instance_id": "550e8400-e29b-41d4-a716-446655440000",
-  "pairing_code": "A1B2C3D4",
-  "registered_at": "2026-03-12T10:00:00+00:00",
-  "is_registered": true,
-  "qr_data_uri": "data:image/png;base64,iVBORw0KGgo..."
-}
-```
+> **Ważne:** QR code i kod parowania wyświetlają się w logach **tylko przy pierwszej generacji credentials**. Przy kolejnych restartach kontenera kod nie jest powtarzany (credentials są ładowane z pliku `push_config.json`).
 
-`qr_data_uri` to obraz PNG zakodowany w base64 — wyświetl go w przeglądarce lub Web UI.
+**Jeśli przegapiłeś kod lub potrzebujesz go ponownie:**
 
-#### Krok 4: Zeskanuj QR code w aplikacji Monitor KSeF
+1. **Usuń plik konfiguracji push** — wymusi ponowną generację:
+   ```bash
+   # Docker
+   docker-compose exec ksef-monitor rm /data/push_config.json
+   docker-compose restart ksef-monitor
+
+   # Lub po prostu:
+   rm data/push_config.json
+   docker-compose restart ksef-monitor
+   ```
+   Po restarcie PushManager wygeneruje nowe credentials i ponownie wyświetli QR w logach.
+
+2. **Użyj REST API** (jeśli API jest włączone):
+   ```
+   GET http://<docker-host>:8080/api/v1/push/setup
+   ```
+   Zwróci `pairing_code` i `qr_data_uri` (base64 PNG) — dostępne zawsze, nie tylko przy pierwszym uruchomieniu.
+
+> **Uwaga:** Usunięcie `push_config.json` generuje **nowe credentials** — stary `pairing_code` przestaje działać. Istniejące sparowane urządzenia zostaną rozłączone i trzeba je sparować ponownie.
+
+#### Krok 3: Zeskanuj QR code w aplikacji Monitor KSeF
 
 1. Otwórz aplikację **Monitor KSeF** na iPhonie
 2. Przejdź do **Ustawienia** → **Dodaj instancję**
-3. Zeskanuj QR code wyświetlony w kroku 3
+3. Zeskanuj QR code z logów Docker lub z odpowiedzi API
 4. Aplikacja odczyta kod `MKSEF:A1B2C3D4` i sparuje się z Twoim Docker
 
 QR code zawiera: `MKSEF:{pairing_code}` — prefix `MKSEF:` identyfikuje kod jako parowanie Monitor KSeF.
 
-#### Krok 5 (alternatywa): Ręczne parowanie
+#### Krok 4 (alternatywa): Ręczne parowanie
 
 Jeśli skanowanie QR nie jest możliwe:
 
-1. Skopiuj `pairing_code` z odpowiedzi API (np. `A1B2C3D4`)
+1. Skopiuj `pairing_code` z logów Docker lub z odpowiedzi API (np. `A1B2C3D4`)
 2. W aplikacji Monitor KSeF → **Ustawienia** → **Dodaj instancję** → **Wpisz kod ręcznie**
 3. Wprowadź 8-znakowy kod
 
-#### Krok 6: Gotowe!
+#### Krok 5: Gotowe!
 
 Po sparowaniu każda nowa faktura wykryta w KSeF wyśle natywny push na Twój iPhone:
 - **Tytuł**: "Nowa faktura sprzedażowa w KSeF" (lub zakupowa)
