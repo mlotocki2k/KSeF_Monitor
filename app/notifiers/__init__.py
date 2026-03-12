@@ -7,6 +7,7 @@ This package provides a flexible multi-channel notification system supporting:
 - Slack (enterprise teams)
 - Email (SMTP-based notifications)
 - Webhook (custom integrations)
+- iOS Push (native iOS notifications via Monitor KSeF app)
 
 Usage:
     from app.notifiers import NotificationManager

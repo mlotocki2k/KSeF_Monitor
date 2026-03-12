@@ -12,7 +12,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from .routers import invoices, stats, monitor, artifacts
+from .routers import invoices, stats, monitor, artifacts, push
 
 logger = logging.getLogger(__name__)
 
@@ -100,6 +100,7 @@ def create_app(
     app.include_router(stats.router, prefix="/api/v1")
     app.include_router(monitor.router, prefix="/api/v1")
     app.include_router(artifacts.router, prefix="/api/v1")
+    app.include_router(push.router, prefix="/api/v1")
 
     # Generic error handler — no stack traces in production
     @app.exception_handler(Exception)

@@ -94,6 +94,7 @@ class TemplateRenderer:
         "discord": "discord.json.j2",
         "pushover": "pushover.txt.j2",
         "webhook": "webhook.json.j2",
+        "ios_push": "ios_push.json.j2",
     }
 
     def __init__(self, custom_templates_dir: Optional[str] = None):
