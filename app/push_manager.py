@@ -83,6 +83,7 @@ class PushManager:
             self._generate_credentials()
             if self._register_instance():
                 self._save_config()
+                self._log_pairing_info()
             else:
                 logger.error("Failed to register with Central Push Service")
 
@@ -200,6 +201,22 @@ class PushManager:
 
         except OSError as e:
             logger.error("Failed to save push config: %s", e)
+
+    def _log_pairing_info(self):
+        """Log pairing code on first run so user can pair without API access."""
+        logger.info(
+            "\n"
+            "╔══════════════════════════════════════════════════════╗\n"
+            "║           iOS Push — pairing code                   ║\n"
+            "║                                                      ║\n"
+            "║   Code:  %-8s                                   ║\n"
+            "║                                                      ║\n"
+            "║   Open Monitor KSeF app → Settings → Add instance   ║\n"
+            "║   and enter this code, or scan QR from:             ║\n"
+            "║   GET /api/v1/push/setup                            ║\n"
+            "╚══════════════════════════════════════════════════════╝",
+            self.pairing_code,
+        )
 
     def generate_qr_data_uri(self) -> str:
         """Generate QR code as base64 data URI for Web UI display.
