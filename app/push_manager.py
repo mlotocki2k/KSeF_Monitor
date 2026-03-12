@@ -7,6 +7,9 @@ Manages iOS push notification lifecycle:
 - QR code generation for device pairing
 - Push notification sending via Worker relay to APNs
 
+Storage: SQLite database (push_instances table) with automatic migration
+from legacy push_config.json files.
+
 Architecture: Docker (ksef_monitor) → Worker (push.monitorksef.com) → APNs → iOS
 The .p8 APNs key never leaves the Worker. Docker only knows its instance credentials.
 """
@@ -15,7 +18,6 @@ import base64
 import hashlib
 import json
 import logging
-import os
 import secrets
 import uuid
 from datetime import datetime, timezone
@@ -47,23 +49,29 @@ class PushManager:
     - Sending push notifications via Worker (POST /push/send)
     - Regenerating pairing codes
 
+    Storage: credentials in SQLite push_instances table (with auto-migration
+    from legacy push_config.json).
+
     NOT responsible for:
     - Storing device tokens (Worker handles this via KV)
     - Communicating with APNs (Worker handles this)
     - Generating APNs JWT (Worker handles this)
     """
 
-    def __init__(self, config: Dict[str, Any], data_dir: str = "/data"):
+    def __init__(self, config: Dict[str, Any], data_dir: str = "/data",
+                 db=None):
         """
         Initialize PushManager.
 
         Args:
             config: Notification config dict (from config["notifications"]["ios_push"])
-            data_dir: Directory for push_config.json (default: /data)
+            data_dir: Directory for legacy push_config.json (default: /data)
+            db: Database instance for credential storage (optional, falls back to JSON)
         """
         self.central_push_url = config.get("worker_url", "https://push.monitorksef.com")
         self.timeout = config.get("timeout", 15)
         self.push_config_path = Path(data_dir) / "push_config.json"
+        self.db = db
 
         self.instance_id: Optional[str] = None
         self.instance_key: Optional[str] = None
@@ -73,22 +81,87 @@ class PushManager:
         self.session = requests.Session()
         self.session.verify = True
 
-        self._load_or_generate_config()
+        self._load_or_generate()
 
-    def _load_or_generate_config(self):
-        """Load push_config.json or generate new credentials on first run."""
+    def _load_or_generate(self):
+        """Load credentials from DB/JSON or generate new ones on first run."""
+        # Try DB first
+        if self._load_from_db():
+            return
+
+        # Try legacy JSON file (and migrate to DB if found)
         if self.push_config_path.exists():
-            self._load_config()
-        else:
-            self._generate_credentials()
-            if self._register_instance():
-                self._save_config()
-                self._log_pairing_info()
-            else:
-                logger.error("Failed to register with Central Push Service")
+            self._load_from_json()
+            if self.instance_id and self.instance_key:
+                self._save_to_db()
+                self._rename_legacy_json()
+                return
 
-    def _load_config(self):
-        """Load existing push configuration from file."""
+        # First run: generate new credentials
+        self._generate_credentials()
+        if self._register_instance():
+            self._save_to_db()
+            self._log_pairing_info()
+        else:
+            logger.error("Failed to register with Central Push Service")
+
+    # ── DB Storage ───────────────────────────────────────────────────────
+
+    def _load_from_db(self) -> bool:
+        """Load credentials from push_instances table."""
+        if not self.db:
+            return False
+        try:
+            session = self.db.get_session()
+            try:
+                instance = self.db.get_push_instance(session)
+                if not instance:
+                    return False
+                self.instance_id = instance.instance_id
+                self.instance_key = instance.instance_key
+                self.pairing_code = instance.pairing_code
+                self.registered_at = instance.registered_at
+                logger.info("Push config loaded from DB (instance: %s)", self.instance_id)
+                return True
+            finally:
+                session.close()
+        except Exception as e:
+            logger.warning("Failed to load push config from DB: %s", e)
+            return False
+
+    def _save_to_db(self):
+        """Save credentials to push_instances table."""
+        if not self.db:
+            # Fallback to JSON if no DB
+            self._save_to_json()
+            return
+        try:
+            session = self.db.get_session()
+            try:
+                self.db.save_push_instance(
+                    session,
+                    instance_id=self.instance_id,
+                    instance_key=self.instance_key,
+                    pairing_code=self.pairing_code,
+                    central_push_url=self.central_push_url,
+                    registered_at=self.registered_at,
+                )
+                session.commit()
+                logger.info("Push config saved to DB (instance: %s)", self.instance_id)
+            except Exception:
+                session.rollback()
+                raise
+            finally:
+                session.close()
+        except Exception as e:
+            logger.error("Failed to save push config to DB: %s", e)
+            # Fallback to JSON
+            self._save_to_json()
+
+    # ── Legacy JSON Storage ──────────────────────────────────────────────
+
+    def _load_from_json(self):
+        """Load credentials from legacy push_config.json file."""
         try:
             with open(self.push_config_path, 'r', encoding='utf-8') as f:
                 data = json.load(f)
@@ -99,18 +172,62 @@ class PushManager:
             self.registered_at = data.get("registered_at")
 
             if not self.instance_id or not self.instance_key:
-                logger.warning("Push config incomplete, regenerating credentials")
+                logger.warning("Push config JSON incomplete, regenerating credentials")
                 self._generate_credentials()
                 if self._register_instance():
-                    self._save_config()
+                    return  # caller will save to DB
+                return
 
-            logger.info("Push config loaded (instance: %s)", self.instance_id)
+            logger.info("Push config loaded from JSON (instance: %s)", self.instance_id)
 
         except (json.JSONDecodeError, OSError) as e:
-            logger.error("Failed to load push config: %s", e)
+            logger.error("Failed to load push config JSON: %s", e)
             self._generate_credentials()
-            if self._register_instance():
-                self._save_config()
+            self._register_instance()
+
+    def _save_to_json(self):
+        """Save credentials to push_config.json (fallback when DB unavailable)."""
+        import os
+        try:
+            self.push_config_path.parent.mkdir(parents=True, exist_ok=True)
+
+            data = {
+                "instance_id": self.instance_id,
+                "instance_key": self.instance_key,
+                "pairing_code": self.pairing_code,
+                "central_push_url": self.central_push_url,
+                "registered_at": self.registered_at,
+            }
+
+            fd = os.open(
+                str(self.push_config_path),
+                os.O_WRONLY | os.O_CREAT | os.O_TRUNC,
+                0o600,
+            )
+            try:
+                with os.fdopen(fd, 'w', encoding='utf-8') as f:
+                    json.dump(data, f, indent=2, ensure_ascii=False)
+            except Exception:
+                raise
+
+            logger.info("Push config saved to %s (DB fallback)", self.push_config_path)
+
+        except OSError as e:
+            logger.error("Failed to save push config to JSON: %s", e)
+
+    def _rename_legacy_json(self):
+        """Rename push_config.json to .migrated after DB migration."""
+        try:
+            migrated_path = self.push_config_path.with_suffix(".json.migrated")
+            self.push_config_path.rename(migrated_path)
+            logger.info(
+                "Migrated push_config.json → DB. Old file renamed to %s",
+                migrated_path.name,
+            )
+        except OSError as e:
+            logger.warning("Could not rename legacy push_config.json: %s", e)
+
+    # ── Credential Generation ────────────────────────────────────────────
 
     def _generate_credentials(self):
         """Generate new instance credentials.
@@ -123,6 +240,8 @@ class PushManager:
         self.instance_key = secrets.token_hex(32)
         self.pairing_code = secrets.token_hex(4).upper()
         logger.info("Generated new push credentials (instance: %s)", self.instance_id)
+
+    # ── Worker Registration ──────────────────────────────────────────────
 
     def _register_instance(self) -> bool:
         """Register instance with Central Push Service.
@@ -171,36 +290,7 @@ class PushManager:
             logger.error("Unexpected error during registration: %s", e)
             return False
 
-    def _save_config(self):
-        """Save push configuration to file with restricted permissions (0o600)."""
-        try:
-            self.push_config_path.parent.mkdir(parents=True, exist_ok=True)
-
-            data = {
-                "instance_id": self.instance_id,
-                "instance_key": self.instance_key,
-                "pairing_code": self.pairing_code,
-                "central_push_url": self.central_push_url,
-                "registered_at": self.registered_at,
-            }
-
-            # Write with restricted permissions
-            fd = os.open(
-                str(self.push_config_path),
-                os.O_WRONLY | os.O_CREAT | os.O_TRUNC,
-                0o600,
-            )
-            try:
-                with os.fdopen(fd, 'w', encoding='utf-8') as f:
-                    json.dump(data, f, indent=2, ensure_ascii=False)
-            except Exception:
-                # fd is closed by os.fdopen even on error
-                raise
-
-            logger.info("Push config saved to %s", self.push_config_path)
-
-        except OSError as e:
-            logger.error("Failed to save push config: %s", e)
+    # ── Logging / QR ─────────────────────────────────────────────────────
 
     def _log_pairing_info(self):
         """Log pairing code and QR on first run so user can pair from Docker logs."""
@@ -285,6 +375,8 @@ class PushManager:
             logger.error("Failed to generate QR code: %s", e)
             return ""
 
+    # ── Pairing Code Regeneration ────────────────────────────────────────
+
     def regenerate_pairing_code(self) -> bool:
         """Generate new pairing code and update Central Push Service.
 
@@ -312,7 +404,7 @@ class PushManager:
 
             if response.status_code == 200:
                 self.pairing_code = new_code
-                self._save_config()
+                self._save_to_db()
                 logger.info("Pairing code regenerated")
                 return True
             else:
@@ -328,6 +420,8 @@ class PushManager:
         except Exception as e:
             logger.error("Unexpected error during pairing regeneration: %s", e)
             return False
+
+    # ── Push Sending ─────────────────────────────────────────────────────
 
     def send_push(self, title: str, body: str,
                   data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
@@ -394,6 +488,8 @@ class PushManager:
         except Exception as e:
             logger.error("Unexpected error sending push: %s", e)
             return {"ok": False, "error": str(e)}
+
+    # ── Properties ───────────────────────────────────────────────────────
 
     @property
     def is_registered(self) -> bool:

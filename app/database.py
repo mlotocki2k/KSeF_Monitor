@@ -4,6 +4,7 @@ Database layer for KSeF Monitor.
 SQLite + WAL mode + SQLAlchemy 2.0 ORM.
 Phase 1 (v0.3): invoices, monitor_state, notification_log tables.
 Phase 2 (v0.4): api_request_log, invoice_artifacts tables.
+Phase 3 (v0.5): push_instances table.
 """
 
 import json
@@ -282,6 +283,42 @@ class InvoiceArtifact(Base):
 
     def __repr__(self) -> str:
         return f"<InvoiceArtifact invoice_id={self.invoice_id} type={self.artifact_type!r} status={self.status!r}>"
+
+
+class PushInstance(Base):
+    """Push notification instance credentials for iOS pairing.
+
+    Stores instance_id, instance_key, pairing_code for Central Push Service
+    registration. Designed for multi-instance support (one row per NIP or
+    monitoring scope).
+    """
+
+    __tablename__ = "push_instances"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+
+    instance_id: Mapped[str] = mapped_column(String, unique=True, nullable=False)
+    instance_key: Mapped[str] = mapped_column(String, nullable=False)
+    pairing_code: Mapped[str] = mapped_column(String, nullable=False)
+    central_push_url: Mapped[str] = mapped_column(
+        String, nullable=False, default="https://push.monitorksef.com"
+    )
+    registered_at: Mapped[Optional[str]] = mapped_column(String)
+
+    # For future multi-instance: link to NIP or scope
+    label: Mapped[Optional[str]] = mapped_column(String)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(timezone.utc)
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+    def __repr__(self) -> str:
+        return f"<PushInstance id={self.instance_id!r} label={self.label!r}>"
 
 
 # ── Engine & Session ────────────────────────────────────────────────────────
@@ -583,6 +620,62 @@ class Database:
             .limit(limit)
             .all()
         )
+
+    # ── Push Instances ────────────────────────────────────────────────
+
+    def get_push_instance(self, session: Session, label: Optional[str] = None) -> Optional[PushInstance]:
+        """Get push instance by label (None = default instance)."""
+        return (
+            session.query(PushInstance)
+            .filter_by(label=label)
+            .first()
+        )
+
+    def save_push_instance(
+        self,
+        session: Session,
+        instance_id: str,
+        instance_key: str,
+        pairing_code: str,
+        central_push_url: str,
+        registered_at: Optional[str] = None,
+        label: Optional[str] = None,
+    ) -> PushInstance:
+        """Create or update push instance credentials."""
+        existing = self.get_push_instance(session, label=label)
+        if existing:
+            existing.instance_id = instance_id
+            existing.instance_key = instance_key
+            existing.pairing_code = pairing_code
+            existing.central_push_url = central_push_url
+            existing.registered_at = registered_at
+            existing.updated_at = datetime.now(timezone.utc)
+            session.flush()
+            return existing
+
+        instance = PushInstance(
+            instance_id=instance_id,
+            instance_key=instance_key,
+            pairing_code=pairing_code,
+            central_push_url=central_push_url,
+            registered_at=registered_at,
+            label=label,
+        )
+        session.add(instance)
+        session.flush()
+        return instance
+
+    def update_push_pairing_code(
+        self, session: Session, pairing_code: str, label: Optional[str] = None
+    ) -> Optional[PushInstance]:
+        """Update pairing code for existing push instance."""
+        instance = self.get_push_instance(session, label=label)
+        if not instance:
+            return None
+        instance.pairing_code = pairing_code
+        instance.updated_at = datetime.now(timezone.utc)
+        session.flush()
+        return instance
 
     # ── State Migration ─────────────────────────────────────────────────
 
