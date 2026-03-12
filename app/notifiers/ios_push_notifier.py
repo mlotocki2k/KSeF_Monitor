@@ -10,6 +10,7 @@ Payload: {title, body, data} — Worker builds the APNs 'aps' envelope.
 
 import json
 import logging
+import uuid
 from typing import Any, Dict, Optional
 
 import requests
@@ -94,12 +95,20 @@ class IosPushNotifier(BaseNotifier):
             return False
 
         try:
+            # v1.2: data with required fields
+            data: Dict[str, Any] = {
+                "notification_id": str(uuid.uuid4()),
+                "type": "system",
+                "invoice_reference": "",
+            }
+            if url:
+                data["url"] = url
+
             payload: Dict[str, Any] = {
                 "title": title,
                 "body": message[:256],
+                "data": data,
             }
-            if url:
-                payload.setdefault("data", {})["url"] = url
 
             headers = {
                 "X-Instance-Id": self.instance_id,
@@ -157,6 +166,13 @@ class IosPushNotifier(BaseNotifier):
         except json.JSONDecodeError as e:
             logger.error("Invalid JSON from iOS Push template: %s", e)
             return False
+
+        # v1.2: ensure required fields in data
+        if "data" not in payload:
+            payload["data"] = {}
+        payload["data"].setdefault("notification_id", str(uuid.uuid4()))
+        payload["data"].setdefault("type", "new_invoice")
+        payload["data"].setdefault("invoice_reference", "")
 
         try:
             headers = {

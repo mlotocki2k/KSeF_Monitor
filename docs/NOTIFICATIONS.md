@@ -470,15 +470,9 @@ W logach Docker zobaczysz **kod parowania i QR code** — wyświetlane **tylko r
    ```
    Nowy QR code pojawi się w logach Docker. Zwróci też `pairing_code` i `qr_data_uri` w odpowiedzi.
 
-3. **Usuń rekord z bazy** — wymusi ponowną generację przy restarcie:
+3. **Usuń konfigurację push przez db_admin** — wymusi ponowną generację przy restarcie:
    ```bash
-   docker-compose exec ksef-monitor python -c "
-   from app.database import Database, PushInstance
-   db = Database('/data/invoices.db')
-   s = db.get_session()
-   s.query(PushInstance).delete()
-   s.commit()
-   "
+   docker-compose exec ksef-monitor python db_admin.py reset-push
    docker-compose restart ksef-monitor
    ```
 
@@ -506,7 +500,37 @@ Jeśli skanowanie QR nie jest możliwe:
 Po sparowaniu każda nowa faktura wykryta w KSeF wyśle natywny push na Twój iPhone:
 - **Tytuł**: "Nowa faktura sprzedażowa w KSeF" (lub zakupowa)
 - **Treść**: kontrahent, NIP, kwota brutto
-- **Dane**: numer KSeF, numer faktury, kwoty, waluta
+- **Dane (v1.2)**: `notification_id` (UUID, deduplikacja), `type` (`new_invoice`), `invoice_reference` (numer KSeF), `nip`, kwoty, waluta
+
+#### Payload v1.2
+
+Każda notyfikacja wysyłana do Worker zawiera wymagane pola w `data`:
+
+```json
+{
+  "title": "Nowa faktura sprzedażowa w KSeF",
+  "body": "Od: Firma XYZ - NIP 1234567890\nBrutto: 1 230,00 PLN",
+  "data": {
+    "notification_id": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
+    "type": "new_invoice",
+    "invoice_reference": "1234567890-20260312-ABCDEF123456-78",
+    "nip": "1234567890",
+    "ksef_number": "1234567890-20260312-ABCDEF123456-78",
+    "invoice_number": "FV/2026/001",
+    "gross_amount": 1230.00,
+    "currency": "PLN"
+  }
+}
+```
+
+| Pole | Wymagane | Opis |
+|------|----------|------|
+| `notification_id` | tak | UUID per notyfikacja — deduplikacja na iOS |
+| `type` | tak | Typ zdarzenia: `new_invoice`, `system` |
+| `invoice_reference` | tak | Numer referencyjny KSeF — deep-link na iOS |
+| `nip` | nie | NIP kontrahenta |
+
+Worker buduje APNs payload z `mutable-content: 1` (Notification Service Extension na iOS przechwytuje push, zapisuje do SwiftData, aktualizuje badge).
 
 ### Regeneracja kodu parowania
 
