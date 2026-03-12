@@ -12,6 +12,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 import requests
 
+from app.database import Database, PushInstance
 from app.push_manager import PushManager, QR_PREFIX
 
 
@@ -385,3 +386,93 @@ class TestPushManagerProperties:
         assert "registered_at" in info
         assert "is_registered" in info
         assert "qr_data_uri" in info
+
+
+# ── DB Storage ──────────────────────────────────────────────────────────────
+
+
+class TestPushManagerDBStorage:
+    """Test credential storage in SQLite database."""
+
+    def _make_db(self, tmp_path):
+        db = Database(str(tmp_path / "test.db"))
+        db.create_tables()
+        return db
+
+    @patch.object(PushManager, "_register_instance", return_value=True)
+    def test_save_to_db(self, mock_register, tmp_path):
+        db = self._make_db(tmp_path)
+        pm = PushManager(_make_config(), data_dir=str(tmp_path), db=db)
+
+        session = db.get_session()
+        try:
+            instance = db.get_push_instance(session)
+            assert instance is not None
+            assert instance.instance_id == pm.instance_id
+            assert instance.instance_key == pm.instance_key
+            assert instance.pairing_code == pm.pairing_code
+        finally:
+            session.close()
+
+    @patch.object(PushManager, "_register_instance", return_value=True)
+    def test_load_from_db(self, mock_register, tmp_path):
+        db = self._make_db(tmp_path)
+        pm1 = PushManager(_make_config(), data_dir=str(tmp_path), db=db)
+        saved_id = pm1.instance_id
+        saved_key = pm1.instance_key
+
+        pm2 = PushManager(_make_config(), data_dir=str(tmp_path), db=db)
+        assert pm2.instance_id == saved_id
+        assert pm2.instance_key == saved_key
+
+    @patch.object(PushManager, "_register_instance", return_value=True)
+    def test_no_json_file_when_db_available(self, mock_register, tmp_path):
+        db = self._make_db(tmp_path)
+        PushManager(_make_config(), data_dir=str(tmp_path), db=db)
+        assert not (tmp_path / "push_config.json").exists()
+
+    @patch.object(PushManager, "_register_instance", return_value=True)
+    def test_migrate_json_to_db(self, mock_register, tmp_path):
+        # Create legacy JSON
+        pm_json = PushManager(_make_config(), data_dir=str(tmp_path))
+        saved_id = pm_json.instance_id
+        saved_key = pm_json.instance_key
+        assert (tmp_path / "push_config.json").exists()
+
+        # Load with DB — should migrate
+        db = self._make_db(tmp_path)
+        pm_db = PushManager(_make_config(), data_dir=str(tmp_path), db=db)
+        assert pm_db.instance_id == saved_id
+        assert pm_db.instance_key == saved_key
+
+        # JSON should be renamed
+        assert not (tmp_path / "push_config.json").exists()
+        assert (tmp_path / "push_config.json.migrated").exists()
+
+        # Verify in DB
+        session = db.get_session()
+        try:
+            instance = db.get_push_instance(session)
+            assert instance.instance_id == saved_id
+        finally:
+            session.close()
+
+    @patch.object(PushManager, "_register_instance", return_value=True)
+    def test_regenerate_saves_to_db(self, mock_register, tmp_path):
+        db = self._make_db(tmp_path)
+        pm = PushManager(_make_config(), data_dir=str(tmp_path), db=db)
+        old_code = pm.pairing_code
+
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        pm.session.post = MagicMock(return_value=mock_response)
+
+        pm.regenerate_pairing_code()
+
+        session = db.get_session()
+        try:
+            instance = db.get_push_instance(session)
+            assert instance.pairing_code == pm.pairing_code
+            assert instance.pairing_code != old_code
+        finally:
+            session.close()
