@@ -7,6 +7,7 @@ import json
 import hashlib
 import logging
 import os
+import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -523,6 +524,7 @@ class InvoiceMonitor:
             "priority_color_int": priority_colors_int.get(self.message_priority, 0x3498db),
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "url": None,
+            "notification_id": str(uuid.uuid4()),
         }
     
     def _format_date_for_filename(self, date_string: str) -> str:

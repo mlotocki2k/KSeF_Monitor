@@ -250,13 +250,40 @@ class TestPushManagerSendPush:
         mock_response.json.return_value = {"ok": True, "sent": 1, "failed": 0}
         pm.session.post = MagicMock(return_value=mock_response)
 
-        pm.send_push("Title", "Body text", data={"invoice_id": "123"})
+        pm.send_push("Title", "Body text",
+                      data={"invoice_id": "123"},
+                      notification_type="new_invoice",
+                      invoice_reference="KSeF-REF-001")
 
         call_kwargs = pm.session.post.call_args
         payload = call_kwargs.kwargs.get("json") or call_kwargs[1].get("json")
         assert payload["title"] == "Title"
         assert payload["body"] == "Body text"
+        # v1.2 required fields
+        assert "notification_id" in payload["data"]
+        assert payload["data"]["type"] == "new_invoice"
+        assert payload["data"]["invoice_reference"] == "KSeF-REF-001"
+        # custom data merged
         assert payload["data"]["invoice_id"] == "123"
+
+    @patch.object(PushManager, "_register_instance", return_value=True)
+    def test_send_push_data_always_present(self, mock_register, tmp_path):
+        """v1.2: data is always present with required fields, even without extra data."""
+        pm = PushManager(_make_config(), data_dir=str(tmp_path))
+
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"ok": True, "sent": 1, "failed": 0}
+        pm.session.post = MagicMock(return_value=mock_response)
+
+        pm.send_push("Title", "Body")
+
+        call_kwargs = pm.session.post.call_args
+        payload = call_kwargs.kwargs.get("json") or call_kwargs[1].get("json")
+        assert "data" in payload
+        assert "notification_id" in payload["data"]
+        assert payload["data"]["type"] == "new_invoice"
+        assert payload["data"]["invoice_reference"] == ""
 
     @patch.object(PushManager, "_register_instance", return_value=True)
     def test_send_push_401(self, mock_register, tmp_path):

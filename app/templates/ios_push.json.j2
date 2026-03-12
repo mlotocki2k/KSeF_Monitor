@@ -2,6 +2,10 @@
     "title": "{{ title | json_escape }}",
     "body": "{% if subject_type == 'Subject1' %}Do: {{ buyer_name | json_escape }} - NIP {{ buyer_nip }}{% elif subject_type == 'Subject2' %}Od: {{ seller_name | json_escape }} - NIP {{ seller_nip }}{% else %}Od: {{ seller_name | json_escape }} - NIP {{ seller_nip }}\nDo: {{ buyer_name | json_escape }} - NIP {{ buyer_nip }}{% endif %}\nBrutto: {{ gross_amount | money_raw }} {{ currency }}",
     "data": {
+        "notification_id": "{{ notification_id }}",
+        "type": "new_invoice",
+        "invoice_reference": "{{ ksef_number | json_escape }}",
+        "nip": "{% if subject_type == 'Subject1' %}{{ buyer_nip }}{% else %}{{ seller_nip }}{% endif %}",
         "ksef_number": "{{ ksef_number | json_escape }}",
         "invoice_number": "{{ invoice_number | json_escape }}",
         "issue_date": "{{ issue_date }}",

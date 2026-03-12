@@ -166,6 +166,10 @@ class TestIosPushSendNotification:
         assert payload["title"] == "Title"
         assert payload["body"] == "Body"
         assert payload["data"]["url"] == "https://example.com"
+        # v1.2 required fields
+        assert "notification_id" in payload["data"]
+        assert payload["data"]["type"] == "system"
+        assert payload["data"]["invoice_reference"] == ""
 
     def test_post_url(self, notifier, mock_ok_response):
         notifier.session.post.return_value = mock_ok_response
@@ -217,13 +221,17 @@ class TestIosPushSendNotification:
         payload = call_kwargs.kwargs.get("json") or call_kwargs[1].get("json")
         assert len(payload["body"]) == 256
 
-    def test_no_data_key_without_url(self, notifier, mock_ok_response):
+    def test_data_always_present_v12(self, notifier, mock_ok_response):
+        """v1.2: data is always present with required fields."""
         notifier.session.post.return_value = mock_ok_response
         notifier.send_notification("Title", "Body")
 
         call_kwargs = notifier.session.post.call_args
         payload = call_kwargs.kwargs.get("json") or call_kwargs[1].get("json")
-        assert "data" not in payload
+        assert "data" in payload
+        assert "notification_id" in payload["data"]
+        assert payload["data"]["type"] == "system"
+        assert payload["data"]["invoice_reference"] == ""
 
 
 # ── Send Rendered ────────────────────────────────────────────────────────────
@@ -239,6 +247,22 @@ class TestIosPushSendRendered:
         context = {"title": "Test"}
         result = notifier._send_rendered(rendered, context)
         assert result is True
+
+    def test_v12_fields_injected(self, notifier, mock_ok_response):
+        """v1.2: _send_rendered injects notification_id, type, invoice_reference."""
+        notifier.session.post.return_value = mock_ok_response
+
+        rendered = json.dumps({
+            "title": "Test", "body": "Body",
+            "data": {"ksef_number": "KSeF-123"}
+        })
+        notifier._send_rendered(rendered, {"title": "Test"})
+
+        call_kwargs = notifier.session.post.call_args
+        payload = call_kwargs.kwargs.get("json") or call_kwargs[1].get("json")
+        assert "notification_id" in payload["data"]
+        assert payload["data"]["type"] == "new_invoice"
+        assert payload["data"]["ksef_number"] == "KSeF-123"
 
     def test_invalid_json_returns_false(self, notifier):
         result = notifier._send_rendered("not valid json{", {"title": "Test"})

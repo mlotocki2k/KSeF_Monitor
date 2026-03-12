@@ -427,15 +427,20 @@ class PushManager:
     # ── Push Sending ─────────────────────────────────────────────────────
 
     def send_push(self, title: str, body: str,
-                  data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+                  data: Optional[Dict[str, Any]] = None,
+                  notification_type: str = "new_invoice",
+                  invoice_reference: str = "") -> Dict[str, Any]:
         """Send push notification via Central Push Service.
 
         Worker relays to APNs for all paired devices.
+        Generates notification_id (UUID) per call for iOS deduplication.
 
         Args:
             title: Notification title
             body: Notification body text
-            data: Optional additional data (e.g., invoice metadata)
+            data: Additional data (merged with required v1.2 fields)
+            notification_type: Event type ("new_invoice", "invoice_status", "system")
+            invoice_reference: KSeF reference number or invoice ID
 
         Returns:
             Response dict {ok, sent, failed} or {ok: False, error: ...}
@@ -445,12 +450,20 @@ class PushManager:
             return {"ok": False, "error": "not_configured"}
 
         try:
+            # v1.2: required fields in data
+            push_data: Dict[str, Any] = {
+                "notification_id": str(uuid.uuid4()),
+                "type": notification_type,
+                "invoice_reference": invoice_reference,
+            }
+            if data:
+                push_data.update(data)
+
             payload: Dict[str, Any] = {
                 "title": title,
                 "body": body[:256],  # APNs alert body practical limit
+                "data": push_data,
             }
-            if data:
-                payload["data"] = data
 
             headers = {
                 "X-Instance-Id": self.instance_id,

@@ -17,6 +17,8 @@ Usage:
     python db_admin.py cleanup-notifications [--days N]  # Delete old notification logs
     python db_admin.py export-invoices [--format csv|json] [--output FILE]  # Export invoices
     python db_admin.py reset-errors            # Reset consecutive_errors counters
+    python db_admin.py push-status             # Show push notification configuration
+    python db_admin.py reset-push              # Delete push config (regenerate on restart)
     python db_admin.py vacuum                  # SQLite VACUUM (compact DB file)
 """
 
@@ -33,7 +35,7 @@ from pathlib import Path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from sqlalchemy import func, inspect, text
-from app.database import Database, Invoice, MonitorState, NotificationLog
+from app.database import Database, Invoice, MonitorState, NotificationLog, PushInstance
 
 
 def _db_path_from_config() -> str:
@@ -662,6 +664,65 @@ def cmd_reset_errors(args):
     session.close()
 
 
+def cmd_push_status(args):
+    """Show push configuration."""
+    db = get_db(args)
+    session = db.get_session()
+
+    instances = session.query(PushInstance).all()
+
+    if not instances:
+        print("No push instances configured.")
+        session.close()
+        return
+
+    for inst in instances:
+        label = inst.label or "(default)"
+        print(f"Push Instance: {label}")
+        print(f"  Instance ID:   {inst.instance_id}")
+        print(f"  Pairing code:  {inst.pairing_code}")
+        print(f"  Worker URL:    {inst.central_push_url}")
+        print(f"  Registered at: {inst.registered_at or 'not registered'}")
+        print(f"  Created at:    {inst.created_at}")
+        print(f"  Updated at:    {inst.updated_at}")
+        print()
+
+    session.close()
+
+
+def cmd_reset_push(args):
+    """Delete push configuration from database."""
+    db = get_db(args)
+    session = db.get_session()
+
+    instances = session.query(PushInstance).all()
+
+    if not instances:
+        print("No push instances to delete.")
+        session.close()
+        return
+
+    print(f"Found {len(instances)} push instance(s):")
+    for inst in instances:
+        label = inst.label or "(default)"
+        print(f"  {label}: {inst.instance_id} (pairing: {inst.pairing_code})")
+
+    if not args.yes:
+        answer = input(
+            "\nDelete push config? New credentials will be generated on next start.\n"
+            "⚠ All paired iOS devices will be disconnected! [y/N] "
+        )
+        if answer.lower() != "y":
+            print("Aborted.")
+            session.close()
+            return
+
+    count = session.query(PushInstance).delete()
+    session.commit()
+    print(f"Deleted {count} push instance(s). Restart container to generate new credentials.")
+    session.close()
+
+
 def cmd_vacuum(args):
     """Run SQLite VACUUM to compact DB file."""
     db = get_db(args)
@@ -762,6 +823,13 @@ def main():
     p = sub.add_parser("reset-errors", help="Reset error counters in monitor_state")
     p.add_argument("-y", "--yes", action="store_true", help="Skip confirmation")
 
+    # push-status
+    sub.add_parser("push-status", help="Show push notification configuration")
+
+    # reset-push
+    p = sub.add_parser("reset-push", help="Delete push config (disconnects paired devices)")
+    p.add_argument("-y", "--yes", action="store_true", help="Skip confirmation")
+
     # vacuum
     sub.add_parser("vacuum", help="SQLite VACUUM (compact DB file)")
 
@@ -786,6 +854,8 @@ def main():
         "cleanup-notifications": cmd_cleanup_notifications,
         "export-invoices": cmd_export_invoices,
         "reset-errors": cmd_reset_errors,
+        "push-status": cmd_push_status,
+        "reset-push": cmd_reset_push,
         "vacuum": cmd_vacuum,
     }
 
