@@ -29,6 +29,7 @@ def create_app(
     rate_limit_config: Optional[Dict[str, Any]] = None,
     docs_enabled: bool = True,
     prometheus_metrics=None,
+    push_manager=None,
 ) -> FastAPI:
     """Create and configure FastAPI application.
 
@@ -56,6 +57,7 @@ def create_app(
     app.state.monitor = monitor_instance
     app.state.auth_token = auth_token
     app.state.prometheus_metrics = prometheus_metrics
+    app.state.push_manager = push_manager
 
     # Auth middleware (if token configured) — registered FIRST (innermost)
     if auth_token:

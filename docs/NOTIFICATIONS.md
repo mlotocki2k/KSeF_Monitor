@@ -432,7 +432,7 @@ docker-compose up -d
 Przy pierwszym uruchomieniu PushManager:
 1. Generuje `instance_id` (UUID), `instance_key` (32 bajty random), `pairing_code` (8 znaków hex)
 2. Rejestruje instancję w Worker (`POST /instances/register`) — wysyła tylko **hashe SHA-256**, nigdy plaintext
-3. Zapisuje credentials w `/data/push_config.json` (prawa `0o600`, tylko owner)
+3. Zapisuje credentials w bazie SQLite (`push_instances` table)
 
 W logach Docker zobaczysz **kod parowania i QR code** — wyświetlane **tylko raz**, przy pierwszym uruchomieniu:
 
@@ -453,29 +453,36 @@ W logach Docker zobaczysz **kod parowania i QR code** — wyświetlane **tylko r
 ╚══════════════════════════════════════════════════════╝
 ```
 
-> **Ważne:** QR code i kod parowania wyświetlają się w logach **tylko przy pierwszej generacji credentials**. Przy kolejnych restartach kontenera kod nie jest powtarzany (credentials są ładowane z pliku `push_config.json`).
+> **Ważne:** QR code i kod parowania wyświetlają się w logach **tylko przy pierwszej generacji credentials**. Przy kolejnych restartach kontenera kod nie jest powtarzany (credentials są ładowane z bazy danych).
 
 **Jeśli przegapiłeś kod lub potrzebujesz go ponownie:**
 
-1. **Usuń plik konfiguracji push** — wymusi ponowną generację:
-   ```bash
-   # Docker
-   docker-compose exec ksef-monitor rm /data/push_config.json
-   docker-compose restart ksef-monitor
-
-   # Lub po prostu:
-   rm data/push_config.json
-   docker-compose restart ksef-monitor
-   ```
-   Po restarcie PushManager wygeneruje nowe credentials i ponownie wyświetli QR w logach.
-
-2. **Użyj REST API** (jeśli API jest włączone):
+1. **Użyj REST API** — pobierz aktualny kod i QR:
    ```
    GET http://<docker-host>:8080/api/v1/push/setup
    ```
    Zwróci `pairing_code` i `qr_data_uri` (base64 PNG) — dostępne zawsze, nie tylko przy pierwszym uruchomieniu.
 
-> **Uwaga:** Usunięcie `push_config.json` generuje **nowe credentials** — stary `pairing_code` przestaje działać. Istniejące sparowane urządzenia zostaną rozłączone i trzeba je sparować ponownie.
+2. **Zresetuj credentials przez API** — generuje nowy `instance_id`, klucz i kod parowania:
+   ```bash
+   curl -X POST http://<docker-host>:8080/api/v1/push/reset \
+     -H "Authorization: Bearer <your-token>"
+   ```
+   Nowy QR code pojawi się w logach Docker. Zwróci też `pairing_code` i `qr_data_uri` w odpowiedzi.
+
+3. **Usuń rekord z bazy** — wymusi ponowną generację przy restarcie:
+   ```bash
+   docker-compose exec ksef-monitor python -c "
+   from app.database import Database, PushInstance
+   db = Database('/data/invoices.db')
+   s = db.get_session()
+   s.query(PushInstance).delete()
+   s.commit()
+   "
+   docker-compose restart ksef-monitor
+   ```
+
+> **Uwaga:** Reset generuje **nowe credentials** — stary `pairing_code` przestaje działać. Istniejące sparowane urządzenia zostaną rozłączone i trzeba je sparować ponownie.
 
 #### Krok 3: Zeskanuj QR code w aplikacji Monitor KSeF
 
@@ -539,7 +546,7 @@ echo "your-instance-key" | docker secret create ios_push_instance_key -
 ### Bezpieczeństwo
 
 - `instance_key` **nigdy nie jest logowany** — tylko `instance_id` pojawia się w logach
-- Plik `/data/push_config.json` ma prawa `0o600` (odczyt/zapis tylko owner)
+- Credentials w bazie SQLite (`push_instances` table) — nie w pliku tekstowym
 - Worker przechowuje tylko **hashe SHA-256** klucza i kodu parowania
 - Komunikacja Docker → Worker po HTTPS z walidacją certyfikatu
 - `allow_redirects=False` — ochrona przed SSRF
