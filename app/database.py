@@ -677,6 +677,15 @@ class Database:
         session.flush()
         return instance
 
+    def delete_push_instance(self, session: Session, label: Optional[str] = None) -> bool:
+        """Delete push instance by label (None = default). Returns True if deleted."""
+        instance = self.get_push_instance(session, label=label)
+        if not instance:
+            return False
+        session.delete(instance)
+        session.flush()
+        return True
+
     # ── State Migration ─────────────────────────────────────────────────
 
     def migrate_from_json(self, json_path: Path, nip: str, subject_types: List[str]):

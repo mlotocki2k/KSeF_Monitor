@@ -22,6 +22,7 @@ def create_app(
     monitor_instance=None,
     auth_token: Optional[str] = None,
     cors_origins: Optional[list] = None,
+    push_manager=None,
 ) -> FastAPI:
     """Create and configure FastAPI application.
 
@@ -43,6 +44,7 @@ def create_app(
     app.state.db = db
     app.state.monitor = monitor_instance
     app.state.auth_token = auth_token
+    app.state.push_manager = push_manager
 
     # Auth middleware (if token configured) — registered FIRST (innermost)
     if auth_token:

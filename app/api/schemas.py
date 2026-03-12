@@ -113,6 +113,14 @@ class TriggerResponse(BaseModel):
     triggered: bool
 
 
+class PushResetResponse(BaseModel):
+    """Response after resetting push credentials."""
+
+    message: str
+    reset: bool
+    pairing_code: Optional[str] = None
+
+
 # ── Artifact schemas ─────────────────────────────────────────────────────
 
 

@@ -42,3 +42,30 @@ def regenerate_pairing(request: Request):
             status_code=502,
             content={"detail": "Failed to regenerate pairing code"},
         )
+
+
+@router.post("/push/reset")
+def reset_push(request: Request):
+    """Reset push credentials — generates new instance_id, key, and pairing code.
+
+    Previously paired iOS devices will be disconnected.
+    New QR code is logged to Docker logs.
+    """
+    push_manager = getattr(request.app.state, "push_manager", None)
+    if not push_manager:
+        return JSONResponse(
+            status_code=503,
+            content={"detail": "Push notifications not configured"},
+        )
+
+    if push_manager.reset():
+        return {
+            "message": "Push credentials reset — check Docker logs for new QR code",
+            "reset": True,
+            **push_manager.pairing_info,
+        }
+    else:
+        return JSONResponse(
+            status_code=500,
+            content={"detail": "Failed to reset push credentials"},
+        )

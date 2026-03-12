@@ -492,6 +492,39 @@ class PushManager:
             logger.error("Unexpected error sending push: %s", e)
             return {"ok": False, "error": str(e)}
 
+    # ── Reset ─────────────────────────────────────────────────────────────
+
+    def reset(self) -> bool:
+        """Delete push credentials from DB and regenerate.
+
+        After reset, new QR code and pairing code are logged.
+        Previously paired devices will be disconnected.
+
+        Returns:
+            True if reset succeeded, False otherwise
+        """
+        if self.db:
+            try:
+                session = self.db.get_session()
+                try:
+                    self.db.delete_push_instance(session)
+                    session.commit()
+                except Exception:
+                    session.rollback()
+                    raise
+                finally:
+                    session.close()
+            except Exception as e:
+                logger.error("Failed to delete push instance from DB: %s", e)
+                return False
+
+        self._generate_credentials()
+        self._register_instance()
+        self._save_to_db()
+        self._log_pairing_info()
+        logger.info("Push credentials reset — new pairing code: %s", self.pairing_code)
+        return True
+
     # ── Properties ───────────────────────────────────────────────────────
 
     @property
