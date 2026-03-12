@@ -1,6 +1,8 @@
 # Notification Channels Guide
 
-KSeF Monitor v0.3 supports multiple notification channels with **customizable Jinja2 templates**. You can enable one or more channels simultaneously to receive invoice notifications through your preferred platform(s).
+KSeF Monitor v0.5 supports multiple notification channels with **customizable Jinja2 templates**. You can enable one or more channels simultaneously to receive invoice notifications through your preferred platform(s).
+
+> **New in v0.5:** iOS Push notifications — natywne powiadomienia na iPhone/iPad przez aplikację Monitor KSeF. See [iOS Push section](#6-ios-push--monitor-ksef-v05).
 
 > **New in v0.3:** Notification format is now fully customizable through Jinja2 templates. See [TEMPLATES.md](TEMPLATES.md) for details.
 
@@ -13,6 +15,7 @@ KSeF Monitor v0.3 supports multiple notification channels with **customizable Ji
 | **Slack** | Enterprise teams | Webhook URL | 2 min |
 | **Email** | Email-based workflows | SMTP credentials | 3 min |
 | **Webhook** | Custom integrations | HTTP endpoint | 1 min |
+| **iOS Push** | Natywne powiadomienia iOS | Aplikacja Monitor KSeF | 1 min |
 
 ---
 
@@ -31,13 +34,14 @@ All notification channels are configured under the `notifications` section in `c
     "discord": { ... },
     "slack": { ... },
     "email": { ... },
-    "webhook": { ... }
+    "webhook": { ... },
+    "ios_push": { ... }
   }
 }
 ```
 
 **Key Fields:**
-- `channels`: Array of enabled channels (choose 1-5)
+- `channels`: Array of enabled channels (choose 1-6)
 - `message_priority`: Default priority for all channels (-2 to 2)
 - `test_notification`: Send test notification on startup
 - `templates_dir`: Optional path to custom Jinja2 templates (overrides built-in defaults). See [TEMPLATES.md](TEMPLATES.md)
@@ -375,6 +379,187 @@ echo "your-token" | docker secret create webhook_token -
 
 ---
 
+## 6. iOS Push — Monitor KSeF (v0.5)
+
+Natywne push notifications na iPhone/iPad przez aplikację **Monitor KSeF**.
+
+### Jak to działa
+
+```
+Docker (KSeF Monitor)  →  Cloudflare Worker  →  Apple Push (APNs)  →  iPhone
+      POST /push/send       push.monitorksef.com       aps envelope         Monitor KSeF app
+    X-Instance-Id/Key
+```
+
+- KSeF Monitor **nie komunikuje się bezpośrednio z Apple** — tylko z Worker
+- Worker przechowuje klucz APNs (.p8) — nigdy nie opuszcza Worker
+- Autentykacja: `X-Instance-Id` + `X-Instance-Key` (nie Bearer token)
+- Payload: `{title, body, data}` — Worker buduje envelope `aps` sam
+
+### Parowanie Docker ↔ iOS — krok po kroku
+
+#### Wymagania
+- KSeF Monitor v0.5+ z włączonym REST API (`api.enabled: true`)
+- Aplikacja **Monitor KSeF** zainstalowana na iPhone/iPad
+- Docker i iPhone w tej samej sieci (lub dostęp do API z zewnątrz)
+
+#### Krok 1: Włącz kanał `ios_push` w konfiguracji
+
+```json
+{
+  "notifications": {
+    "channels": ["ios_push"],
+    "ios_push": {
+      "worker_url": "https://push.monitorksef.com",
+      "timeout": 15
+    }
+  },
+  "api": {
+    "enabled": true,
+    "port": 8080
+  }
+}
+```
+
+> **Uwaga:** `instance_id` i `instance_key` zostaną **wygenerowane automatycznie** przy pierwszym uruchomieniu przez PushManager. Nie musisz ich podawać ręcznie.
+
+#### Krok 2: Uruchom KSeF Monitor
+
+```bash
+docker-compose up -d
+```
+
+Przy pierwszym uruchomieniu PushManager:
+1. Generuje `instance_id` (UUID), `instance_key` (32 bajty random), `pairing_code` (8 znaków hex)
+2. Rejestruje instancję w Worker (`POST /instances/register`) — wysyła tylko **hashe SHA-256**, nigdy plaintext
+3. Zapisuje credentials w `/data/push_config.json` (prawa `0o600`, tylko owner)
+
+W logach zobaczysz:
+```
+INFO - Generated new push credentials (instance: 550e8400-e29b-41d4-...)
+INFO - Instance registered with Central Push Service
+INFO - Push config saved to /data/push_config.json
+```
+
+#### Krok 3: Otwórz endpoint parowania
+
+Wejdź na endpoint REST API:
+
+```
+GET http://<docker-host>:8080/api/v1/push/setup
+```
+
+Odpowiedź:
+```json
+{
+  "instance_id": "550e8400-e29b-41d4-a716-446655440000",
+  "pairing_code": "A1B2C3D4",
+  "registered_at": "2026-03-12T10:00:00+00:00",
+  "is_registered": true,
+  "qr_data_uri": "data:image/png;base64,iVBORw0KGgo..."
+}
+```
+
+`qr_data_uri` to obraz PNG zakodowany w base64 — wyświetl go w przeglądarce lub Web UI.
+
+#### Krok 4: Zeskanuj QR code w aplikacji Monitor KSeF
+
+1. Otwórz aplikację **Monitor KSeF** na iPhonie
+2. Przejdź do **Ustawienia** → **Dodaj instancję**
+3. Zeskanuj QR code wyświetlony w kroku 3
+4. Aplikacja odczyta kod `MKSEF:A1B2C3D4` i sparuje się z Twoim Docker
+
+QR code zawiera: `MKSEF:{pairing_code}` — prefix `MKSEF:` identyfikuje kod jako parowanie Monitor KSeF.
+
+#### Krok 5 (alternatywa): Ręczne parowanie
+
+Jeśli skanowanie QR nie jest możliwe:
+
+1. Skopiuj `pairing_code` z odpowiedzi API (np. `A1B2C3D4`)
+2. W aplikacji Monitor KSeF → **Ustawienia** → **Dodaj instancję** → **Wpisz kod ręcznie**
+3. Wprowadź 8-znakowy kod
+
+#### Krok 6: Gotowe!
+
+Po sparowaniu każda nowa faktura wykryta w KSeF wyśle natywny push na Twój iPhone:
+- **Tytuł**: "Nowa faktura sprzedażowa w KSeF" (lub zakupowa)
+- **Treść**: kontrahent, NIP, kwota brutto
+- **Dane**: numer KSeF, numer faktury, kwoty, waluta
+
+### Regeneracja kodu parowania
+
+Jeśli chcesz sparować nowe urządzenie lub unieważnić stary kod:
+
+```
+POST http://<docker-host>:8080/api/v1/push/regenerate
+```
+
+Stary `pairing_code` przestaje działać, generowany jest nowy. Istniejące sparowane urządzenia **nie są rozłączane** — regeneracja dotyczy tylko nowych parowań.
+
+### Configuration
+
+```json
+"ios_push": {
+  "worker_url": "https://push.monitorksef.com",
+  "timeout": 15
+}
+```
+
+| Pole | Opis | Domyślnie |
+|------|------|-----------|
+| `worker_url` | URL Central Push Service | `https://push.monitorksef.com` |
+| `timeout` | Timeout HTTP w sekundach | `15` |
+| `instance_id` | UUID instancji (auto-generowany) | — |
+| `instance_key` | Klucz instancji (auto-generowany) | — |
+
+**Secret (opcjonalnie):**
+```bash
+# Jeśli chcesz podać klucz instancji ręcznie zamiast auto-generacji:
+IOS_PUSH_INSTANCE_KEY=your-instance-key
+
+# Docker secret
+echo "your-instance-key" | docker secret create ios_push_instance_key -
+```
+
+### Bezpieczeństwo
+
+- `instance_key` **nigdy nie jest logowany** — tylko `instance_id` pojawia się w logach
+- Plik `/data/push_config.json` ma prawa `0o600` (odczyt/zapis tylko owner)
+- Worker przechowuje tylko **hashe SHA-256** klucza i kodu parowania
+- Komunikacja Docker → Worker po HTTPS z walidacją certyfikatu
+- `allow_redirects=False` — ochrona przed SSRF
+- Klucz APNs (.p8) **nigdy nie opuszcza Worker**
+
+### Features
+- Natywne push notifications na iOS (APNs)
+- Automatyczna generacja credentials przy pierwszym uruchomieniu
+- Parowanie przez QR code lub ręczne wpisanie kodu
+- Rich notifications z danymi faktury (numer, kwota, kontrahent)
+- Regeneracja kodu parowania bez rozłączania istniejących urządzeń
+- Obsługa wielu urządzeń iOS sparowanych z jedną instancją Docker
+
+### Troubleshooting
+
+**Brak powiadomień po sparowaniu:**
+- Sprawdź czy `ios_push` jest w tablicy `channels`
+- Sprawdź logi: `Push sent: X delivered, Y failed`
+- Upewnij się że iPhone ma włączone powiadomienia dla Monitor KSeF
+
+**Endpoint `/push/setup` zwraca 503:**
+- API nie jest włączone lub PushManager nie zainicjalizowany
+- Sprawdź `"api": {"enabled": true}` w konfiguracji
+
+**Rejestracja w Worker nie powiodła się:**
+- Sprawdź połączenie z `push.monitorksef.com`
+- Logi: `Failed to register with Central Push Service`
+- Przy kolejnym uruchomieniu Docker spróbuje ponownie
+
+**QR code nie skanuje się:**
+- Upewnij się że wyświetlasz pełny obraz (nie przycięty)
+- Spróbuj ręcznego parowania kodem `pairing_code`
+
+---
+
 ## Custom Templates (v0.3)
 
 Notification format is customizable through Jinja2 templates. Each channel has its own template file:
@@ -386,6 +571,7 @@ Notification format is customizable through Jinja2 templates. Each channel has i
 | Slack | `slack.json.j2` | Block Kit JSON |
 | Discord | `discord.json.j2` | Embed JSON |
 | Webhook | `webhook.json.j2` | Payload JSON |
+| iOS Push | `ios_push.json.j2` | Push JSON |
 
 ### Quick Start
 
@@ -499,6 +685,7 @@ DISCORD_WEBHOOK_URL=https://...
 SLACK_WEBHOOK_URL=https://...
 EMAIL_PASSWORD=your-password
 WEBHOOK_TOKEN=your-token
+IOS_PUSH_INSTANCE_KEY=your-instance-key
 
 # Set permissions
 chmod 600 .env
@@ -516,6 +703,7 @@ echo "https://..." | docker secret create discord_webhook_url -
 echo "https://..." | docker secret create slack_webhook_url -
 echo "your-password" | docker secret create email_password -
 echo "your-token" | docker secret create webhook_token -
+echo "your-instance-key" | docker secret create ios_push_instance_key -
 
 # Deploy with secrets
 docker stack deploy -c docker-compose.secrets.yml ksef
