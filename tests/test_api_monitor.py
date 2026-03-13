@@ -65,7 +65,7 @@ class TestHealthEndpoint:
         assert data["status"] == "ok"
         assert data["version"] == "0.4.0"
         assert data["db_connected"] is False
-        assert data["auth_enabled"] is False
+        assert "auth_enabled" not in data  # F-09: removed
 
     def test_health_with_db(self, db_with_state):
         app = create_app(db=db_with_state, auth_token=None)
@@ -74,13 +74,7 @@ class TestHealthEndpoint:
         data = resp.json()
         assert data["status"] == "ok"
         assert data["db_connected"] is True
-
-    def test_health_auth_enabled_flag(self):
-        app = create_app(db=None, auth_token="a" * 32)
-        client = TestClient(app)
-        resp = client.get("/api/v1/monitor/health")
-        data = resp.json()
-        assert data["auth_enabled"] is True
+        assert "auth_enabled" not in data  # F-09: removed
 
 
 class TestMonitorState:

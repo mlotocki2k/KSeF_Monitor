@@ -391,3 +391,152 @@ class TestRateLimiting:
         responses = [client.get("/api/v1/stats/summary") for _ in range(3)]
         status_codes = [r.status_code for r in responses]
         assert 429 in status_codes, f"Expected 429 in {status_codes}"
+
+
+# --- P3/P4 Security Fixes ---
+
+
+class TestDocsDisabled:
+    """F-02: Verify /docs, /redoc, /openapi.json can be disabled."""
+
+    def test_docs_enabled_by_default(self):
+        from fastapi.testclient import TestClient
+        from app.api import create_app
+
+        app = create_app()
+        client = TestClient(app)
+        resp = client.get("/docs")
+        assert resp.status_code == 200
+
+    def test_docs_disabled(self):
+        from fastapi.testclient import TestClient
+        from app.api import create_app
+
+        app = create_app(docs_enabled=False)
+        client = TestClient(app)
+        assert client.get("/docs").status_code == 404
+        assert client.get("/redoc").status_code == 404
+        assert client.get("/openapi.json").status_code == 404
+
+
+class TestPrometheusBindAddress:
+    """F-03: Verify Prometheus default bind is 127.0.0.1, not 0.0.0.0."""
+
+    def test_default_bind_localhost(self):
+        from app.prometheus_metrics import PrometheusMetrics
+        import inspect
+
+        sig = inspect.signature(PrometheusMetrics.__init__)
+        default = sig.parameters["bind_address"].default
+        assert default == "127.0.0.1"
+
+
+class TestEmailCRLFInjection:
+    """F-06: Verify CRLF stripping in email Subject header."""
+
+    def _make_notifier(self):
+        config = {
+            "notifications": {
+                "email": {
+                    "smtp_server": "smtp.example.com",
+                    "smtp_port": 587,
+                    "username": "test@example.com",
+                    "password": "secret",
+                    "from_address": "test@example.com",
+                    "to_addresses": ["dest@example.com"],
+                }
+            }
+        }
+        return EmailNotifier(config)
+
+    @patch("smtplib.SMTP")
+    def test_crlf_stripped_from_subject(self, mock_smtp):
+        notifier = self._make_notifier()
+        mock_server = MagicMock()
+        mock_smtp.return_value.__enter__ = MagicMock(return_value=mock_server)
+        mock_smtp.return_value.__exit__ = MagicMock(return_value=False)
+
+        notifier.send_notification(
+            title="Test\r\nBcc: attacker@evil.com",
+            message="body",
+        )
+
+        # Verify sendmail was called (notification sent)
+        mock_server.sendmail.assert_called_once()
+        raw_msg = mock_server.sendmail.call_args[0][2]
+        # Subject must not contain CRLF
+        assert "\r\nBcc:" not in raw_msg.split("Subject:")[1].split("\n")[0]
+
+    @patch("smtplib.SMTP")
+    def test_newline_replaced_with_space(self, mock_smtp):
+        notifier = self._make_notifier()
+        mock_server = MagicMock()
+        mock_smtp.return_value.__enter__ = MagicMock(return_value=mock_server)
+        mock_smtp.return_value.__exit__ = MagicMock(return_value=False)
+
+        notifier.send_notification(title="Line1\nLine2", message="body")
+        mock_server.sendmail.assert_called_once()
+        raw_msg = mock_server.sendmail.call_args[0][2]
+        # Subject line should contain "Line1 Line2" (newline replaced with space)
+        assert "Line1 Line2" in raw_msg
+
+
+class TestHealthInfoLeak:
+    """F-09: Verify auth_enabled removed from health response."""
+
+    def test_health_no_auth_enabled_field(self):
+        from fastapi.testclient import TestClient
+        from app.api import create_app
+
+        app = create_app(auth_token="x" * 32)
+        client = TestClient(app)
+        resp = client.get("/api/v1/monitor/health")
+        data = resp.json()
+        assert "auth_enabled" not in data
+
+    def test_health_response_schema_no_auth(self):
+        from app.api.schemas import HealthResponse
+
+        fields = HealthResponse.model_fields
+        assert "auth_enabled" not in fields
+
+
+class TestCORSWildcardRejection:
+    """F-10: Verify CORS wildcard rejected when auth_token is set."""
+
+    def test_wildcard_rejected_with_auth(self):
+        from fastapi.testclient import TestClient
+        from app.api import create_app
+
+        app = create_app(auth_token="x" * 32, cors_origins=["*"])
+        client = TestClient(app)
+        # CORS preflight should NOT get Access-Control-Allow-Origin
+        resp = client.options(
+            "/api/v1/monitor/health",
+            headers={"Origin": "https://evil.com", "Access-Control-Request-Method": "GET"},
+        )
+        assert "access-control-allow-origin" not in resp.headers
+
+    def test_wildcard_allowed_without_auth(self):
+        from fastapi.testclient import TestClient
+        from app.api import create_app
+
+        app = create_app(auth_token=None, cors_origins=["*"])
+        client = TestClient(app)
+        resp = client.get(
+            "/api/v1/monitor/health",
+            headers={"Origin": "https://example.com"},
+        )
+        assert resp.headers.get("access-control-allow-origin") == "*"
+
+    def test_specific_origin_allowed_with_auth(self):
+        from fastapi.testclient import TestClient
+        from app.api import create_app
+
+        app = create_app(auth_token="x" * 32, cors_origins=["https://myapp.com"])
+        client = TestClient(app)
+        resp = client.get(
+            "/api/v1/monitor/health",
+            headers={"Origin": "https://myapp.com"},
+        )
+        assert resp.headers.get("access-control-allow-origin") == "https://myapp.com"

@@ -450,6 +450,9 @@ class ConfigManager:
         api.setdefault("bind_address", "127.0.0.1")
         api.setdefault("auth_token", "")
 
+        # Docs enabled by default, disable in production (F-02)
+        api.setdefault("docs_enabled", True)
+
         # Rate limiting defaults
         rate_limit = api.setdefault("rate_limit", {})
         rate_limit.setdefault("enabled", True)

@@ -27,6 +27,7 @@ def create_app(
     auth_token: Optional[str] = None,
     cors_origins: Optional[list] = None,
     rate_limit_config: Optional[Dict[str, Any]] = None,
+    docs_enabled: bool = True,
 ) -> FastAPI:
     """Create and configure FastAPI application.
 
@@ -36,14 +37,18 @@ def create_app(
         auth_token: Shared secret for Bearer auth (None = open access)
         cors_origins: List of allowed CORS origins (empty = CORS disabled)
         rate_limit_config: Rate limiting settings {"enabled": bool, "default": str, "trigger": str}
+        docs_enabled: Enable /docs and /redoc endpoints (False in prod, F-02)
     """
     app = FastAPI(
         title="KSeF Monitor API",
         version="0.4.0",
-        docs_url="/docs",
-        redoc_url="/redoc",
+        docs_url="/docs" if docs_enabled else None,
+        redoc_url="/redoc" if docs_enabled else None,
+        openapi_url="/openapi.json" if docs_enabled else None,
         debug=False,
     )
+    if not docs_enabled:
+        logger.info("API docs disabled (/docs, /redoc, /openapi.json)")
 
     # Store shared state
     app.state.db = db
@@ -107,14 +112,20 @@ def create_app(
     if rl_enabled:
         logger.info("API rate limiting: %s", default_limit)
 
-    # CORS (disabled by default)
+    # CORS (disabled by default, F-10: reject wildcard when auth enabled)
     if cors_origins:
-        app.add_middleware(
-            CORSMiddleware,
-            allow_origins=cors_origins,
-            allow_methods=["GET"],
-            allow_headers=["Authorization"],
-        )
+        if "*" in cors_origins and auth_token:
+            logger.warning(
+                "CORS wildcard '*' rejected — not allowed when auth_token is set. "
+                "CORS disabled."
+            )
+        else:
+            app.add_middleware(
+                CORSMiddleware,
+                allow_origins=cors_origins,
+                allow_methods=["GET"],
+                allow_headers=["Authorization"],
+            )
 
     # Register routers
     app.include_router(invoices.router, prefix="/api/v1")
