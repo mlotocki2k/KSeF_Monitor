@@ -54,7 +54,7 @@ def main():
     global monitor
     
     logger.info("=" * 70)
-    logger.info("KSeF Monitor v0.3")
+    logger.info("KSeF Monitor v0.4")
     logger.info("Based on KSeF API v2.2.0 (github.com/CIRFMF/ksef-docs)")
     logger.info("Multi-channel notifications with Jinja2 templates")
     logger.info("=" * 70)
@@ -153,7 +153,7 @@ def main():
         logger.info("Initializing Prometheus metrics...")
         prometheus_port = config.get("prometheus", "port", default=8000)
         prometheus_enabled = config.get("prometheus", "enabled", default=True)
-        prometheus_bind = config.get("prometheus", "bind_address", default="0.0.0.0")
+        prometheus_bind = config.get("prometheus", "bind_address", default="127.0.0.1")
 
         prometheus_metrics = None
         if prometheus_enabled:
@@ -180,6 +180,32 @@ def main():
         monitor = InvoiceMonitor(config, ksef_client, notification_manager, prometheus_metrics, database=database)
         logger.info("✓ Invoice monitor initialized")
         
+        # Start REST API server (R-03: wire API into main)
+        api_config = config.get("api") or {}
+        if api_config.get("enabled"):
+            try:
+                from app.api import create_app
+                from app.api.server import APIServer
+
+                api_app = create_app(
+                    db=database,
+                    monitor_instance=monitor,
+                    auth_token=api_config.get("auth_token", ""),
+                    cors_origins=api_config.get("cors_origins"),
+                    rate_limit_config=api_config.get("rate_limit"),
+                    docs_enabled=api_config.get("docs_enabled", True),
+                )
+                api_server = APIServer(
+                    api_app,
+                    host=api_config.get("bind_address", "127.0.0.1"),
+                    port=api_config.get("port", 8080),
+                )
+                api_server.start()
+                logger.info("✓ REST API server started")
+            except Exception as e:
+                logger.warning(f"Failed to start REST API: {e}")
+                logger.info("Continuing without REST API")
+
         # Register signal handlers
         signal.signal(signal.SIGINT, signal_handler)
         signal.signal(signal.SIGTERM, signal_handler)
