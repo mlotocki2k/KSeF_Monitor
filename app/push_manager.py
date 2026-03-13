@@ -429,7 +429,7 @@ class PushManager:
     def send_push(self, title: str, body: str,
                   data: Optional[Dict[str, Any]] = None,
                   notification_type: str = "new_invoice",
-                  invoice_reference: str = "") -> Dict[str, Any]:
+                  invoice_reference: str = "n/a") -> Dict[str, Any]:
         """Send push notification via Central Push Service.
 
         Worker relays to APNs for all paired devices.

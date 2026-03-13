@@ -99,7 +99,7 @@ class IosPushNotifier(BaseNotifier):
             data: Dict[str, Any] = {
                 "notification_id": str(uuid.uuid4()),
                 "type": "system",
-                "invoice_reference": "",
+                "invoice_reference": "n/a",
             }
             if url:
                 data["url"] = url
@@ -172,7 +172,7 @@ class IosPushNotifier(BaseNotifier):
             payload["data"] = {}
         payload["data"].setdefault("notification_id", str(uuid.uuid4()))
         payload["data"].setdefault("type", "new_invoice")
-        payload["data"].setdefault("invoice_reference", "")
+        payload["data"].setdefault("invoice_reference", "n/a")
 
         try:
             headers = {
