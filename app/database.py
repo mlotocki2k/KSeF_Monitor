@@ -353,7 +353,30 @@ class Database:
     def create_tables(self):
         """Create all tables (used only if Alembic is not available)."""
         Base.metadata.create_all(self.engine)
+        self._migrate_schema()
         logger.info("Database tables created")
+
+    def _migrate_schema(self):
+        """Add missing columns to existing tables (lightweight auto-migration)."""
+        from sqlalchemy import inspect as sa_inspect
+        inspector = sa_inspect(self.engine)
+
+        for table in Base.metadata.sorted_tables:
+            if not inspector.has_table(table.name):
+                continue
+            existing = {col["name"] for col in inspector.get_columns(table.name)}
+            for col in table.columns:
+                if col.name not in existing:
+                    col_type = col.type.compile(self.engine.dialect)
+                    default_clause = ""
+                    if col.server_default is not None:
+                        default_clause = f" DEFAULT {col.server_default.arg}"
+                    elif col.default is not None and hasattr(col.default, 'arg') and isinstance(col.default.arg, str):
+                        default_clause = f" DEFAULT '{col.default.arg}'"
+                    stmt = f"ALTER TABLE {table.name} ADD COLUMN {col.name} {col_type}{default_clause}"
+                    with self.engine.begin() as conn:
+                        conn.execute(text(stmt))
+                    logger.info("Schema migration: added column %s.%s", table.name, col.name)
 
     def get_session(self) -> Session:
         """Get a new session. Caller must close it."""
