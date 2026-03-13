@@ -3,9 +3,11 @@ Unit tests for security controls introduced by the security audit.
 Covers: email HTML escaping, SSRF redirect blocking, auth failure metrics callback.
 """
 
+import os
 import pytest
 from unittest.mock import MagicMock, patch
 
+from app.config_manager import ConfigManager
 from app.notifiers.email_notifier import EmailNotifier
 from app.notifiers.discord_notifier import DiscordNotifier
 from app.notifiers.slack_notifier import SlackNotifier
@@ -540,3 +542,179 @@ class TestCORSWildcardRejection:
             headers={"Origin": "https://myapp.com"},
         )
         assert resp.headers.get("access-control-allow-origin") == "https://myapp.com"
+
+
+# --- Re-audit Fixes (R-01, R-02, R-03) ---
+
+
+def _minimal_config(**overrides):
+    """Build a minimal valid config dict for ConfigManager tests."""
+    base = {
+        "ksef": {"nip": "1234567890", "token": "x", "environment": "test"},
+        "monitoring": {},
+        "schedule": {"mode": "minutes", "interval": 30},
+    }
+    for key, val in overrides.items():
+        if isinstance(val, dict) and key in base and isinstance(base[key], dict):
+            base[key].update(val)
+        else:
+            base[key] = val
+    return base
+
+
+class TestTokenLogTruncation:
+    """R-01: Verify auto-generated auth token is not logged in full."""
+
+    def test_token_logged_truncated(self):
+        """Auto-generated token must be truncated to first 8 chars in log."""
+        import json
+        import tempfile
+
+        config_data = _minimal_config(
+            api={"enabled": True, "auth_token": ""},
+        )
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".json", delete=False
+        ) as f:
+            json.dump(config_data, f)
+            f.flush()
+
+            with patch("app.config_manager.logger") as mock_logger:
+                cm = ConfigManager(f.name)
+                token = cm.get("api", "auth_token")
+                assert len(token) > 8, "Token should be longer than 8 chars"
+
+                # Full token must NOT appear in any warning log
+                warning_calls = [
+                    str(call) for call in mock_logger.warning.call_args_list
+                ]
+                for call_str in warning_calls:
+                    assert token not in call_str, (
+                        "Full token must not appear in log"
+                    )
+
+                # Truncated form (first 8 chars) MUST appear
+                truncated = token[:8]
+                found_truncated = any(
+                    truncated in str(call)
+                    for call in mock_logger.warning.call_args_list
+                )
+                assert found_truncated, (
+                    f"Truncated token '{truncated}...' not found in log"
+                )
+
+        os.unlink(f.name)
+
+    def test_token_not_in_info_logs(self):
+        """Full token must not appear in any info-level log either."""
+        import json
+        import tempfile
+
+        config_data = _minimal_config(
+            api={"enabled": True, "auth_token": ""},
+        )
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".json", delete=False
+        ) as f:
+            json.dump(config_data, f)
+            f.flush()
+
+            with patch("app.config_manager.logger") as mock_logger:
+                cm = ConfigManager(f.name)
+                token = cm.get("api", "auth_token")
+
+                info_calls = [
+                    str(call) for call in mock_logger.info.call_args_list
+                ]
+                for call_str in info_calls:
+                    assert token not in call_str, (
+                        "Full token must not appear in info logs"
+                    )
+
+        os.unlink(f.name)
+
+
+class TestDocsAutoDisableProd:
+    """R-02: Verify docs_enabled auto-disabled in production environment."""
+
+    def test_docs_disabled_in_prod(self):
+        """When ksef.environment == 'prod', docs_enabled defaults to False."""
+        import json
+        import tempfile
+
+        config_data = _minimal_config(
+            ksef={"nip": "1234567890", "token": "x", "environment": "prod"},
+            api={"enabled": True},
+        )
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".json", delete=False
+        ) as f:
+            json.dump(config_data, f)
+            f.flush()
+
+            cm = ConfigManager(f.name)
+            assert cm.get("api", "docs_enabled") is False
+
+        os.unlink(f.name)
+
+    def test_docs_enabled_in_test(self):
+        """When ksef.environment == 'test', docs_enabled defaults to True."""
+        import json
+        import tempfile
+
+        config_data = _minimal_config(
+            api={"enabled": True},
+        )
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".json", delete=False
+        ) as f:
+            json.dump(config_data, f)
+            f.flush()
+
+            cm = ConfigManager(f.name)
+            assert cm.get("api", "docs_enabled") is True
+
+        os.unlink(f.name)
+
+    def test_explicit_docs_enabled_overrides_prod(self):
+        """Explicit docs_enabled=True in config overrides prod auto-disable."""
+        import json
+        import tempfile
+
+        config_data = _minimal_config(
+            ksef={"nip": "1234567890", "token": "x", "environment": "prod"},
+            api={"enabled": True, "docs_enabled": True},
+        )
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".json", delete=False
+        ) as f:
+            json.dump(config_data, f)
+            f.flush()
+
+            cm = ConfigManager(f.name)
+            assert cm.get("api", "docs_enabled") is True
+
+        os.unlink(f.name)
+
+
+class TestApiWiredInMain:
+    """R-03: Verify REST API is wired into main.py startup."""
+
+    def test_main_has_api_wiring(self):
+        """main.py must contain API startup code: create_app, APIServer, conditional guard."""
+        import inspect
+        import main as main_module
+
+        source = inspect.getsource(main_module.main)
+        assert 'api_config.get("enabled")' in source
+        assert "create_app" in source
+        assert "APIServer" in source
+        assert "api_server.start()" in source
+
+    def test_api_import_works(self):
+        """Verify create_app and APIServer can be imported as main.py does."""
+        from app.api import create_app
+        from app.api.server import APIServer
+
+        assert callable(create_app)
+        assert callable(APIServer)

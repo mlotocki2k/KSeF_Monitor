@@ -450,8 +450,12 @@ class ConfigManager:
         api.setdefault("bind_address", "127.0.0.1")
         api.setdefault("auth_token", "")
 
-        # Docs enabled by default, disable in production (F-02)
-        api.setdefault("docs_enabled", True)
+        # Docs: auto-disable in production (R-02 / F-02)
+        ksef_env = config.get("ksef", {}).get("environment", "")
+        if ksef_env == "prod":
+            api.setdefault("docs_enabled", False)
+        else:
+            api.setdefault("docs_enabled", True)
 
         # Rate limiting defaults
         rate_limit = api.setdefault("rate_limit", {})
@@ -467,7 +471,7 @@ class ConfigManager:
             logger.warning(
                 "API enabled without auth_token — auto-generated:"
             )
-            logger.warning("  %s", generated_token)
+            logger.warning("  %s...", generated_token[:8])
             logger.warning(
                 "Set api.auth_token in config.json or "
                 "API_AUTH_TOKEN env var for a persistent token."
