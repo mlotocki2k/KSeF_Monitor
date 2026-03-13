@@ -343,10 +343,11 @@ Before running in production:
 - ✅ SQLite database for invoice metadata + notification log
 - ✅ Database admin CLI tool: `db_admin.py`
 - ✅ Custom HTML/CSS invoice PDF templates
-- ✅ REST API with FastAPI (read-only, Bearer auth, Swagger UI) (v0.4)
+- ✅ REST API with FastAPI (read-only, Bearer auth, Swagger UI, rate limiting) (v0.4)
 - ✅ Sliding window rate limiter (3 windows) (v0.4)
 - ✅ API request logging + artifact download tracking (v0.4)
-- ✅ 395 unit tests (v0.4)
+- ✅ Security audit: 10 controls (SSTI sandbox, auth enforcement, rate limiting, CORS, CRLF, info disclosure) (v0.4)
+- ✅ 416 unit tests (v0.4)
 
 **Requirements:**
 - Docker & Docker Compose

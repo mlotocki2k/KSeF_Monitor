@@ -4,7 +4,7 @@ Complete guide for testing your KSeF Monitor installation.
 
 ## Unit Tests (pytest)
 
-The project includes a comprehensive unit test suite (395 tests) covering configuration validation, invoice monitoring logic, file naming, API field mapping, template rendering, rate limiting, database CRUD, REST API endpoints, authentication, and more.
+The project includes a comprehensive unit test suite (416 tests) covering configuration validation, invoice monitoring logic, file naming, API field mapping, template rendering, rate limiting, database CRUD, REST API endpoints, authentication, security controls, and more.
 
 ### Running unit tests
 
@@ -37,7 +37,8 @@ tests/
 ├── test_api_auth.py            # API auth: Bearer token, open access, security headers (v0.4)
 ├── test_api_invoices.py        # API: pagination, filtering, sorting, detail, no data leaks (v0.4)
 ├── test_api_stats.py           # API: summary stats, API stats, validation (v0.4)
-└── test_api_monitor.py         # API: health, monitor state, trigger (v0.4)
+├── test_api_monitor.py         # API: health, monitor state, trigger (v0.4)
+└── test_security_controls.py   # Security audit: HTML escaping, SSRF, auth, sandbox, rate limit, CORS (v0.4)
 ```
 
 ### CI

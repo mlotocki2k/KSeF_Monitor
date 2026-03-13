@@ -173,6 +173,7 @@ Katalog `data/` powstaje w runtime i zawiera bazę danych `invoices.db` oraz leg
 | `alembic` | >=1.13.0 | Migracje schematu bazy danych |
 | `fastapi` | >=0.115.0 | REST API pod UI (endpointy, Swagger docs) |
 | `uvicorn` | >=0.34.0 | ASGI server dla FastAPI (daemon thread) |
+| `slowapi` | >=0.1.9 | Rate limiting middleware dla FastAPI (v0.4) |
 
 ---
 
@@ -503,6 +504,52 @@ Tabele: `invoices` (metadane faktur), `monitor_state` (stan per NIP + subject_ty
 
 Zarządzanie: `python db_admin.py status|invoices|stats|errors|...` — szczegóły: [docs/DATABASE.md](docs/DATABASE.md)
 
+### Sekcja `api`
+
+REST API (FastAPI) do integracji z UI i zewnętrznymi systemami (v0.4).
+
+| Pole | Default | Opis |
+|---|---|---|
+| `enabled` | `false` | Włącz/wyłącz REST API |
+| `port` | `8080` | Port HTTP dla API |
+| `bind_address` | `"127.0.0.1"` | Adres sieciowy |
+| `auth_token` | `""` | Token Bearer auth. Jeśli pusty gdy API włączone — auto-generowany i logowany (F-01). Może być ustawiony przez `API_AUTH_TOKEN` env/Docker secret. |
+| `docs_enabled` | `true` | `/docs`, `/redoc`, `/openapi.json`. Ustaw `false` w produkcji (F-02). |
+| `cors_origins` | `[]` | Lista dozwolonych origin CORS. Wildcard `*` odrzucany gdy `auth_token` jest ustawiony (F-10). |
+| `rate_limit.enabled` | `true` | Włącz rate limiting (slowapi) |
+| `rate_limit.default` | `"60/minute"` | Domyślny limit requestów |
+| `rate_limit.trigger` | `"2/minute"` | Limit dla POST /trigger |
+
+**Przykład konfiguracji:**
+
+```json
+{
+  "api": {
+    "enabled": true,
+    "port": 8080,
+    "auth_token": "",
+    "docs_enabled": false,
+    "rate_limit": {
+      "enabled": true,
+      "default": "60/minute"
+    }
+  }
+}
+```
+
+**Endpointy:**
+
+| Endpoint | Metoda | Opis |
+|---|---|---|
+| `/api/v1/invoices` | GET | Lista faktur (paginacja, filtry, sort) |
+| `/api/v1/invoices/{ksef_number}` | GET | Szczegóły faktury |
+| `/api/v1/stats/summary` | GET | Statystyki faktur |
+| `/api/v1/stats/api` | GET | Statystyki API calls |
+| `/api/v1/monitor/health` | GET | Health check (bez auth) |
+| `/api/v1/monitor/state` | GET | Stan monitoringu per NIP |
+| `/api/v1/monitor/trigger` | POST | Wymuszenie sprawdzenia |
+| `/api/v1/artifacts/pending` | GET | Artefakty oczekujące |
+
 ### Sekcja `prometheus`
 
 Eksport metryk dla systemów monitorowania (Prometheus, Grafana, etc.)
@@ -511,7 +558,7 @@ Eksport metryk dla systemów monitorowania (Prometheus, Grafana, etc.)
 |---|---|---|
 | `enabled` | `true` | Włącz/wyłącz endpoint metryk Prometheus |
 | `port` | `8000` | Port HTTP dla endpointu `/metrics` |
-| `bind_address` | `"0.0.0.0"` | Adres sieciowy do nasłuchu. `0.0.0.0` dla Dockera (domyślnie), `127.0.0.1` dla bare metal |
+| `bind_address` | `"127.0.0.1"` | Adres sieciowy do nasłuchu. `127.0.0.1` (domyślnie, bezpieczeństwo — F-03), `0.0.0.0` dla Dockera z port mapping |
 
 **Dostępne metryki:**
 
@@ -528,7 +575,7 @@ Eksport metryk dla systemów monitorowania (Prometheus, Grafana, etc.)
   "prometheus": {
     "enabled": true,
     "port": 8000,
-    "bind_address": "0.0.0.0"
+    "bind_address": "127.0.0.1"
   }
 }
 ```
@@ -537,8 +584,8 @@ Eksport metryk dla systemów monitorowania (Prometheus, Grafana, etc.)
 
 | Środowisko | `bind_address` | Uwagi |
 |---|---|---|
-| Docker (domyślnie) | `"0.0.0.0"` | Wymagane, aby metryki były dostępne spoza kontenera. Bezpieczeństwo zapewnia port mapping w `docker-compose.yml` (`127.0.0.1:8000:8000`). |
-| Bare metal / VM | `"127.0.0.1"` | Metryki dostępne tylko lokalnie. Zalecane gdy Prometheus działa na tym samym hoście. |
+| Bare metal / VM (domyślnie) | `"127.0.0.1"` | Metryki dostępne tylko lokalnie. Domyślna wartość od security audit F-03. |
+| Docker | `"0.0.0.0"` | Wymagane, aby metryki były dostępne spoza kontenera. Bezpieczeństwo zapewnia port mapping w `docker-compose.yml` (`127.0.0.1:8000:8000`). |
 
 **Dostęp do metryk:**
 ```bash
@@ -600,6 +647,7 @@ Wrażliwe dane mogą być dostarczone na trzy sposoby. Kolejność priorytetów 
 | Wartość | Zmienne środowiska | Docker secret | Kanał |
 |---|---|---|---|
 | KSeF token | `KSEF_TOKEN` | `ksef_token` | — |
+| API auth token | `API_AUTH_TOKEN` | `api_auth_token` | API (v0.4) |
 | Pushover User Key | `PUSHOVER_USER_KEY` | `pushover_user_key` | Pushover |
 | Pushover API Token | `PUSHOVER_API_TOKEN` | `pushover_api_token` | Pushover |
 | Discord Webhook URL | `DISCORD_WEBHOOK_URL` | `discord_webhook_url` | Discord |

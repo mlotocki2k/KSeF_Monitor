@@ -142,9 +142,23 @@ Poprawki niezwiązane z konkretnymi feature'ami, ale krytyczne dla stabilności:
 - [x] Token auth z Docker secrets / env / config, open access mode z WARNING
 - [x] 6 nowych metryk Prometheus (API requests, response time, rate limit, artifacts)
 
-### 6) Testy ✅
+### 6) Security Audit ✅
+- [x] F-01: Auto-generowanie `auth_token` gdy API włączone bez tokena (`secrets.token_urlsafe(48)`)
+- [x] F-02: `docs_enabled` parametr — wyłączanie `/docs`, `/redoc`, `/openapi.json` w produkcji
+- [x] F-03: Prometheus default bind zmieniony z `0.0.0.0` na `127.0.0.1`
+- [x] F-04: Escapowanie HTML w emailach (`html.escape()`)
+- [x] F-06: CRLF stripping w nagłówku Subject emaila (header injection)
+- [x] F-07: Rate limiting API (slowapi middleware, `60/minute` default)
+- [x] F-09: Usunięcie `auth_enabled` z `/health` response (info disclosure)
+- [x] F-10: CORS wildcard `*` odrzucany gdy `auth_token` ustawiony
+- [x] F-11: Jinja2 `SandboxedEnvironment` (SSTI prevention)
+- [x] N-03: `allow_redirects=False` na webhookach (SSRF redirect blocking)
+- [x] `API_AUTH_TOKEN` w `secrets_manager.py` (Docker secrets flow)
+
+### 7) Testy ✅
 - [x] 105 nowych testów (rate limiter, DB phase 2, API auth, invoices, stats, monitor)
-- [x] Łącznie: **396 testów**, 0 failures
+- [x] 34 testów security audit (HTML escaping, SSRF, auth, sandbox, rate limit, docs, CORS, CRLF)
+- [x] Łącznie: **416 testów**, 0 failures
 
 **Zależności:** v0.3
 **DoD:** UI może bazować na stabilnym API; system jest odporny na retry i ma podstawową telemetrię operacyjną.

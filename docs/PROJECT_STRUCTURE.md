@@ -34,7 +34,7 @@ KSeF_Monitor/
 │   │   ├── discord.json.j2    # Embed JSON (Discord)
 │   │   └── webhook.json.j2    # Payload JSON (Webhook)
 │   ├── api/                    # REST API (FastAPI, v0.4)
-│   │   ├── __init__.py         # App factory (auth, security headers, CORS)
+│   │   ├── __init__.py         # App factory (auth, rate limiting, security headers, CORS)
 │   │   ├── server.py           # Uvicorn in daemon thread
 │   │   ├── schemas.py          # Pydantic response models
 │   │   └── routers/
@@ -106,7 +106,7 @@ KSeF_Monitor/
 │
 ├── alembic.ini                  # Alembic configuration
 │
-├── tests/                       # Unit tests (pytest, 395 tests)
+├── tests/                       # Unit tests (pytest, 416 tests)
 │   ├── conftest.py             # Shared test fixtures
 │   ├── test_config_manager.py  # Configuration validation tests
 │   ├── test_invoice_monitor.py # Invoice monitor tests
@@ -117,7 +117,8 @@ KSeF_Monitor/
 │   ├── test_api_auth.py        # API auth + security headers tests (v0.4)
 │   ├── test_api_invoices.py    # API invoice endpoints tests (v0.4)
 │   ├── test_api_stats.py       # API stats endpoints tests (v0.4)
-│   └── test_api_monitor.py     # API monitor endpoints tests (v0.4)
+│   ├── test_api_monitor.py     # API monitor endpoints tests (v0.4)
+│   └── test_security_controls.py # Security audit controls tests (v0.4)
 │
 ├── db_admin.py                  # Database administration CLI tool
 ├── CONTRIBUTING.md              # How to contribute
@@ -163,7 +164,7 @@ KSeF_Monitor/
 **Secrets management with priority chain**
 
 - Loads secrets from: environment variables → Docker secrets → config file
-- Supports all 7 secret types (KSeF token + 6 notification channels)
+- Supports all 8 secret types (KSeF token + API auth token + 6 notification channels)
 
 ### `app/ksef_client.py`
 **KSeF API v2.1 integration with rate limiting**
@@ -245,6 +246,7 @@ Design: [DATABASE_DESIGN.md](DATABASE_DESIGN.md)
 **Jinja2 notification template engine**
 
 - Loads templates from user directory (priority) with fallback to built-in defaults
+- `SandboxedEnvironment` for SSTI prevention (F-11 security audit)
 - `select_autoescape` only for `.html` — JSON/TXT without autoescaping
 - Custom Jinja2 filters: `money`, `money_raw`, `date`, `json_escape`
 - Polish monetary formatting (`,` decimal, space thousands separator)
@@ -290,7 +292,7 @@ See [PDF_TEMPLATES.md](PDF_TEMPLATES.md) for template customization guide.
 ### `app/api/` (v0.4)
 **REST API — FastAPI with Pydantic validation**
 
-- `__init__.py` — app factory: auth middleware (Bearer token, `hmac.compare_digest`), security headers, CORS
+- `__init__.py` — app factory: auth middleware (Bearer token, `hmac.compare_digest`), rate limiting (slowapi), security headers, CORS, configurable docs
 - `server.py` — uvicorn in daemon thread (failure = warning, doesn't block monitor)
 - `schemas.py` — Pydantic response models (no internal IDs/paths leaked)
 - `routers/invoices.py` — `GET /api/v1/invoices` (pagination, sort, filter), `GET /api/v1/invoices/{ksef_number}`
@@ -298,7 +300,9 @@ See [PDF_TEMPLATES.md](PDF_TEMPLATES.md) for template customization guide.
 - `routers/monitor.py` — `GET /api/v1/monitor/health`, `GET /api/v1/monitor/state`, `POST /api/v1/monitor/trigger`
 - `routers/artifacts.py` — `GET /api/v1/artifacts/pending`
 
-Read-only API, Swagger UI at `/docs`.
+**Security controls (audit v0.4):** auth token auto-generation (F-01), configurable docs disable (F-02), rate limiting via slowapi (F-07), CORS wildcard rejection when auth enabled (F-10).
+
+Read-only API, Swagger UI at `/docs` (disable with `docs_enabled: false`).
 
 ### `app/prometheus_metrics.py`
 **Prometheus metrics endpoint**
@@ -306,7 +310,7 @@ Read-only API, Swagger UI at `/docs`.
 Exports 9 metrics including: `ksef_last_check_timestamp`, `ksef_new_invoices_total`, `ksef_monitor_up`,
 `ksef_api_requests_total`, `ksef_api_response_time_seconds`, `ksef_api_rate_limit_waits_total` (v0.4).
 
-Configurable `bind_address`: `0.0.0.0` (Docker, default) or `127.0.0.1` (bare metal).
+Configurable `bind_address`: `127.0.0.1` (default, security F-03) or `0.0.0.0` (Docker with port mapping).
 
 ### `app/notifiers/`
 **Multi-channel notification system**
@@ -432,6 +436,7 @@ Managed in `requirements.txt`:
 | `fastapi` | REST API framework (v0.4) |
 | `uvicorn` | ASGI server for FastAPI (v0.4) |
 | `pydantic` | Request/response validation (v0.4) |
+| `slowapi` | API rate limiting middleware (v0.4) |
 
 Installed during Docker build.
 

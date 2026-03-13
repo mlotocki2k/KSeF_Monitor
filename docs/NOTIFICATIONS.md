@@ -1,6 +1,6 @@
 # Notification Channels Guide
 
-KSeF Monitor v0.3 supports multiple notification channels with **customizable Jinja2 templates**. You can enable one or more channels simultaneously to receive invoice notifications through your preferred platform(s).
+KSeF Monitor v0.4 supports multiple notification channels with **customizable Jinja2 templates**. You can enable one or more channels simultaneously to receive invoice notifications through your preferred platform(s).
 
 > **New in v0.3:** Notification format is now fully customizable through Jinja2 templates. See [TEMPLATES.md](TEMPLATES.md) for details.
 
