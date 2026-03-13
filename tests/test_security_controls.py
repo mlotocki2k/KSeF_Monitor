@@ -249,3 +249,145 @@ class TestAuthFailureCallback:
 
         assert result is False
         callback.assert_called_once_with(0)
+
+
+# --- P2 Security Fixes ---
+
+
+class TestSandboxedEnvironment:
+    """F-11: Verify Jinja2 SandboxedEnvironment is used."""
+
+    def test_template_renderer_uses_sandbox(self):
+        from jinja2.sandbox import SandboxedEnvironment
+        from app.template_renderer import TemplateRenderer
+
+        renderer = TemplateRenderer()
+        assert isinstance(renderer.env, SandboxedEnvironment)
+
+    def test_pdf_template_uses_sandbox(self, tmp_path):
+        from jinja2.sandbox import SandboxedEnvironment
+        from app.invoice_pdf_template import InvoicePDFTemplateRenderer
+
+        renderer = InvoicePDFTemplateRenderer()
+        assert isinstance(renderer.env, SandboxedEnvironment)
+
+    def test_sandbox_blocks_ssti(self, tmp_path):
+        """SandboxedEnvironment blocks __class__ access."""
+        from jinja2.sandbox import SandboxedEnvironment, SecurityError
+        from jinja2 import FileSystemLoader
+
+        # Create a malicious template
+        tmpl = tmp_path / "evil.txt"
+        tmpl.write_text('{{ "".__class__.__mro__ }}')
+
+        env = SandboxedEnvironment(loader=FileSystemLoader(str(tmp_path)))
+        template = env.get_template("evil.txt")
+        with pytest.raises(SecurityError):
+            template.render()
+
+    def test_sandbox_allows_normal_templates(self):
+        """SandboxedEnvironment allows standard template constructs."""
+        from app.template_renderer import TemplateRenderer
+
+        renderer = TemplateRenderer()
+        context = {
+            "title": "Test Invoice",
+            "ksef_number": "KSeF-123",
+            "invoice_number": "FV/001",
+            "issue_date": "2026-01-01",
+            "seller_name": "Firma Sp. z o.o.",
+            "seller_nip": "1234567890",
+            "buyer_name": "Klient S.A.",
+            "buyer_nip": "0987654321",
+            "net_amount": 1000.00,
+            "vat_amount": 230.00,
+            "gross_amount": 1230.00,
+            "currency": "PLN",
+            "subject_type": "Subject2",
+            "priority": 0,
+        }
+        result = renderer.render("pushover", context)
+        assert result is not None
+        assert "Firma Sp. z o.o." in result
+
+
+class TestAuthTokenAutoGeneration:
+    """F-01: Verify auth_token auto-generation when API enabled without token."""
+
+    def test_auto_generates_when_empty(self):
+        from app.config_manager import ConfigManager
+
+        config = ConfigManager.__new__(ConfigManager)
+        raw = {"api": {"enabled": True, "auth_token": ""}}
+        config._apply_api_defaults(raw)
+        token = raw["api"]["auth_token"]
+        assert len(token) >= 32
+        assert token != ""
+
+    def test_preserves_user_token(self):
+        from app.config_manager import ConfigManager
+
+        config = ConfigManager.__new__(ConfigManager)
+        raw = {"api": {"enabled": True, "auth_token": "my-custom-token-" + "x" * 32}}
+        config._apply_api_defaults(raw)
+        assert raw["api"]["auth_token"] == "my-custom-token-" + "x" * 32
+
+    def test_no_generation_when_disabled(self):
+        from app.config_manager import ConfigManager
+
+        config = ConfigManager.__new__(ConfigManager)
+        raw = {"api": {"enabled": False, "auth_token": ""}}
+        config._apply_api_defaults(raw)
+        assert raw["api"]["auth_token"] == ""
+
+    def test_rate_limit_defaults_applied(self):
+        from app.config_manager import ConfigManager
+
+        config = ConfigManager.__new__(ConfigManager)
+        raw = {"api": {}}
+        config._apply_api_defaults(raw)
+        assert raw["api"]["rate_limit"]["enabled"] is True
+        assert raw["api"]["rate_limit"]["default"] == "60/minute"
+        assert raw["api"]["rate_limit"]["trigger"] == "2/minute"
+
+
+class TestSecretsManagerApiToken:
+    """F-01: Verify API_AUTH_TOKEN injection via secrets_manager."""
+
+    def test_api_auth_token_injected(self):
+        from app.secrets_manager import SecretsManager
+
+        sm = SecretsManager.__new__(SecretsManager)
+        sm.get_secret = MagicMock(side_effect=lambda key: "test-api-token-xyz" if key == "API_AUTH_TOKEN" else None)
+
+        config = {"api": {}}
+        sm._inject_secrets(config)
+        assert config["api"]["auth_token"] == "test-api-token-xyz"
+
+
+class TestRateLimiting:
+    """F-07: Verify rate limiting middleware integration."""
+
+    def test_rate_limit_disabled_by_default(self):
+        from app.api import create_app
+
+        app = create_app()
+        assert app.state.limiter.enabled is False
+
+    def test_rate_limit_enabled_via_config(self):
+        from app.api import create_app
+
+        app = create_app(rate_limit_config={"enabled": True, "default": "10/minute"})
+        assert app.state.limiter.enabled is True
+
+    def test_rate_limit_429_when_exceeded(self):
+        from fastapi.testclient import TestClient
+        from app.api import create_app
+
+        app = create_app(rate_limit_config={"enabled": True, "default": "2/minute"})
+        client = TestClient(app)
+
+        # Exhaust rate limit with 3 requests (limit is 2/min)
+        responses = [client.get("/api/v1/stats/summary") for _ in range(3)]
+        status_codes = [r.status_code for r in responses]
+        assert 429 in status_codes, f"Expected 429 in {status_codes}"

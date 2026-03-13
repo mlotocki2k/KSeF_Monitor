@@ -6,11 +6,15 @@ FastAPI application factory with security defaults.
 
 import hmac
 import logging
-from typing import Optional
+from typing import Any, Dict, Optional
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
+from slowapi.util import get_remote_address
 
 from .routers import invoices, stats, monitor, artifacts, push
 
@@ -23,6 +27,7 @@ def create_app(
     auth_token: Optional[str] = None,
     cors_origins: Optional[list] = None,
     push_manager=None,
+    rate_limit_config: Optional[Dict[str, Any]] = None,
 ) -> FastAPI:
     """Create and configure FastAPI application.
 
@@ -31,6 +36,7 @@ def create_app(
         monitor_instance: InvoiceMonitor for state/trigger access
         auth_token: Shared secret for Bearer auth (None = open access)
         cors_origins: List of allowed CORS origins (empty = CORS disabled)
+        rate_limit_config: Rate limiting settings {"enabled": bool, "default": str, "trigger": str}
     """
     app = FastAPI(
         title="KSeF Monitor API",
@@ -87,6 +93,21 @@ def create_app(
         response.headers["X-Frame-Options"] = "DENY"
         response.headers["Cache-Control"] = "no-store"
         return response
+
+    # Rate limiting (F-07 security fix)
+    rl_config = rate_limit_config or {}
+    rl_enabled = rl_config.get("enabled", False)
+    default_limit = rl_config.get("default", "60/minute")
+    limiter = Limiter(
+        key_func=get_remote_address,
+        default_limits=[default_limit],
+        enabled=rl_enabled,
+    )
+    app.state.limiter = limiter
+    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+    app.add_middleware(SlowAPIMiddleware)
+    if rl_enabled:
+        logger.info("API rate limiting: %s", default_limit)
 
     # CORS (disabled by default)
     if cors_origins:
