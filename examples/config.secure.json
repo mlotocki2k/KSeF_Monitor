@@ -83,6 +83,11 @@
     "enabled": false,
     "port": 8080,
     "bind_address": "127.0.0.1",
-    "description": "REST API. auth_token loaded from API_AUTH_TOKEN env var or Docker secret 'api_auth_token'. Swagger docs at /docs."
+    "rate_limit": {
+      "enabled": true,
+      "default": "60/minute",
+      "trigger": "2/minute"
+    },
+    "description": "REST API. auth_token loaded from API_AUTH_TOKEN env var or Docker secret 'api_auth_token'. Auto-generated if empty when enabled. rate_limit: slowapi rate limiting."
   }
 }

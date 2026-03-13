@@ -5,6 +5,7 @@ Handles loading and validation of JSON configuration with secrets support
 
 import json
 import re
+import secrets
 import sys
 import logging
 from pathlib import Path
@@ -448,6 +449,27 @@ class ConfigManager:
         api.setdefault("port", 8080)
         api.setdefault("bind_address", "127.0.0.1")
         api.setdefault("auth_token", "")
+
+        # Rate limiting defaults
+        rate_limit = api.setdefault("rate_limit", {})
+        rate_limit.setdefault("enabled", True)
+        rate_limit.setdefault("default", "60/minute")
+        rate_limit.setdefault("trigger", "2/minute")
+
+        # Auto-generate auth token if API enabled without one (F-01 security fix)
+        if api["enabled"] and not api["auth_token"]:
+            generated_token = secrets.token_urlsafe(48)
+            api["auth_token"] = generated_token
+            logger.warning("=" * 60)
+            logger.warning(
+                "API enabled without auth_token — auto-generated:"
+            )
+            logger.warning("  %s", generated_token)
+            logger.warning(
+                "Set api.auth_token in config.json or "
+                "API_AUTH_TOKEN env var for a persistent token."
+            )
+            logger.warning("=" * 60)
 
         if api["enabled"]:
             logger.info(

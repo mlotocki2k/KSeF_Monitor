@@ -102,6 +102,11 @@
     "port": 8080,
     "bind_address": "127.0.0.1",
     "auth_token": "",
-    "description": "REST API for web UI and integrations. Disabled by default. Set auth_token (min 32 chars) for production. Swagger docs at /docs when enabled."
+    "rate_limit": {
+      "enabled": true,
+      "default": "60/minute",
+      "trigger": "2/minute"
+    },
+    "description": "REST API for web UI and integrations. Disabled by default. If auth_token is empty when enabled, a random token is auto-generated and logged at startup. rate_limit: slowapi rate limiting (60 req/min default, 2/min for trigger)."
   }
 }

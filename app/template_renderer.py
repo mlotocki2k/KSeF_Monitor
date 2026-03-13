@@ -13,7 +13,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-from jinja2 import Environment, FileSystemLoader, TemplateNotFound, select_autoescape
+from jinja2 import FileSystemLoader, TemplateNotFound, select_autoescape
+from jinja2.sandbox import SandboxedEnvironment
 
 logger = logging.getLogger(__name__)
 
@@ -112,7 +113,7 @@ class TemplateRenderer:
 
         search_paths.append(str(DEFAULT_TEMPLATES_DIR))
 
-        self.env = Environment(
+        self.env = SandboxedEnvironment(
             loader=FileSystemLoader(search_paths),
             autoescape=select_autoescape(["html"]),
             trim_blocks=True,

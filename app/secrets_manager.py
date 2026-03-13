@@ -166,6 +166,12 @@ class SecretsManager:
             headers["Authorization"] = f"Bearer {webhook_token}"
             logger.info("Webhook token loaded from secure source")
 
+        # API auth token
+        api_auth_token = self.get_secret("API_AUTH_TOKEN")
+        if api_auth_token:
+            config.setdefault("api", {})["auth_token"] = api_auth_token
+            logger.info("API auth token loaded from secure source")
+
         return config
     
     def validate_secrets(self, config: Dict[str, Any]) -> bool:
