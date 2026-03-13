@@ -167,12 +167,12 @@ class IosPushNotifier(BaseNotifier):
             logger.error("Invalid JSON from iOS Push template: %s", e)
             return False
 
-        # v1.2: ensure required fields in data
+        # v1.2: required fields in data — set from context, not template
         if "data" not in payload:
             payload["data"] = {}
-        payload["data"].setdefault("notification_id", str(uuid.uuid4()))
-        payload["data"].setdefault("type", "new_invoice")
-        payload["data"].setdefault("invoice_reference", "n/a")
+        payload["data"]["notification_id"] = str(uuid.uuid4())
+        payload["data"]["type"] = "new_invoice"
+        payload["data"]["invoice_reference"] = context.get("ksef_number") or "n/a"
 
         try:
             headers = {
