@@ -221,7 +221,7 @@ class TestPrometheusMetrics:
 
             from app.prometheus_metrics import PrometheusMetrics
             pm = PrometheusMetrics(port=9993)
-            assert pm.bind_address == '0.0.0.0'
+            assert pm.bind_address == '127.0.0.1'
 
     def test_bind_address_custom(self):
         """Custom bind_address is passed to start_http_server."""

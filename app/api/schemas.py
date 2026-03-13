@@ -98,12 +98,11 @@ class MonitorStateResponse(BaseModel):
 
 
 class HealthResponse(BaseModel):
-    """Health check response."""
+    """Health check response (F-09: auth_enabled removed — info disclosure)."""
 
     status: str = "ok"
     version: str = "0.4.0"
     db_connected: bool = False
-    auth_enabled: bool = False
 
 
 class TriggerResponse(BaseModel):

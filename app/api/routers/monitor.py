@@ -34,7 +34,6 @@ def health_check(request: Request):
         status="ok",
         version="0.4.0",
         db_connected=db_connected,
-        auth_enabled=bool(request.app.state.auth_token),
     )
 
 

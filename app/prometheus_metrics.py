@@ -24,13 +24,14 @@ class PrometheusMetrics:
     - ksef_monitor_up: Health check - 1 if monitor is running
     """
 
-    def __init__(self, port: int = 8000, bind_address: str = '0.0.0.0'):  # nosec B104 - configurable, 0.0.0.0 needed for Docker
+    def __init__(self, port: int = 8000, bind_address: str = '127.0.0.1'):
         """
         Initialize Prometheus metrics
 
         Args:
             port: HTTP server port for /metrics endpoint (default: 8000)
-            bind_address: Network interface to bind (default: '0.0.0.0' for Docker)
+            bind_address: Network interface to bind (default: '127.0.0.1',
+                          set to '0.0.0.0' in docker-compose for container access)
         """
         self.port = port
         self.bind_address = bind_address
