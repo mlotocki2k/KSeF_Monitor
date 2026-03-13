@@ -283,7 +283,7 @@ class TestPushManagerSendPush:
         assert "data" in payload
         assert "notification_id" in payload["data"]
         assert payload["data"]["type"] == "new_invoice"
-        assert payload["data"]["invoice_reference"] == ""
+        assert payload["data"]["invoice_reference"] == "n/a"
 
     @patch.object(PushManager, "_register_instance", return_value=True)
     def test_send_push_401(self, mock_register, tmp_path):

@@ -169,7 +169,7 @@ class TestIosPushSendNotification:
         # v1.2 required fields
         assert "notification_id" in payload["data"]
         assert payload["data"]["type"] == "system"
-        assert payload["data"]["invoice_reference"] == ""
+        assert payload["data"]["invoice_reference"] == "n/a"
 
     def test_post_url(self, notifier, mock_ok_response):
         notifier.session.post.return_value = mock_ok_response
@@ -231,7 +231,7 @@ class TestIosPushSendNotification:
         assert "data" in payload
         assert "notification_id" in payload["data"]
         assert payload["data"]["type"] == "system"
-        assert payload["data"]["invoice_reference"] == ""
+        assert payload["data"]["invoice_reference"] == "n/a"
 
 
 # ── Send Rendered ────────────────────────────────────────────────────────────
