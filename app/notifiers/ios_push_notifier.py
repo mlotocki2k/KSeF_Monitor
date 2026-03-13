@@ -50,7 +50,6 @@ class IosPushNotifier(BaseNotifier):
         )
         self.instance_id = ios_push_config.get("instance_id")
         self.instance_key = ios_push_config.get("instance_key")
-        self.internal_secret = ios_push_config.get("internal_secret")
         self.timeout = ios_push_config.get("timeout", 15)
 
     @property
@@ -116,8 +115,6 @@ class IosPushNotifier(BaseNotifier):
                 "X-Instance-Key": self.instance_key,
                 "Content-Type": "application/json",
             }
-            if self.internal_secret:
-                headers["Authorization"] = f"Bearer {self.internal_secret}"
 
             response = self.session.post(
                 f"{self.worker_url}/push/send",
@@ -135,13 +132,7 @@ class IosPushNotifier(BaseNotifier):
 
             elif response.status_code == 401:
                 logger.error(
-                    "iOS Push auth failed — instance_key or internal_secret invalid"
-                )
-                return False
-
-            elif response.status_code == 403:
-                logger.error(
-                    "iOS Push forbidden — internal_secret missing or invalid"
+                    "iOS Push auth failed — instance_key is invalid or expired"
                 )
                 return False
 
@@ -189,8 +180,6 @@ class IosPushNotifier(BaseNotifier):
                 "X-Instance-Key": self.instance_key,
                 "Content-Type": "application/json",
             }
-            if self.internal_secret:
-                headers["Authorization"] = f"Bearer {self.internal_secret}"
 
             response = self.session.post(
                 f"{self.worker_url}/push/send",
@@ -212,13 +201,7 @@ class IosPushNotifier(BaseNotifier):
 
             elif response.status_code == 401:
                 logger.error(
-                    "iOS Push auth failed — instance_key or internal_secret invalid"
-                )
-                return False
-
-            elif response.status_code == 403:
-                logger.error(
-                    "iOS Push forbidden — internal_secret missing or invalid"
+                    "iOS Push auth failed — instance_key is invalid or expired"
                 )
                 return False
 
