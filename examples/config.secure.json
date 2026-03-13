@@ -49,7 +49,7 @@
       "enabled": false,
       "worker_url": "https://push.monitorksef.com",
       "timeout": 15,
-      "description": "iOS Push notifications via Monitor KSeF app. Set enabled=true to activate. Credentials auto-generated and stored in DB."
+      "description": "iOS Push notifications via Monitor KSeF app. Set enabled=true to activate. internal_secret from PUSH_INTERNAL_SECRET (env/Docker secret). Credentials auto-generated and stored in DB."
     }
   },
   "monitoring": {

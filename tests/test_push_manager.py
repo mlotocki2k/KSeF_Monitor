@@ -19,8 +19,12 @@ from app.push_manager import PushManager, QR_PREFIX
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
 
-def _make_config(worker_url="https://push.monitorksef.com", timeout=15):
-    return {"worker_url": worker_url, "timeout": timeout}
+def _make_config(worker_url="https://push.monitorksef.com", timeout=15,
+                  internal_secret=None):
+    cfg = {"worker_url": worker_url, "timeout": timeout}
+    if internal_secret:
+        cfg["internal_secret"] = internal_secret
+    return cfg
 
 
 def _sha256_hex(value):
@@ -507,3 +511,91 @@ class TestPushManagerDBStorage:
             assert instance.pairing_code != old_code
         finally:
             session.close()
+
+
+# ── F-06: Authorization Header ──────────────────────────────────────────────
+
+
+class TestPushManagerAuthorizationHeader:
+    """F-06: Verify Authorization: Bearer {INTERNAL_SECRET} header on all Worker requests."""
+
+    def test_register_sends_authorization(self, tmp_path):
+        """Registration includes Authorization header when internal_secret set."""
+        with patch("app.push_manager.requests.Session") as MockSession:
+            mock_session = MockSession.return_value
+            mock_response = MagicMock()
+            mock_response.status_code = 200
+            mock_session.post.return_value = mock_response
+
+            pm = PushManager(
+                _make_config(internal_secret="test-secret-123"),
+                data_dir=str(tmp_path),
+            )
+
+            call_args = mock_session.post.call_args_list[0]
+            headers = call_args.kwargs.get("headers") or call_args[1].get("headers")
+            assert headers["Authorization"] == "Bearer test-secret-123"
+
+    def test_register_no_authorization_without_secret(self, tmp_path):
+        """Registration omits Authorization header when internal_secret is not set."""
+        with patch("app.push_manager.requests.Session") as MockSession:
+            mock_session = MockSession.return_value
+            mock_response = MagicMock()
+            mock_response.status_code = 200
+            mock_session.post.return_value = mock_response
+
+            pm = PushManager(_make_config(), data_dir=str(tmp_path))
+
+            call_args = mock_session.post.call_args_list[0]
+            headers = call_args.kwargs.get("headers") or call_args[1].get("headers")
+            assert "Authorization" not in headers
+
+    @patch.object(PushManager, "_register_instance", return_value=True)
+    def test_send_push_authorization(self, mock_register, tmp_path):
+        """send_push includes Authorization header."""
+        pm = PushManager(
+            _make_config(internal_secret="secret-abc"),
+            data_dir=str(tmp_path),
+        )
+
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"ok": True, "sent": 1, "failed": 0}
+        pm.session.post = MagicMock(return_value=mock_response)
+
+        pm.send_push("Title", "Body")
+
+        call_kwargs = pm.session.post.call_args
+        headers = call_kwargs.kwargs.get("headers") or call_kwargs[1].get("headers")
+        assert headers["Authorization"] == "Bearer secret-abc"
+
+    @patch.object(PushManager, "_register_instance", return_value=True)
+    def test_regenerate_authorization(self, mock_register, tmp_path):
+        """regenerate_pairing_code includes Authorization header."""
+        pm = PushManager(
+            _make_config(internal_secret="secret-xyz"),
+            data_dir=str(tmp_path),
+        )
+
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        pm.session.post = MagicMock(return_value=mock_response)
+
+        pm.regenerate_pairing_code()
+
+        call_kwargs = pm.session.post.call_args
+        headers = call_kwargs.kwargs.get("headers") or call_kwargs[1].get("headers")
+        assert headers["Authorization"] == "Bearer secret-xyz"
+
+    @patch.object(PushManager, "_register_instance", return_value=True)
+    def test_send_push_403_forbidden(self, mock_register, tmp_path):
+        """403 returns forbidden error."""
+        pm = PushManager(_make_config(), data_dir=str(tmp_path))
+
+        mock_response = MagicMock()
+        mock_response.status_code = 403
+        pm.session.post = MagicMock(return_value=mock_response)
+
+        result = pm.send_push("Title", "Body")
+        assert result["ok"] is False
+        assert result["error"] == "forbidden"

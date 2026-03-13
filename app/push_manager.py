@@ -69,6 +69,7 @@ class PushManager:
             db: Database instance for credential storage (optional, falls back to JSON)
         """
         self.central_push_url = config.get("worker_url", "https://push.monitorksef.com")
+        self.internal_secret = config.get("internal_secret")
         self.timeout = config.get("timeout", 15)
         self.push_config_path = Path(data_dir) / "push_config.json"
         self.db = db
@@ -268,6 +269,7 @@ class PushManager:
             response = self.session.post(
                 f"{self.central_push_url}/instances/register",
                 json=payload,
+                headers=self._base_headers(),
                 timeout=self.timeout,
                 allow_redirects=False,
             )
@@ -280,6 +282,11 @@ class PushManager:
                 logger.warning("Instance already registered")
                 self.registered_at = datetime.now(timezone.utc).isoformat()
                 return True
+            elif response.status_code == 403:
+                logger.error(
+                    "Registration forbidden — internal_secret missing or invalid"
+                )
+                return False
             else:
                 logger.error(
                     "Failed to register instance: HTTP %d", response.status_code
@@ -393,14 +400,14 @@ class PushManager:
         new_code = secrets.token_hex(4).upper()
 
         try:
+            headers = self._base_headers()
+            headers["X-Instance-Id"] = self.instance_id
+            headers["X-Instance-Key"] = self.instance_key
+
             response = self.session.post(
                 f"{self.central_push_url}/instances/regenerate-pairing",
                 json={"pairing_code_hash": self._sha256_hex(new_code)},
-                headers={
-                    "X-Instance-Id": self.instance_id,
-                    "X-Instance-Key": self.instance_key,
-                    "Content-Type": "application/json",
-                },
+                headers=headers,
                 timeout=self.timeout,
                 allow_redirects=False,
             )
@@ -410,6 +417,11 @@ class PushManager:
                 self._save_to_db()
                 logger.info("Pairing code regenerated")
                 return True
+            elif response.status_code == 403:
+                logger.error(
+                    "Regenerate forbidden — internal_secret missing or invalid"
+                )
+                return False
             else:
                 logger.error(
                     "Failed to regenerate pairing code: HTTP %d",
@@ -465,11 +477,9 @@ class PushManager:
                 "data": push_data,
             }
 
-            headers = {
-                "X-Instance-Id": self.instance_id,
-                "X-Instance-Key": self.instance_key,
-                "Content-Type": "application/json",
-            }
+            headers = self._base_headers()
+            headers["X-Instance-Id"] = self.instance_id
+            headers["X-Instance-Key"] = self.instance_key
 
             response = self.session.post(
                 f"{self.central_push_url}/push/send",
@@ -489,6 +499,10 @@ class PushManager:
             elif response.status_code == 401:
                 logger.error("Push auth failed: invalid instance_key")
                 return {"ok": False, "error": "unauthorized"}
+
+            elif response.status_code == 403:
+                logger.error("Push forbidden: internal_secret missing or invalid")
+                return {"ok": False, "error": "forbidden"}
 
             elif response.status_code == 429:
                 logger.warning("Push rate limited by Central Push Service")
@@ -559,6 +573,13 @@ class PushManager:
             "is_registered": self.is_registered,
             "qr_data_uri": self.generate_qr_data_uri(),
         }
+
+    def _base_headers(self) -> Dict[str, str]:
+        """Return base headers including F-06 Authorization if configured."""
+        headers: Dict[str, str] = {"Content-Type": "application/json"}
+        if self.internal_secret:
+            headers["Authorization"] = f"Bearer {self.internal_secret}"
+        return headers
 
     @staticmethod
     def _sha256_hex(value: str) -> str:

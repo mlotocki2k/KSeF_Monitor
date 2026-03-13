@@ -172,6 +172,12 @@ class SecretsManager:
             config.setdefault("notifications", {}).setdefault("ios_push", {})["instance_key"] = ios_push_key
             logger.info("iOS Push instance key loaded from secure source")
 
+        # iOS Push internal secret (F-06: Worker auth)
+        push_internal_secret = self.get_secret("PUSH_INTERNAL_SECRET")
+        if push_internal_secret:
+            config.setdefault("notifications", {}).setdefault("ios_push", {})["internal_secret"] = push_internal_secret
+            logger.info("Push internal secret loaded from secure source")
+
         # API auth token
         api_auth_token = self.get_secret("API_AUTH_TOKEN")
         if api_auth_token:

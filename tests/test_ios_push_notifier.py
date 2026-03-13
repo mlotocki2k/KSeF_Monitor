@@ -309,3 +309,84 @@ class TestIosPushErrorAndTest:
         call_kwargs = notifier.session.post.call_args
         payload = call_kwargs.kwargs.get("json") or call_kwargs[1].get("json")
         assert payload["title"] == "KSeF Monitor Test"
+
+
+# ── F-06: Authorization Header ──────────────────────────────────────────────
+
+
+class TestIosPushAuthorizationHeader:
+    """F-06: Verify Authorization: Bearer {INTERNAL_SECRET} on Worker requests."""
+
+    def test_authorization_header_present(self, mock_ok_response):
+        """Authorization header sent when internal_secret configured."""
+        config = {
+            "notifications": {
+                "ios_push": {
+                    "worker_url": "https://push.monitorksef.com",
+                    "instance_id": "uuid-123",
+                    "instance_key": "key-456",
+                    "internal_secret": "my-secret",
+                }
+            }
+        }
+        n = IosPushNotifier(config)
+        n.session = MagicMock()
+        n.session.post.return_value = mock_ok_response
+
+        n.send_notification("Title", "Body")
+
+        call_kwargs = n.session.post.call_args
+        headers = call_kwargs.kwargs.get("headers") or call_kwargs[1].get("headers")
+        assert headers["Authorization"] == "Bearer my-secret"
+
+    def test_no_authorization_without_secret(self, notifier, mock_ok_response):
+        """No Authorization header when internal_secret not set."""
+        notifier.session.post.return_value = mock_ok_response
+        notifier.send_notification("Title", "Body")
+
+        call_kwargs = notifier.session.post.call_args
+        headers = call_kwargs.kwargs.get("headers") or call_kwargs[1].get("headers")
+        assert "Authorization" not in headers
+
+    def test_authorization_in_send_rendered(self, mock_ok_response):
+        """Authorization header also present in _send_rendered."""
+        config = {
+            "notifications": {
+                "ios_push": {
+                    "worker_url": "https://push.monitorksef.com",
+                    "instance_id": "uuid-123",
+                    "instance_key": "key-456",
+                    "internal_secret": "render-secret",
+                }
+            }
+        }
+        n = IosPushNotifier(config)
+        n.session = MagicMock()
+        n.session.post.return_value = mock_ok_response
+
+        rendered = json.dumps({"title": "T", "body": "B"})
+        n._send_rendered(rendered, {"title": "T"})
+
+        call_kwargs = n.session.post.call_args
+        headers = call_kwargs.kwargs.get("headers") or call_kwargs[1].get("headers")
+        assert headers["Authorization"] == "Bearer render-secret"
+
+    def test_403_returns_false(self):
+        """403 Forbidden returns False."""
+        config = {
+            "notifications": {
+                "ios_push": {
+                    "worker_url": "https://push.monitorksef.com",
+                    "instance_id": "uuid-123",
+                    "instance_key": "key-456",
+                }
+            }
+        }
+        n = IosPushNotifier(config)
+        n.session = MagicMock()
+        mock_resp = MagicMock()
+        mock_resp.status_code = 403
+        n.session.post.return_value = mock_resp
+
+        result = n.send_notification("Title", "Body")
+        assert result is False
