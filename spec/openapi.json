@@ -2,7 +2,7 @@
   "openapi": "3.0.4",
   "info": {
     "title": "KSeF API PR",
-    "description": "**Wersja API:** 2.2.0 (build 2.2.0-pr-20260309.1+ba472cfcb5f2935c7d653b6d62dc785f86c767ff)<br>\n**Klucze publiczne** Ministerstwa Finansów (dla danego środowiska): [Pobierz klucze](#tag/Certyfikaty-klucza-publicznego)<br>\n**Historia zmian:** [Changelog](https://github.com/CIRFMF/ksef-docs/blob/main/api-changelog.md)<br>\n**Rozszerzona dokumentacja API:** [ksef-docs](https://github.com/CIRFMF/ksef-docs/tree/main)\n\n**Adres serwera API:**\n- Środowisko PRODUKCYJNE: `https://api.ksef.mf.gov.pl/v2`\n",
+    "description": "**Wersja API:** 2.2.0 (build 2.2.0-pr-20260313.1+fa840b089a49c8673d2264e3fdfe5ceca2931c99)<br>\n**Klucze publiczne** Ministerstwa Finansów (dla danego środowiska): [Pobierz klucze](#tag/Certyfikaty-klucza-publicznego)<br>\n**Historia zmian:** [Changelog](https://github.com/CIRFMF/ksef-docs/blob/main/api-changelog.md)<br>\n**Rozszerzona dokumentacja API:** [ksef-docs](https://github.com/CIRFMF/ksef-docs/tree/main)\n\n**Adres serwera API:**\n- Środowisko PRODUKCYJNE: `https://api.ksef.mf.gov.pl/v2`\n",
     "version": "v2"
   },
   "servers": [
