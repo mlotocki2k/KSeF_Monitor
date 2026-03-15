@@ -151,8 +151,8 @@ Poprawki niezwiązane z konkretnymi feature'ami, ale krytyczne dla stabilności:
 
 ---
 
-## v0.5 ✅ (zrobione)
-**Cel:** natywne push notifications na iOS + security hardening
+## v0.5 (Initial load + Web UI: odczyt)
+**Cel:** pierwszy sensowny produkt dla użytkownika: dane + podgląd
 
 ### 1) Push notyfikacje iOS — Monitor KSeF (Cloudflare Worker) ✅
 - [x] Nowy kanał powiadomień: natywne push notifications na iOS via aplikację **Monitor KSeF**
@@ -190,19 +190,11 @@ Poprawki niezwiązane z konkretnymi feature'ami, ale krytyczne dla stabilności:
 - [x] Aktualizacja OpenAPI spec KSeF (build 20260313.1)
 - [x] Fix Docker metadata: `latest` tag tylko dla branch `main`
 
-### 4) Testy ✅
+### 4) Testy (dotychczasowe) ✅
 - [x] Nowe testy: `test_ios_push_notifier.py`, `test_push_manager.py`, `test_security_controls.py`
 - [x] Łącznie: **485 testów**, 0 failures
 
-**Zależności:** v0.4
-**DoD:** push notification dociera na iOS via Cloudflare Worker; parowanie Docker ↔ iOS działa przez QR code; API zabezpieczone auth na wszystkich endpointach; templates sandboxed.
-
----
-
-## v0.6 (Initial load + Web UI: odczyt)
-**Cel:** pierwszy sensowny produkt dla użytkownika: dane + podgląd
-
-### 1) Initial load (dane historyczne)
+### 5) Initial load (dane historyczne)
 - od `2026-02-01` albo data definiowana w config (`initial_load.start_date`)
 - tryb: jednorazowy import + zapis do DB + raport (ile pobrano, ile pominięto)
 - **Moving window** — obejście limitu 90 dni (3 miesiące) API KSeF:
@@ -211,7 +203,7 @@ Poprawki niezwiązane z konkretnymi feature'ami, ale krytyczne dla stabilności:
   - progress tracking: zapis postępu (ostatnie zakończone okno) → resume po przerwaniu
   - rate limiting / backoff między oknami (unikanie throttlingu API)
 
-### 2) Interfejs webowy (odczyt)
+### 6) Interfejs webowy (odczyt)
 - pokazywanie health endpointa (api.kef.gov.pl be logowania zwraca status endpointa)
 - pokazywanie ile nowych faktur od ostatniego sprawdzenia: **per subject, per NIP**
 - pokazywanie ile ogólnie faktur: **per subject, per NIP** (sprzedawcy i kupującego)
@@ -220,7 +212,7 @@ Poprawki niezwiązane z konkretnymi feature'ami, ale krytyczne dla stabilności:
 - możliwość zaznaczenia jednej lub wielu faktur do wygenerowania PDF
 - integracja z oficjalną biblioteką CIRFMF do wizualizacji PDF ([ksef-pdf-generator](https://github.com/CIRFMF/ksef-pdf-generator)) jako opcjonalny mikroserwis Docker (REST API: XML → PDF), obok wbudowanego generatora (xhtml2pdf/ReportLab)
 
-### 3) Obsługa wszystkich schematów faktur KSeF
+### 7) Obsługa wszystkich schematów faktur KSeF
 Cel: uniwersalny monitor i generator PDF dla każdego typu faktury w KSeF — nie tylko FA(3).
 
 **Obsługiwane schematy (per KSeF API v2.2):**
@@ -255,8 +247,8 @@ Cel: uniwersalny monitor i generator PDF dla każdego typu faktury w KSeF — ni
 - Wsparcie nowych wersji schematu FA — jeśli pojawi się FA(4) lub nowe pola w FA(3), adaptacja parsera XML i template PDF
 - Aktualizacja `spec/openapi.json` i `spec/schemat_FA(3)_v1-0E.xsd` do najnowszych wersji
 
-**Zależności:** v0.5
-**DoD:** użytkownik widzi dashboard + listę + podgląd; initial load działa powtarzalnie bez duplikatów; PDF generuje się poprawnie dla każdego typu faktury obsługiwanego przez KSeF.
+**Zależności:** v0.4
+**DoD:** użytkownik widzi dashboard + listę + podgląd; initial load działa powtarzalnie bez duplikatów; push notification dociera na iOS; PDF generuje się poprawnie dla każdego typu faktury obsługiwanego przez KSeF.
 
 ---
 
@@ -269,7 +261,7 @@ Cel: uniwersalny monitor i generator PDF dla każdego typu faktury w KSeF — ni
 - Mechanizm auto-update musi uwzględniać zmiany w schemacie DB (Alembic migracje przy update)
 - Walidacja kompatybilności nowej wersji z aktualnym schematem FA i API KSeF
 
-**Zależności:** v0.6
+**Zależności:** v0.5
 
 ---
 
@@ -288,7 +280,7 @@ Cel: uniwersalny monitor i generator PDF dla każdego typu faktury w KSeF — ni
 - UI do podglądu aktualnie używanej wersji API KSeF i schematu FA
 - Powiadomienie w panelu admin o wykrytych zmianach w specyfikacji (z CI workflow)
 
-**Zależności:** v0.6
+**Zależności:** v0.5
 **DoD:** wszystko da się skonfigurować z UI, a zmiany wchodzą w życie bez ręcznych edycji configów (lub z kontrolowanym restartem usługi).
 
 ---
@@ -336,7 +328,6 @@ Cel: uniwersalny monitor i generator PDF dla każdego typu faktury w KSeF — ni
 ---
 
 ## Kluczowe zależności (krótko)
-- **DB (v0.3)** jest krytyczne przed sensownym UI (v0.6)
+- **DB (v0.3)** jest krytyczne przed sensownym UI (v0.5)
 - **API + stabilizacja (v0.4)** minimalizuje "dług" zanim dojdzie UI
-- **Push + security (v0.5)** — 6. kanał notyfikacji + hardening przed publicznym UI
-- **Initial load (v0.6)** najlepiej robić dopiero gdy masz deduplikację/idempotencję (v0.4)
+- **Initial load (v0.5)** najlepiej robić dopiero gdy masz deduplikację/idempotencję (v0.4)
