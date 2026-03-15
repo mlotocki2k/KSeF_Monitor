@@ -1,4 +1,4 @@
-# KSeF Monitor v0.4
+# KSeF Monitor v0.5
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
@@ -7,7 +7,7 @@
 [![Prometheus](https://img.shields.io/badge/Prometheus-metrics-orange?logo=prometheus)](docs/PROJECT_STRUCTURE.md)
 [![GitHub Actions](https://img.shields.io/github/actions/workflow/status/mlotocki2k/KSeF_Monitor/docker-publish.yml?branch=test&label=build)](https://github.com/mlotocki2k/KSeF_Monitor/actions)
 
-Monitor faktur w Krajowym Systemie e-Faktur (KSeF). Aplikacja cyklicznie pobiera metadata faktur z API KSeF v2 i wysyła powiadomienia o nowych fakturach sprzedażowych i/lub zakupowych przez **5 kanałów notyfikacji** z **konfigurowalnym systemem szablonów Jinja2**.
+Monitor faktur w Krajowym Systemie e-Faktur (KSeF). Aplikacja cyklicznie pobiera metadata faktur z API KSeF v2 i wysyła powiadomienia o nowych fakturach sprzedażowych i/lub zakupowych przez **6 kanałów notyfikacji** z **konfigurowalnym systemem szablonów Jinja2**.
 
 **Obsługiwane kanały:**
 - 📱 **Pushover** - powiadomienia mobilne
@@ -15,6 +15,7 @@ Monitor faktur w Krajowym Systemie e-Faktur (KSeF). Aplikacja cyklicznie pobiera
 - 💼 **Slack** - webhook z Block Kit
 - 📧 **Email** - SMTP z HTML formatowaniem
 - 🔗 **Webhook** - generyczny HTTP endpoint
+- 🍎 **iOS Push** - natywne push notifications via aplikację Monitor KSeF (v0.5)
 
 Bazuje na oficjalnej specyfikacji API: https://github.com/CIRFMF/ksef-docs
 
@@ -57,7 +58,8 @@ KSeF_Monitor/
 │   ├── database.py              # SQLite + SQLAlchemy 2.0 ORM (metadane, stan, logi, artefakty)
 │   ├── rate_limiter.py          # Globalny rate limiter KSeF API (sliding window, 3 okna)
 │   ├── logging_config.py        # Logging setup z timezone
-│   ├── api/                     # REST API (FastAPI, v0.4)
+│   ├── push_manager.py          # iOS Push: credentials, rejestracja, QR, wysyłka (v0.5)
+│   ├── api/                     # REST API (FastAPI, v0.4+)
 │   │   ├── __init__.py          # App factory (auth, security headers, CORS)
 │   │   ├── server.py            # Uvicorn daemon thread server
 │   │   ├── schemas.py           # Pydantic response models
@@ -65,14 +67,16 @@ KSeF_Monitor/
 │   │       ├── invoices.py      # GET /api/v1/invoices (paginacja, filtry, sortowanie)
 │   │       ├── stats.py         # GET /api/v1/stats/summary, /stats/api
 │   │       ├── monitor.py       # GET /health, /state; POST /trigger
-│   │       └── artifacts.py     # GET /api/v1/artifacts/pending
+│   │       ├── artifacts.py     # GET /api/v1/artifacts/pending
+│   │       └── push.py          # GET /api/v1/push/setup; POST /push/regenerate (v0.5)
 │   ├── templates/               # Wbudowane szablony Jinja2
 │   │   ├── invoice_pdf.html.j2  # Szablon PDF faktury (HTML/CSS)
 │   │   ├── pushover.txt.j2      # Plain text (Pushover)
 │   │   ├── email.html.j2        # HTML (Email)
 │   │   ├── slack.json.j2        # Block Kit JSON (Slack)
 │   │   ├── discord.json.j2      # Embed JSON (Discord)
-│   │   └── webhook.json.j2      # Payload JSON (Webhook)
+│   │   ├── webhook.json.j2      # Payload JSON (Webhook)
+│   │   └── ios_push.json.j2     # Push payload JSON (iOS Push, v0.5)
 │   └── notifiers/               # Multi-channel notification system
 │       ├── __init__.py
 │       ├── base_notifier.py     # Abstract base + render_and_send()
@@ -81,11 +85,12 @@ KSeF_Monitor/
 │       ├── discord_notifier.py      # Webhook Discord z rich embeds
 │       ├── slack_notifier.py        # Webhook Slack z Block Kit
 │       ├── email_notifier.py        # SMTP email z HTML
-│       └── webhook_notifier.py      # Generyczny HTTP endpoint
+│       ├── webhook_notifier.py      # Generyczny HTTP endpoint
+│       └── ios_push_notifier.py     # Natywne push iOS via Cloudflare Worker (v0.5)
 ├── docs/                        # Documentation
 │   ├── QUICKSTART.md            # Quick start guide
 │   ├── KSEF_TOKEN.md            # Tworzenie tokena KSeF (read-only)
-│   ├── NOTIFICATIONS.md         # Konfiguracja powiadomień (5 kanałów)
+│   ├── NOTIFICATIONS.md         # Konfiguracja powiadomień (6 kanałów)
 │   ├── TEMPLATES.md             # Szablony Jinja2 powiadomień
 │   ├── SECURITY.md              # Security best practices
 │   ├── TESTING.md               # Testing guide
@@ -129,7 +134,7 @@ Katalog `data/` powstaje w runtime i zawiera bazę danych `invoices.db` oraz leg
 
 - 📖 [QUICKSTART.md](docs/QUICKSTART.md) — Szybki start w 5 minut
 - 🔑 [KSEF_TOKEN.md](docs/KSEF_TOKEN.md) — Tworzenie tokena KSeF (krok po kroku, uprawnienia read-only)
-- 🔔 [NOTIFICATIONS.md](docs/NOTIFICATIONS.md) — Konfiguracja powiadomień (5 kanałów, tworzenie webhooków)
+- 🔔 [NOTIFICATIONS.md](docs/NOTIFICATIONS.md) — Konfiguracja powiadomień (6 kanałów, tworzenie webhooków, iOS Push parowanie)
 - 🎨 [TEMPLATES.md](docs/TEMPLATES.md) — Szablony Jinja2 powiadomień (zmienne, filtry, przykłady)
 - 🔒 [SECURITY.md](docs/SECURITY.md) — Najlepsze praktyki bezpieczeństwa
 - 🧪 [TESTING.md](docs/TESTING.md) — Przewodnik testowania
@@ -154,6 +159,7 @@ Katalog `data/` powstaje w runtime i zawiera bazę danych `invoices.db` oraz leg
   - **Slack** — Webhook URL (https://slack.com)
   - **Email** — Konto SMTP (Gmail, Outlook, własny serwer)
   - **Webhook** — Własny HTTP endpoint
+  - **iOS Push** — Aplikacja Monitor KSeF na iOS (v0.5)
 
 ### Zależności Python
 
@@ -198,11 +204,11 @@ Base URLs przypisane automatycznie:
 
 ### Sekcja `notifications`
 
-System powiadomień obsługuje **5 kanałów** jednocześnie. Możesz włączyć jeden lub wiele.
+System powiadomień obsługuje **6 kanałów** jednocześnie. Możesz włączyć jeden lub wiele.
 
 | Pole | Opis |
 |---|---|
-| `channels` | Lista włączonych kanałów: `["pushover", "discord", "slack", "email", "webhook"]` |
+| `channels` | Lista włączonych kanałów: `["pushover", "discord", "slack", "email", "webhook", "ios_push"]` |
 | `message_priority` | Priority dla nowych faktur. `-2` cisza \| `-1` cicho \| `0` normalne \| `1` wysoka \| `2` pilne (Pushover). |
 | `test_notification` | `true` wysyła testowe powiadomienie przy starcie. |
 | `templates_dir` | Opcjonalny katalog z własnymi szablonami Jinja2 (nadpisują wbudowane). Domyślnie: brak (wbudowane szablony). Szczegóły: [TEMPLATES.md](docs/TEMPLATES.md) |
@@ -314,6 +320,25 @@ System powiadomień obsługuje **5 kanałów** jednocześnie. Możesz włączyć
   "url": null
 }
 ```
+</details>
+
+<details>
+<summary><b>iOS Push</b> — Natywne push notifications via Monitor KSeF (v0.5)</summary>
+
+```json
+"ios_push": {
+  "enabled": true,
+  "worker_url": "https://push.monitorksef.com",
+  "timeout": 15
+}
+```
+
+- `enabled` — `true` aby włączyć kanał
+- `worker_url` — URL Cloudflare Worker (Central Push Service)
+- `timeout` — Timeout HTTP w sekundach (default: 15)
+- Credentials (`instance_id`, `instance_key`) generowane automatycznie i przechowywane w DB
+- Parowanie z aplikacją iOS: QR code w logach przy pierwszym uruchomieniu lub `/api/v1/push/setup`
+- Szczegóły: [docs/NOTIFICATIONS.md](docs/NOTIFICATIONS.md#ios-push)
 </details>
 
 **Przykładowa konfiguracja (3 kanały włączone):**
@@ -606,8 +631,9 @@ Wrażliwe dane mogą być dostarczone na trzy sposoby. Kolejność priorytetów 
 | Slack Webhook URL | `SLACK_WEBHOOK_URL` | `slack_webhook_url` | Slack |
 | Email Password | `EMAIL_PASSWORD` | `email_password` | Email |
 | Webhook Token | `WEBHOOK_TOKEN` | `webhook_token` | Webhook |
+| iOS Push Instance Key | `IOS_PUSH_INSTANCE_KEY` | `ios_push_instance_key` | iOS Push |
 
-**Uwaga:** Tylko sekrety dla włączonych kanałów są wymagane. Jeśli używasz tylko Discord, nie musisz podawać credentials dla Pushover, Email, etc.
+**Uwaga:** Tylko sekrety dla włączonych kanałów są wymagane. iOS Push credentials są auto-generowane — `IOS_PUSH_INSTANCE_KEY` jest opcjonalny (nadpisuje auto-generowany klucz). Jeśli używasz tylko Discord, nie musisz podawać credentials dla Pushover, Email, etc.
 
 **Przykład `.env` file:**
 ```bash
@@ -837,13 +863,13 @@ Numer KSeF: ...
 
 Każdy kanał mapuje priority (`-2` do `2`) na własny format:
 
-| Priority | Pushover | Discord | Slack | Email | Webhook |
-|---|---|---|---|---|---|
-| `-2` | Cisza | Kolor szary | Kolor szary | X-Priority: 5 | `priority: -2` |
-| `-1` | Cicho | Kolor szary | Emoji `:bell:` | X-Priority: 5 | `priority: -1` |
-| `0` | Normalne | Kolor niebieski | Emoji `:envelope:` | X-Priority: 3 | `priority: 0` |
-| `1` | Wysoka | Kolor pomarańczowy | Emoji `:warning:` + `@channel` | X-Priority: 2 | `priority: 1` |
-| `2` | Pilne (wymaga potwierdzenia) | Kolor czerwony | Emoji `:rotating_light:` + `<!here>` | X-Priority: 1 | `priority: 2` |
+| Priority | Pushover | Discord | Slack | Email | Webhook | iOS Push |
+|---|---|---|---|---|---|---|
+| `-2` | Cisza | Kolor szary | Kolor szary | X-Priority: 5 | `priority: -2` | Standard |
+| `-1` | Cicho | Kolor szary | Emoji `:bell:` | X-Priority: 5 | `priority: -1` | Standard |
+| `0` | Normalne | Kolor niebieski | Emoji `:envelope:` | X-Priority: 3 | `priority: 0` | Standard |
+| `1` | Wysoka | Kolor pomarańczowy | Emoji `:warning:` + `@channel` | X-Priority: 2 | `priority: 1` | Standard |
+| `2` | Pilne (wymaga potwierdzenia) | Kolor czerwony | Emoji `:rotating_light:` + `<!here>` | X-Priority: 1 | `priority: 2` | Standard |
 
 Więcej szczegółów: [docs/NOTIFICATIONS.md](docs/NOTIFICATIONS.md)
 

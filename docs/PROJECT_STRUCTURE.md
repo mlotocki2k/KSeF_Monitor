@@ -1,6 +1,6 @@
 # Project Structure
 
-This document explains the organization of the KSeF Monitor v0.4 application.
+This document explains the organization of the KSeF Monitor v0.5 application.
 
 ## Directory Layout
 
@@ -26,14 +26,16 @@ KSeF_Monitor/
 │   ├── prometheus_metrics.py   # Prometheus metrics endpoint (9 metrics)
 │   ├── scheduler.py            # Flexible scheduling (5 modes)
 │   ├── logging_config.py       # Logging setup with timezone
+│   ├── push_manager.py         # iOS Push: credentials, registration, QR, send (v0.5)
 │   ├── templates/              # Built-in Jinja2 templates
 │   │   ├── invoice_pdf.html.j2 # Invoice PDF template (HTML/CSS)
 │   │   ├── pushover.txt.j2    # Plain text (Pushover)
 │   │   ├── email.html.j2      # HTML (Email)
 │   │   ├── slack.json.j2      # Block Kit JSON (Slack)
 │   │   ├── discord.json.j2    # Embed JSON (Discord)
-│   │   └── webhook.json.j2    # Payload JSON (Webhook)
-│   ├── api/                    # REST API (FastAPI, v0.4)
+│   │   ├── webhook.json.j2    # Payload JSON (Webhook)
+│   │   └── ios_push.json.j2   # Push payload JSON (iOS Push, v0.5)
+│   ├── api/                    # REST API (FastAPI, v0.4+)
 │   │   ├── __init__.py         # App factory (auth, security headers, CORS)
 │   │   ├── server.py           # Uvicorn in daemon thread
 │   │   ├── schemas.py          # Pydantic response models
@@ -41,7 +43,8 @@ KSeF_Monitor/
 │   │       ├── invoices.py     # GET /api/v1/invoices (pagination, filters, sort)
 │   │       ├── stats.py        # GET /api/v1/stats/summary, /stats/api
 │   │       ├── monitor.py      # GET /health, /state; POST /trigger
-│   │       └── artifacts.py    # GET /api/v1/artifacts/pending
+│   │       ├── artifacts.py    # GET /api/v1/artifacts/pending
+│   │       └── push.py         # GET /push/setup; POST /push/regenerate (v0.5)
 │   └── notifiers/              # Multi-channel notification system
 │       ├── __init__.py
 │       ├── base_notifier.py    # Abstract base + render_and_send()
@@ -50,7 +53,8 @@ KSeF_Monitor/
 │       ├── discord_notifier.py      # Discord webhook with rich embeds
 │       ├── slack_notifier.py        # Slack webhook with Block Kit
 │       ├── email_notifier.py        # SMTP email with HTML
-│       └── webhook_notifier.py      # Generic HTTP endpoint
+│       ├── webhook_notifier.py      # Generic HTTP endpoint
+│       └── ios_push_notifier.py     # iOS push via Cloudflare Worker (v0.5)
 │
 ├── docs/                        # Documentation
 │   ├── INDEX.md                # Documentation index
@@ -102,11 +106,12 @@ KSeF_Monitor/
 │   ├── script.py.mako          # Migration template
 │   └── versions/               # Migration scripts
 │       ├── a6a08e11ea74_phase1_*.py  # Phase 1: invoices + state + notifications
-│       └── phase2_*.py              # Phase 2: api_request_log + invoice_artifacts (v0.4)
+│       ├── phase2_*.py              # Phase 2: api_request_log + invoice_artifacts (v0.4)
+│       └── phase3_*.py              # Phase 3: push_instances (v0.5)
 │
 ├── alembic.ini                  # Alembic configuration
 │
-├── tests/                       # Unit tests (pytest, 395 tests)
+├── tests/                       # Unit tests (pytest, 485 tests)
 │   ├── conftest.py             # Shared test fixtures
 │   ├── test_config_manager.py  # Configuration validation tests
 │   ├── test_invoice_monitor.py # Invoice monitor tests
@@ -117,7 +122,10 @@ KSeF_Monitor/
 │   ├── test_api_auth.py        # API auth + security headers tests (v0.4)
 │   ├── test_api_invoices.py    # API invoice endpoints tests (v0.4)
 │   ├── test_api_stats.py       # API stats endpoints tests (v0.4)
-│   └── test_api_monitor.py     # API monitor endpoints tests (v0.4)
+│   ├── test_api_monitor.py     # API monitor endpoints tests (v0.4)
+│   ├── test_ios_push_notifier.py  # iOS push notifier tests (v0.5)
+│   ├── test_push_manager.py       # Push manager tests (v0.5)
+│   └── test_security_controls.py  # Security controls tests (v0.5)
 │
 ├── db_admin.py                  # Database administration CLI tool
 ├── CONTRIBUTING.md              # How to contribute
@@ -287,7 +295,17 @@ See [PDF_TEMPLATES.md](PDF_TEMPLATES.md) for template customization guide.
 
 5 scheduling modes: `simple`, `minutes`, `hourly`, `daily`, `weekly`
 
-### `app/api/` (v0.4)
+### `app/push_manager.py` (v0.5)
+**iOS Push notification manager**
+
+- `PushManager` — manages iOS Push credentials, Cloudflare Worker registration, QR code generation, push delivery
+- Credentials stored in SQLite (`push_instances` table) — `instance_id`, `instance_key`, `pairing_code`
+- Auto-generates credentials on first run, ASCII QR code in logs for pairing
+- `register_instance()` — register with Cloudflare Worker (SHA-256 hashed credentials)
+- `send_push()` — deliver push notification via Worker
+- `regenerate_credentials()` — reset and regenerate all push credentials
+
+### `app/api/` (v0.4+)
 **REST API — FastAPI with Pydantic validation**
 
 - `__init__.py` — app factory: auth middleware (Bearer token, `hmac.compare_digest`), security headers, CORS
@@ -297,8 +315,9 @@ See [PDF_TEMPLATES.md](PDF_TEMPLATES.md) for template customization guide.
 - `routers/stats.py` — `GET /api/v1/stats/summary`, `GET /api/v1/stats/api`
 - `routers/monitor.py` — `GET /api/v1/monitor/health`, `GET /api/v1/monitor/state`, `POST /api/v1/monitor/trigger`
 - `routers/artifacts.py` — `GET /api/v1/artifacts/pending`
+- `routers/push.py` — `GET /api/v1/push/setup` (QR code + status), `POST /api/v1/push/regenerate` (v0.5)
 
-Read-only API, Swagger UI at `/docs`.
+Read-only API (except push regenerate), Swagger UI at `/docs` (auto-disabled in production).
 
 ### `app/prometheus_metrics.py`
 **Prometheus metrics endpoint**
@@ -334,6 +353,7 @@ Each notifier overrides `_send_rendered()` for channel-specific formatting:
 | `slack_notifier.py` | Slack | Block Kit JSON with username/icon |
 | `email_notifier.py` | Email | HTML body + plain text fallback |
 | `webhook_notifier.py` | Webhook | JSON payload via configured HTTP method |
+| `ios_push_notifier.py` | iOS Push | JSON payload via Cloudflare Worker → APNs (v0.5) |
 
 ## Data Flow
 
@@ -432,6 +452,7 @@ Managed in `requirements.txt`:
 | `fastapi` | REST API framework (v0.4) |
 | `uvicorn` | ASGI server for FastAPI (v0.4) |
 | `pydantic` | Request/response validation (v0.4) |
+| `httpx` | Async HTTP client for tests (v0.5) |
 
 Installed during Docker build.
 

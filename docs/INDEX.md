@@ -1,6 +1,6 @@
 # KSeF Monitor - Documentation Index
 
-**Version:** v0.4
+**Version:** v0.5
 **Based on:** KSeF API v2.2.0
 **License:** MIT
 
@@ -34,7 +34,7 @@ chmod +x setup.sh && ./setup.sh
 
 | Document | Description | Read When |
 |----------|-------------|-----------|
-| **[NOTIFICATIONS.md](NOTIFICATIONS.md)** | All 5 notification channels guide | Configuring notifications |
+| **[NOTIFICATIONS.md](NOTIFICATIONS.md)** | All 6 notification channels guide | Configuring notifications |
 | **[TEMPLATES.md](TEMPLATES.md)** | Jinja2 notification templates (v0.3) | Customizing notification format |
 
 ### 🔐 Security
@@ -184,13 +184,14 @@ KSeF_Monitor/
 │       ├── prometheus_metrics.py   # Prometheus metrics (9 metrics)
 │       ├── scheduler.py            # Flexible scheduling (5 modes)
 │       ├── logging_config.py       # Logging with timezone
-│       ├── templates/              # Built-in Jinja2 templates (6 files)
-│       ├── api/                    # REST API (FastAPI, v0.4)
+│       ├── push_manager.py         # iOS Push credentials, registration, QR (v0.5)
+│       ├── templates/              # Built-in Jinja2 templates (7 files)
+│       ├── api/                    # REST API (FastAPI, v0.4+)
 │       │   ├── __init__.py         # App factory + auth + security headers
 │       │   ├── server.py           # Uvicorn daemon thread
 │       │   ├── schemas.py          # Pydantic response models
-│       │   └── routers/            # API endpoints (invoices, stats, monitor, artifacts)
-│       └── notifiers/              # Multi-channel notifications (5 channels)
+│       │   └── routers/            # API endpoints (invoices, stats, monitor, artifacts, push)
+│       └── notifiers/              # Multi-channel notifications (6 channels)
 │
 ├── ⚙️ Configuration & Examples
 │   ├── examples/config.example.json # Config template (with secrets)
@@ -322,11 +323,11 @@ Before running in production:
 
 ## 📊 Version Information
 
-**Current Version:** v0.4
+**Current Version:** v0.5
 
 **Features:**
 - ✅ Full KSeF API v2.1 support
-- ✅ Multi-channel notifications (5 channels)
+- ✅ Multi-channel notifications (6 channels, incl. iOS Push)
 - ✅ Customizable Jinja2 notification templates
 - ✅ Polish monetary formatting
 - ✅ Prometheus metrics endpoint (9 metrics)
@@ -346,11 +347,13 @@ Before running in production:
 - ✅ REST API with FastAPI (read-only, Bearer auth, Swagger UI) (v0.4)
 - ✅ Sliding window rate limiter (3 windows) (v0.4)
 - ✅ API request logging + artifact download tracking (v0.4)
-- ✅ 395 unit tests (v0.4)
+- ✅ iOS Push notifications via Cloudflare Worker + QR pairing (v0.5)
+- ✅ Security hardening: sandboxed templates, auth enforcement, CORS strict (v0.5)
+- ✅ 485 unit tests (v0.5)
 
 **Requirements:**
 - Docker & Docker Compose
-- At least one notification channel (Pushover, Discord, Slack, Email, or Webhook)
+- At least one notification channel (Pushover, Discord, Slack, Email, Webhook, or iOS Push)
 - KSeF authorization token
 
 ---

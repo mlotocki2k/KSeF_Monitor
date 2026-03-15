@@ -151,7 +151,55 @@ Poprawki niezwiązane z konkretnymi feature'ami, ale krytyczne dla stabilności:
 
 ---
 
-## v0.5 (Initial load + Web UI: odczyt)
+## v0.5 ✅ (zrobione)
+**Cel:** natywne push notifications na iOS + security hardening
+
+### 1) Push notyfikacje iOS — Monitor KSeF (Cloudflare Worker) ✅
+- [x] Nowy kanał powiadomień: natywne push notifications na iOS via aplikację **Monitor KSeF**
+- [x] Architektura: Cloudflare Worker (`push.monitorksef.com`) jako proxy do APNs
+  - Worker przechowuje klucz .p8 — nigdy nie opuszcza Worker
+  - Autentykacja Worker ↔ APNs: token-based auth (JWT ES256, .p8 key)
+  - Autentykacja Monitor → Worker: `X-Instance-Id` + `X-Instance-Key` headers
+  - Payload v1.2: `{title, body, data: {notification_id, type, invoice_reference}}`
+- [x] Parowanie instancji Docker ↔ iOS:
+  - Docker generuje `instance_id` (UUID), `instance_key` (32B random), `pairing_code` (8 hex)
+  - Docker rejestruje instancję w Worker (`POST /instances/register`, hashe SHA-256)
+  - ASCII QR code z `MKSEF:{pairing_code}` w logach przy pierwszym uruchomieniu
+  - REST endpoint `/api/v1/push/setup` (QR w Web UI) i `/push/regenerate`
+  - iOS skanuje QR → wysyła `device_token` + `pairing_code` do Worker → mapowanie
+- [x] Implementacja:
+  - `app/push_manager.py` — PushManager: credentials w DB, rejestracja, QR, wysyłka
+  - `app/notifiers/ios_push_notifier.py` — IosPushNotifier (integracja z NotificationManager)
+  - `app/templates/ios_push.json.j2` — szablon payloadu push
+  - `app/api/routers/push.py` — REST endpoints push setup/reset
+- [x] Credentials przechowywane w SQLite (tabela `push_instances`) zamiast pliku JSON
+- [x] Credentials auto-generowane przez PushManager na pierwszym uruchomieniu
+- [x] Push reset: endpoint API + DB delete method
+- [x] Secret: `IOS_PUSH_INSTANCE_KEY` (env var / Docker secret)
+- [x] Dokumentacja: [NOTIFICATIONS.md](NOTIFICATIONS.md) — pełna sekcja iOS Push z parowaniem
+
+### 2) Security hardening ✅
+- [x] Security audit P2: sandboxed Jinja2 templates, auth enforcement na wszystkich endpointach, rate limiting API
+- [x] Security audit P3/P4: Swagger docs auto-disable w produkcji, Prometheus bind `127.0.0.1`, CRLF injection guard, health endpoint nie wycieka wewnętrznych danych, CORS strict mode
+- [x] Re-audit fixes: token truncation w logach, docs auto-disable, API wiring
+- [x] Testy bezpieczeństwa: `test_security_controls.py` (469 linii)
+
+### 3) Stabilność i operacje ✅
+- [x] Lightweight auto-migration brakujących kolumn DB przy starcie (bez Alembic)
+- [x] Fix `invoice_reference` w push notifications (zawsze pokazywało `n/a`)
+- [x] Aktualizacja OpenAPI spec KSeF (build 20260313.1)
+- [x] Fix Docker metadata: `latest` tag tylko dla branch `main`
+
+### 4) Testy ✅
+- [x] Nowe testy: `test_ios_push_notifier.py`, `test_push_manager.py`, `test_security_controls.py`
+- [x] Łącznie: **485 testów**, 0 failures
+
+**Zależności:** v0.4
+**DoD:** push notification dociera na iOS via Cloudflare Worker; parowanie Docker ↔ iOS działa przez QR code; API zabezpieczone auth na wszystkich endpointach; templates sandboxed.
+
+---
+
+## v0.6 (Initial load + Web UI: odczyt)
 **Cel:** pierwszy sensowny produkt dla użytkownika: dane + podgląd
 
 ### 1) Initial load (dane historyczne)
@@ -172,43 +220,7 @@ Poprawki niezwiązane z konkretnymi feature'ami, ale krytyczne dla stabilności:
 - możliwość zaznaczenia jednej lub wielu faktur do wygenerowania PDF
 - integracja z oficjalną biblioteką CIRFMF do wizualizacji PDF ([ksef-pdf-generator](https://github.com/CIRFMF/ksef-pdf-generator)) jako opcjonalny mikroserwis Docker (REST API: XML → PDF), obok wbudowanego generatora (xhtml2pdf/ReportLab)
 
-### 3) Push notyfikacje iOS — Monitor KSeF (Cloudflare Worker)
-- nowy kanał powiadomień: natywne push notifications na iOS via aplikację **Monitor KSeF**
-- Aplikacja iOS: Monitor KSeF (w trakcie review w App Store)
-- **Architektura** (wg `architektura_push_notifications_v1_1_PL.md`):
-  - Central Push Service: Cloudflare Worker (`push.monitorksef.com`) jako proxy do APNs
-  - Worker przechowuje klucz .p8 — nigdy nie opuszcza Worker
-  - Autentykacja Worker ↔ APNs: token-based auth (JWT ES256, .p8 key)
-  - Autentykacja Monitor → Worker: `X-Instance-Id` + `X-Instance-Key` headers
-  - Payload: `{title, body, data}` — Worker buduje envelope `aps`
-- **Parowanie instancji Docker ↔ iOS**:
-  - Docker generuje `instance_id` (UUID), `instance_key` (32B random), `pairing_code` (8 hex)
-  - Docker rejestruje instancję w Worker (`POST /instances/register`, hashe SHA-256)
-  - Docker wyświetla QR code z `MKSEF:{pairing_code}` w Web UI (`/api/v1/push/setup`)
-  - iOS skanuje QR → wysyła `device_token` + `pairing_code` do Worker → mapowanie
-- **Implementacja (strona ksef_monitor)**:
-  - `app/push_manager.py` — PushManager: credentials, rejestracja, QR, wysyłka
-  - `app/notifiers/ios_push_notifier.py` — IosPushNotifier (integracja z NotificationManager)
-  - `app/templates/ios_push.json.j2` — szablon payloadu push
-  - `app/api/routers/push.py` — REST endpoint `/api/v1/push/setup` i `/push/regenerate`
-- konfiguracja w `config.json`:
-  ```json
-  {
-    "notifications": {
-      "channels": ["ios_push"],
-      "ios_push": {
-        "worker_url": "https://push.monitorksef.com",
-        "instance_id": "",
-        "instance_key": "",
-        "timeout": 15
-      }
-    }
-  }
-  ```
-  - Secret: `IOS_PUSH_INSTANCE_KEY` (env var / Docker secret)
-  - Credentials auto-generowane przez PushManager na pierwszym uruchomieniu
-
-### 4) Obsługa wszystkich schematów faktur KSeF
+### 3) Obsługa wszystkich schematów faktur KSeF
 Cel: uniwersalny monitor i generator PDF dla każdego typu faktury w KSeF — nie tylko FA(3).
 
 **Obsługiwane schematy (per KSeF API v2.2):**
@@ -243,8 +255,8 @@ Cel: uniwersalny monitor i generator PDF dla każdego typu faktury w KSeF — ni
 - Wsparcie nowych wersji schematu FA — jeśli pojawi się FA(4) lub nowe pola w FA(3), adaptacja parsera XML i template PDF
 - Aktualizacja `spec/openapi.json` i `spec/schemat_FA(3)_v1-0E.xsd` do najnowszych wersji
 
-**Zależności:** v0.4
-**DoD:** użytkownik widzi dashboard + listę + podgląd; initial load działa powtarzalnie bez duplikatów; push notification dociera na iOS; PDF generuje się poprawnie dla każdego typu faktury obsługiwanego przez KSeF.
+**Zależności:** v0.5
+**DoD:** użytkownik widzi dashboard + listę + podgląd; initial load działa powtarzalnie bez duplikatów; PDF generuje się poprawnie dla każdego typu faktury obsługiwanego przez KSeF.
 
 ---
 
@@ -257,7 +269,7 @@ Cel: uniwersalny monitor i generator PDF dla każdego typu faktury w KSeF — ni
 - Mechanizm auto-update musi uwzględniać zmiany w schemacie DB (Alembic migracje przy update)
 - Walidacja kompatybilności nowej wersji z aktualnym schematem FA i API KSeF
 
-**Zależności:** v0.5
+**Zależności:** v0.6
 
 ---
 
@@ -276,7 +288,7 @@ Cel: uniwersalny monitor i generator PDF dla każdego typu faktury w KSeF — ni
 - UI do podglądu aktualnie używanej wersji API KSeF i schematu FA
 - Powiadomienie w panelu admin o wykrytych zmianach w specyfikacji (z CI workflow)
 
-**Zależności:** v0.5
+**Zależności:** v0.6
 **DoD:** wszystko da się skonfigurować z UI, a zmiany wchodzą w życie bez ręcznych edycji configów (lub z kontrolowanym restartem usługi).
 
 ---
@@ -324,6 +336,7 @@ Cel: uniwersalny monitor i generator PDF dla każdego typu faktury w KSeF — ni
 ---
 
 ## Kluczowe zależności (krótko)
-- **DB (v0.3)** jest krytyczne przed sensownym UI (v0.5)
+- **DB (v0.3)** jest krytyczne przed sensownym UI (v0.6)
 - **API + stabilizacja (v0.4)** minimalizuje "dług" zanim dojdzie UI
-- **Initial load (v0.5)** najlepiej robić dopiero gdy masz deduplikację/idempotencję (v0.4)
+- **Push + security (v0.5)** — 6. kanał notyfikacji + hardening przed publicznym UI
+- **Initial load (v0.6)** najlepiej robić dopiero gdy masz deduplikację/idempotencję (v0.4)
