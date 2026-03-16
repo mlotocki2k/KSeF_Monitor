@@ -43,18 +43,39 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Check outdated packages
+      - name: Check outdated packages (direct dependencies only)
         id: outdated
         shell: bash
         run: |
           set -euo pipefail
-          pip list --outdated --format=json > outdated.json
-          COUNT=$(python - << 'PY'
-          import json
-          data = json.load(open("outdated.json", "r", encoding="utf-8"))
-          print(len(data))
+          pip list --outdated --format=json > all_outdated.json
+          python - << 'PY'
+          import json, re
+
+          # Parse direct dependency names from requirements.txt
+          direct = set()
+          with open("requirements.txt", encoding="utf-8") as f:
+              for line in f:
+                  line = line.strip()
+                  if not line or line.startswith("#"):
+                      continue
+                  # Extract package name (before any version specifier)
+                  match = re.match(r'^([A-Za-z0-9_-]+(?:\[[^\]]+\])?)', line)
+                  if match:
+                      # Strip extras like [standard] for comparison
+                      name = re.sub(r'\[.*\]', '', match.group(1)).lower()
+                      direct.add(name)
+
+          # Filter outdated to direct dependencies only
+          all_outdated = json.load(open("all_outdated.json", encoding="utf-8"))
+          filtered = [p for p in all_outdated if p["name"].lower() in direct]
+
+          with open("outdated.json", "w", encoding="utf-8") as f:
+              json.dump(filtered, f)
+          print(len(filtered))
           PY
-          )
+
+          COUNT=$(python -c "import json; print(len(json.load(open('outdated.json'))))")
           echo "count=$COUNT" >> "$GITHUB_OUTPUT"
 
       - name: Build issue body
@@ -88,12 +109,34 @@ jobs:
             const fs = require("fs");
             const body = fs.readFileSync("issue_body.md", "utf8");
 
+            // Search for existing issue (open OR closed)
             const { data: issues } = await github.rest.search.issuesAndPullRequests({
-              q: `repo:${context.repo.owner}/${context.repo.repo} is:issue is:open in:title "${title}"`
+              q: `repo:${context.repo.owner}/${context.repo.repo} is:issue in:title "${title}"`
             });
 
             if (issues.items.length > 0) {
+              // Pick the most recent issue
               const issue_number = issues.items[0].number;
+              const issue_state = issues.items[0].state;
+
+              // Check if body is identical to current issue body — skip if nothing changed
+              const currentBody = issues.items[0].body || "";
+              if (issue_state === "open" && currentBody.trim() === body.trim()) {
+                console.log(`Issue #${issue_number} already open with identical content — skipping.`);
+                return;
+              }
+
+              // Reopen if closed
+              if (issue_state === "closed") {
+                await github.rest.issues.update({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number,
+                  state: "open",
+                  body
+                });
+              }
+
               await github.rest.issues.createComment({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
