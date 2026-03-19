@@ -3,7 +3,7 @@
 KSeF Monitor - Main Entry Point
 Monitors KSeF API for new invoices and sends multi-channel notifications
 
-Based on KSeF API v2.2.0 specification:
+Based on KSeF API v2.2.0/v2.3.0 specification:
 https://github.com/CIRFMF/ksef-docs
 """
 
@@ -55,7 +55,7 @@ def main():
     
     logger.info("=" * 70)
     logger.info("KSeF Monitor v0.4")
-    logger.info("Based on KSeF API v2.2.0 (github.com/CIRFMF/ksef-docs)")
+    logger.info("Based on KSeF API v2.2.0/v2.3.0 (github.com/CIRFMF/ksef-docs)")
     logger.info("Multi-channel notifications with Jinja2 templates")
     logger.info("=" * 70)
     

@@ -1,6 +1,6 @@
 """
 KSeF API Client
-Handles authentication and communication with KSeF API v2.2
+Handles authentication and communication with KSeF API v2.2/v2.3
 Based on official KSeF API documentation from github.com/CIRFMF/ksef-docs
 """
 
@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 
 
 class KSeFClient:
-    """Client for KSeF API v2.2 interactions"""
+    """Client for KSeF API v2.2/v2.3 interactions"""
     
     # API version
     API_VERSION = "v2"
@@ -159,7 +159,7 @@ class KSeFClient:
         Extract human-readable error details from KSeF API error response.
 
         Tries formats in order:
-        1. application/problem+json (KSeF v2.2.0): reasonCode, detail, title
+        1. application/problem+json (KSeF v2.2.0/v2.3.0): reasonCode, detail, title
         2. KSeF ExceptionResponse: exceptionCode, exceptionDescription
         3. Fallback: status=XXX
         """
@@ -171,7 +171,7 @@ class KSeFClient:
         except (ValueError, AttributeError):
             return f"status={status}"
 
-        # Format 1: application/problem+json (KSeF v2.2.0 for 401/403)
+        # Format 1: application/problem+json (KSeF v2.2.0/v2.3.0 for 401/403)
         if "problem+json" in content_type:
             reason = body.get("reasonCode", "")
             detail = body.get("detail", "")
