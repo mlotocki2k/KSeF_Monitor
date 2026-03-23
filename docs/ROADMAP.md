@@ -158,7 +158,7 @@ Poprawki niezwiązane z konkretnymi feature'ami, ale krytyczne dla stabilności:
 ### 7) Testy ✅
 - [x] 105 nowych testów (rate limiter, DB phase 2, API auth, invoices, stats, monitor)
 - [x] 34 testów security audit (HTML escaping, SSRF, auth, sandbox, rate limit, docs, CORS, CRLF)
-- [x] Łącznie: **416 testów**, 0 failures
+- [x] Łącznie: **423 testy**, 0 failures
 
 **Zależności:** v0.3
 **DoD:** UI może bazować na stabilnym API; system jest odporny na retry i ma podstawową telemetrię operacyjną.

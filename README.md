@@ -567,6 +567,13 @@ Eksport metryk dla systemów monitorowania (Prometheus, Grafana, etc.)
 | `ksef_last_check_timestamp` | Gauge | Unix timestamp ostatniego sprawdzenia API KSeF (seconds since epoch) |
 | `ksef_new_invoices_total{subject_type}` | Counter | Łączna liczba nowych faktur per `subject_type` (`Subject1`, `Subject2`) |
 | `ksef_monitor_up` | Gauge | Status monitora: `1` = running, `0` = stopped |
+| `ksef_auth_failures_total{status_code}` | Counter | Błędy autentykacji KSeF API |
+| `ksef_api_requests_total{endpoint,status_code}` | Counter | Łączna liczba żądań do KSeF API (v0.4) |
+| `ksef_api_response_time_seconds{endpoint}` | Histogram | Czas odpowiedzi KSeF API (v0.4) |
+| `ksef_api_rate_limit_waits_total` | Counter | Liczba oczekiwań rate limitera (v0.4) |
+| `ksef_api_rate_limit_remaining{window}` | Gauge | Pozostałe żądania w oknie rate limitera (v0.4) |
+| `ksef_artifacts_pending_total{type}` | Gauge | Artefakty oczekujące na pobranie (v0.4) |
+| `ksef_rest_api_requests_total{endpoint,method}` | Counter | Żądania REST API monitora (v0.4) |
 
 **Przykład konfiguracji:**
 

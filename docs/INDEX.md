@@ -37,6 +37,12 @@ chmod +x setup.sh && ./setup.sh
 | **[NOTIFICATIONS.md](NOTIFICATIONS.md)** | All 5 notification channels guide | Configuring notifications |
 | **[TEMPLATES.md](TEMPLATES.md)** | Jinja2 notification templates (v0.3) | Customizing notification format |
 
+### 🌐 REST API
+
+| Document | Description | Read When |
+|----------|-------------|-----------|
+| **[REST_API.md](REST_API.md)** | REST API endpoints, auth, response schemas (v0.4) | Building integrations, Web UI |
+
 ### 🔐 Security
 
 | Document | Description | Read When |
@@ -181,7 +187,7 @@ KSeF_Monitor/
 │       ├── invoice_pdf_generator.py # ReportLab PDF (fallback)
 │       ├── invoice_pdf_template.py  # HTML/CSS → PDF via xhtml2pdf (primary)
 │       ├── template_renderer.py    # Jinja2 template engine
-│       ├── prometheus_metrics.py   # Prometheus metrics (9 metrics)
+│       ├── prometheus_metrics.py   # Prometheus metrics (10 metrics)
 │       ├── scheduler.py            # Flexible scheduling (5 modes)
 │       ├── logging_config.py       # Logging with timezone
 │       ├── templates/              # Built-in Jinja2 templates (6 files)
@@ -325,11 +331,11 @@ Before running in production:
 **Current Version:** v0.4
 
 **Features:**
-- ✅ Full KSeF API v2.1 support
+- ✅ Full KSeF API v2.2/v2.3 support
 - ✅ Multi-channel notifications (5 channels)
 - ✅ Customizable Jinja2 notification templates
 - ✅ Polish monetary formatting
-- ✅ Prometheus metrics endpoint (9 metrics)
+- ✅ Prometheus metrics endpoint (10 metrics)
 - ✅ Flexible scheduling system
 - ✅ Token-based authentication
 - ✅ Multiple security options
@@ -347,7 +353,7 @@ Before running in production:
 - ✅ Sliding window rate limiter (3 windows) (v0.4)
 - ✅ API request logging + artifact download tracking (v0.4)
 - ✅ Security audit: 10 controls (SSTI sandbox, auth enforcement, rate limiting, CORS, CRLF, info disclosure) (v0.4)
-- ✅ 416 unit tests (v0.4)
+- ✅ 423 unit tests (v0.4)
 
 **Requirements:**
 - Docker & Docker Compose

@@ -14,7 +14,7 @@ KSeF_Monitor/
 │   ├── __init__.py             # Makes app a Python package
 │   ├── config_manager.py       # Configuration management (incl. rate_limit, api defaults)
 │   ├── secrets_manager.py      # Secrets from env / Docker secrets / config
-│   ├── ksef_client.py          # KSeF API v2.1 client (auth, metadata, XML, rate limiter)
+│   ├── ksef_client.py          # KSeF API v2.2/v2.3 client (auth, metadata, XML, rate limiter)
 │   ├── invoice_monitor.py      # Main monitoring logic + template context
 │   ├── rate_limiter.py         # Sliding window rate limiter (3 windows) (v0.4)
 │   ├── database.py             # SQLite + SQLAlchemy 2.0 ORM (invoices, state, logs, artifacts)
@@ -167,7 +167,7 @@ KSeF_Monitor/
 - Supports all 8 secret types (KSeF token + API auth token + 6 notification channels)
 
 ### `app/ksef_client.py`
-**KSeF API v2.1 integration with rate limiting**
+**KSeF API v2.2/v2.3 integration with rate limiting**
 
 Implements the full KSeF authentication flow:
 1. Challenge request
