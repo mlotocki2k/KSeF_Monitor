@@ -33,7 +33,7 @@ Retry-After: 30
 | Scenariusz | API calls | Czas minimalny |
 |---|---|---|
 | 100 faktur (metadata + XML) | ~204 | ~1h |
-| 500 faktur (metadata + XML + UPO) | ~1504 | ~12.5h |
+| 500 faktur (metadata + XML) | ~1004 | ~8.5h |
 | 1000 faktur (metadata + XML) | ~2004 | ~17h |
 
 Szczegółowa analiza i plan naprawy: [RATE_LIMITING_DESIGN.md](RATE_LIMITING_DESIGN.md)
@@ -125,17 +125,10 @@ Autentykacja wymaga szyfrowania RSA-OAEP z kluczem publicznym pobranym z API:
 - Podlega rate limiting (każde pobranie = 1 API call)
 - Brak batch download — każda faktura wymaga osobnego requestu
 
-### UPO (Urzędowe Poświadczenie Odbioru)
-
-- Dostępne tylko dla faktur **Subject1** (sprzedażowych)
-- Dodatkowy API call per faktura
-- Podlega tym samym limitom rate limiting
-
 ### Brak batch API
 
 KSeF API **nie oferuje** endpointu do zbiorczego pobierania:
 - Brak batch download XML (trzeba pobierać pojedynczo)
-- Brak batch download UPO
 - Brak WebSocket/streaming — tylko polling
 
 ---
@@ -145,9 +138,7 @@ KSeF API **nie oferuje** endpointu do zbiorczego pobierania:
 | Aspekt | Subject1 (sprzedaż) | Subject2 (zakup) |
 |---|---|---|
 | Kto wystawił fakturę | Twoja firma | Kontrahent |
-| Dostępność UPO | Tak | Nie |
-| API calls per faktura (XML+UPO) | 2 | 1 |
-| Wpływ na rate limit | Wyższy (2x calls) | Niższy |
+| API calls per faktura (XML) | 1 | 1 |
 
 ---
 

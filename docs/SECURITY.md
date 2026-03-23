@@ -1,9 +1,10 @@
 # Security Guide - Protecting Sensitive Credentials
 
-This guide explains multiple methods to secure your API tokens and credentials for the KSeF Invoice Monitor v0.3.
+This guide explains multiple methods to secure your API tokens and credentials for the KSeF Monitor v0.4.
 
 **Protected Credentials:**
 - KSeF API token
+- API auth token (REST API Bearer auth)
 - Pushover User Key & API Token
 - Discord Webhook URL
 - Slack Webhook URL
@@ -306,6 +307,7 @@ GitHub Actions workflows use **repository secrets** for automated notifications 
 | Secret | Environment Variable | Docker Secret | Required For | Notes |
 |--------|---------------------|---------------|--------------|-------|
 | KSeF Token | `KSEF_TOKEN` | `ksef_token` | Always | API authorization |
+| API Auth Token | `API_AUTH_TOKEN` | `api_auth_token` | API (v0.4) | REST API Bearer auth |
 | Pushover User Key | `PUSHOVER_USER_KEY` | `pushover_user_key` | Pushover | Mobile notifications |
 | Pushover API Token | `PUSHOVER_API_TOKEN` | `pushover_api_token` | Pushover | Mobile notifications |
 | Discord Webhook | `DISCORD_WEBHOOK_URL` | `discord_webhook_url` | Discord | Webhook URL |
@@ -546,9 +548,26 @@ nano config.json  # Set notifications.channels
 docker stack deploy -c docker-compose.yml ksef
 ```
 
+## Security Hardening (v0.4 Audit)
+
+The following security controls were implemented based on a v0.4 security audit:
+
+| ID | Control | Description |
+|----|---------|-------------|
+| F-01 | Auth token auto-generation | API auto-generates a random 48-char token if `auth_token` is empty when API is enabled. Token is logged at startup. |
+| F-02 | Docs disable | `/docs`, `/redoc`, `/openapi.json` can be disabled with `docs_enabled: false` for production. |
+| F-03 | Prometheus bind | Default bind changed from `0.0.0.0` to `127.0.0.1` to prevent unintended exposure. |
+| F-04 | Email HTML escaping | All user-controlled fields in HTML emails are escaped via `html.escape()`. |
+| F-06 | Email CRLF | CRLF characters stripped from email Subject header to prevent header injection. |
+| F-07 | API rate limiting | slowapi middleware with configurable limits (`60/minute` default). |
+| F-09 | Health info leak | `auth_enabled` field removed from `/health` response (info disclosure). |
+| F-10 | CORS wildcard | CORS wildcard `*` rejected when `auth_token` is set. |
+| F-11 | Template sandbox | Jinja2 `SandboxedEnvironment` replaces `Environment` (SSTI prevention). |
+| N-03 | SSRF redirects | `allow_redirects=False` on all webhook/notifier HTTP calls. |
+
 ## Vulnerability Disclosure Policy
 
-If you discover a security vulnerability in KSeF Invoice Monitor, please report it responsibly:
+If you discover a security vulnerability in KSeF Monitor, please report it responsibly:
 
 1. **Do NOT open a public GitHub issue** for security vulnerabilities
 2. **Email the maintainer directly** or use [GitHub Security Advisories](https://github.com/mlotocki2k/KSeF_Monitor/security/advisories/new) to report privately
@@ -565,7 +584,7 @@ If you discover a security vulnerability in KSeF Invoice Monitor, please report 
 
 We will credit reporters in the release notes (unless anonymity is requested).
 
-**Scope:** This policy covers the KSeF Invoice Monitor application code, Docker configuration, and CI/CD pipelines. It does not cover the KSeF API itself (report those to the Ministry of Finance).
+**Scope:** This policy covers the KSeF Monitor application code, Docker configuration, and CI/CD pipelines. It does not cover the KSeF API itself (report those to the Ministry of Finance).
 
 ## Support
 

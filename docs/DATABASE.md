@@ -1,6 +1,6 @@
 # Database — SQLite + SQLAlchemy 2.0
 
-KSeF Monitor v0.3 przechowuje metadane faktur, stan monitoringu i log powiadomień w SQLite.
+KSeF Monitor v0.4 przechowuje metadane faktur, stan monitoringu, log powiadomień, log żądań API i status artefaktów w SQLite.
 
 ## Konfiguracja
 
@@ -20,7 +20,7 @@ KSeF Monitor v0.3 przechowuje metadane faktur, stan monitoringu i log powiadomie
 
 Baza jest **opcjonalna** — monitor działa bez niej, ale traci trwałe przechowywanie metadanych faktur, log powiadomień i error tracking.
 
-## Tabele (faza 1)
+## Tabele (faza 1 — v0.3)
 
 ### `invoices`
 
@@ -39,8 +39,8 @@ Metadane faktur z API KSeF. Klucz deduplikacji: `ksef_number` (UNIQUE).
 | `currency` | TEXT | Kod waluty (domyślnie PLN) |
 | `seller_nip` / `seller_name` | TEXT | Dane sprzedawcy |
 | `buyer_nip` / `buyer_name` | TEXT | Dane nabywcy |
-| `has_xml` / `has_pdf` / `has_upo` | BOOLEAN | Czy artefakt został zapisany |
-| `xml_path` / `pdf_path` / `upo_path` | TEXT | Ścieżki do artefaktów |
+| `has_xml` / `has_pdf` | BOOLEAN | Czy artefakt został zapisany |
+| `xml_path` / `pdf_path` | TEXT | Ścieżki do artefaktów |
 | `raw_metadata` | TEXT | Pełny JSON z API (na przyszłość) |
 
 **Indeksy:** `(subject_type, seller_nip, issue_date)`, `(buyer_nip, issue_date)`, `(invoice_type)`, `(issue_date DESC)`
@@ -77,6 +77,49 @@ Historia wysłanych powiadomień — deduplikacja, diagnostyka, audyt.
 | `error_message` | TEXT | Komunikat błędu (jeśli `failed`) |
 
 **Indeksy:** `(invoice_id)`, `(sent_at DESC)`, `(dedup_key)` UNIQUE
+
+## Tabele (faza 2 — v0.4)
+
+### `api_request_log`
+
+Log żądań do KSeF API — diagnostyka rate limitera i statystyki.
+
+| Kolumna | Typ | Opis |
+|---------|-----|------|
+| `endpoint` | TEXT | Endpoint API (np. `/invoices/metadata`) |
+| `method` | TEXT | Metoda HTTP (`GET`, `POST`) |
+| `nip` | TEXT | NIP podmiotu (opcjonalny) |
+| `status_code` | INTEGER | Kod odpowiedzi HTTP |
+| `response_time_ms` | FLOAT | Czas odpowiedzi w ms |
+| `retry_count` | INTEGER | Liczba ponownych prób (domyślnie 0) |
+| `invoices_returned` | INTEGER | Liczba zwróconych faktur (opcjonalny) |
+| `requested_at` | DATETIME | Timestamp żądania (UTC) |
+
+**Indeksy:** `(requested_at DESC)`, `(endpoint, status_code)`
+
+### `invoice_artifacts`
+
+Status pobierania artefaktów faktur (XML, PDF). Obsługuje wznawialne pobieranie.
+
+| Kolumna | Typ | Opis |
+|---------|-----|------|
+| `invoice_id` | INTEGER FK | Powiązanie z `invoices.id` |
+| `artifact_type` | TEXT | Typ: `xml`, `pdf`, `upo` |
+| `status` | TEXT | `pending` → `downloaded` / `failed` / `skipped` |
+| `download_attempts` | INTEGER | Licznik prób pobrania |
+| `file_path` | TEXT | Ścieżka do pliku (po pobraniu) |
+| `file_hash` | TEXT | SHA-256 hash pliku |
+| `file_size` | INTEGER | Rozmiar pliku w bajtach |
+| `last_error` | TEXT | Ostatni komunikat błędu |
+| `created_at` / `updated_at` | DATETIME | Timestampy (UTC) |
+
+**Indeks:** `(invoice_id, artifact_type)` UNIQUE
+
+### Rozszerzenie `invoices` (v0.4)
+
+| Kolumna | Typ | Opis |
+|---------|-----|------|
+| `source` | TEXT | Źródło faktury: `polling` (domyślnie) |
 
 ## Migracja z last_check.json
 
@@ -173,7 +216,7 @@ Total invoices: 127
   Top 5 sellers:
     9876543210    Dostawca Główny Sp. z o.o.      28 invoices
 
-  Artifacts: XML=127/127  PDF=45/127  UPO=45/127
+  Artifacts: XML=127/127  PDF=45/127
 
 === Notification Statistics ===
 Total notifications: 254
@@ -253,8 +296,8 @@ Pełny wielofazowy projekt bazy: [DATABASE_DESIGN.md](DATABASE_DESIGN.md)
 
 | Faza | Wersja | Tabele |
 |------|--------|--------|
-| **1** (obecna) | v0.3 | `invoices`, `monitor_state`, `notification_log` |
-| 2 | v0.4 | `api_request_log`, `invoice_artifacts` |
+| **1** | v0.3 | `invoices`, `monitor_state`, `notification_log` |
+| **2** (obecna) | v0.4 | `api_request_log`, `invoice_artifacts`, `invoices.source` |
 | 3 | v0.5 | `import_jobs`, `invoice_views`, `dashboard_stats`, FTS5 |
 | 4 | v1.0 | `app_config`, `audit_log`, `sessions` |
 | 5 | v2.0 | `tenants` + multi-NIP FK |

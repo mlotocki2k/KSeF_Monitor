@@ -44,18 +44,17 @@ if self.save_xml or self.save_pdf:
 
 Dla Subject1 z `save_xml=true`:
 - `get_invoice_xml()` → 1 API call
-- `get_invoice_upo()` → 1 API call (tylko Subject1)
 - `time.sleep(2)` → 2s delay
 
-**Efekt:** 2 calls / 2s = **60 calls/min** — dwukrotne przekroczenie limitu 30/min.
+**Efekt:** 1 call / 2s = **30 calls/min** — na granicy limitu 30/min.
 
 ### Problem 2: Limit 120 req/hour (KRYTYCZNY)
 
 Najpoważniejszy bottleneck. Przy 500 nowych fakturach:
-- ~1500 API calls (metadata + XML + UPO)
-- Nawet przy idealnym 30/min → zajmuje 50 minut
+- ~1004 API calls (metadata + XML)
+- Nawet przy idealnym 30/min → zajmuje ~33 minuty
 - Ale **120/hour** oznacza blokadę po 120 callach w pierwszej godzinie
-- Pełne przetworzenie: **~12.5 godziny**
+- Pełne przetworzenie: **~8.5 godziny**
 
 ### Problem 3: Brak throttle na paginacji metadanych
 
@@ -79,13 +78,10 @@ Każda metoda throttluje się niezależnie (lub wcale). Brak wspólnego licznika
 |---|---|---|
 | Metadata Subject1 (2 strony) | 2 | 0s (brak throttle) |
 | Metadata Subject2 (2 strony) | 2 | 0s (brak throttle) |
-| XML per invoice (1000) | 1000 | 2s per invoice* |
-| UPO per Subject1 (500) | 500 | brak dodatkowego delay |
-| **RAZEM** | **~1504** | |
+| XML per invoice (1000) | 1000 | 2s per invoice |
+| **RAZEM** | **~1004** | |
 
-*Sleep 2s jest po obu callach (XML+UPO), nie po każdym z osobna.
-
-**Bez naprawy:** ~1504 calls przy limicie 120/h = **~12.5h**, z wielokrotnymi 429 po drodze.
+**Bez naprawy:** ~1004 calls przy limicie 120/h = **~8.5h**, z wielokrotnymi 429 po drodze.
 
 ---
 
@@ -281,7 +277,7 @@ Z tabelą `invoices` z DATABASE_DESIGN.md — każda faktura zapisana do DB naty
 ┌───────────────────────▼─────────────────────────────┐
 │  Faza 2: Pobierz artefakty (wolne, rate-limited)    │
 │  → SELECT WHERE artifacts_downloaded = FALSE        │
-│  → Pobierz XML → Pobierz UPO → Generuj PDF         │
+│  → Pobierz XML → Generuj PDF                       │
 │  → UPDATE artifacts_downloaded = TRUE               │
 │  → Rate limiter kontroluje tempo                    │
 └───────────────────────┬─────────────────────────────┘
@@ -293,7 +289,7 @@ Z tabelą `invoices` z DATABASE_DESIGN.md — każda faktura zapisana do DB naty
 
 ```sql
 -- Dodać do modelu z DATABASE_DESIGN.md:
-artifacts_downloaded  BOOLEAN DEFAULT FALSE,  -- czy XML/PDF/UPO pobrane
+artifacts_downloaded  BOOLEAN DEFAULT FALSE,  -- czy XML/PDF pobrane
 artifacts_error       TEXT,                   -- ostatni błąd pobierania (nullable)
 download_attempts     INTEGER DEFAULT 0       -- ile razy próbowano pobrać
 ```
@@ -395,5 +391,8 @@ ksef_artifacts_pending        # Gauge: ile faktur czeka na pobranie artefaktów
 
 ---
 
-**Ostatnia aktualizacja:** 2026-03-08
-**Wersja:** v0.3 → v0.4 (planowane)
+**Ostatnia aktualizacja:** 2026-03-12
+**Wersja:** v0.4 ✅ (zaimplementowane)
+
+> **Status:** Rate limiter, integracja z `ksef_client.py`, batch processing z DB, metryki Prometheus —
+> wszystko zaimplementowane w v0.4. Dokument zachowany jako design reference.

@@ -1,4 +1,4 @@
-# KSeF Invoice Monitor v0.3
+# KSeF Monitor v0.4
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
@@ -54,8 +54,18 @@ KSeF_Monitor/
 │   ├── template_renderer.py     # Silnik szablonów Jinja2
 │   ├── prometheus_metrics.py    # Prometheus metrics endpoint
 │   ├── scheduler.py             # Elastyczny system schedulowania (5 trybów)
-│   ├── database.py              # SQLite + SQLAlchemy 2.0 ORM (metadane, stan, logi)
+│   ├── database.py              # SQLite + SQLAlchemy 2.0 ORM (metadane, stan, logi, artefakty)
+│   ├── rate_limiter.py          # Globalny rate limiter KSeF API (sliding window, 3 okna)
 │   ├── logging_config.py        # Logging setup z timezone
+│   ├── api/                     # REST API (FastAPI, v0.4)
+│   │   ├── __init__.py          # App factory (auth, security headers, CORS)
+│   │   ├── server.py            # Uvicorn daemon thread server
+│   │   ├── schemas.py           # Pydantic response models
+│   │   └── routers/             # API endpoints
+│   │       ├── invoices.py      # GET /api/v1/invoices (paginacja, filtry, sortowanie)
+│   │       ├── stats.py         # GET /api/v1/stats/summary, /stats/api
+│   │       ├── monitor.py       # GET /health, /state; POST /trigger
+│   │       └── artifacts.py     # GET /api/v1/artifacts/pending
 │   ├── templates/               # Wbudowane szablony Jinja2
 │   │   ├── invoice_pdf.html.j2  # Szablon PDF faktury (HTML/CSS)
 │   │   ├── pushover.txt.j2      # Plain text (Pushover)
@@ -161,6 +171,9 @@ Katalog `data/` powstaje w runtime i zawiera bazę danych `invoices.db` oraz leg
 | `xhtml2pdf` | >=0.2.16 | Renderowanie HTML/CSS do PDF (silnik primary) |
 | `SQLAlchemy` | >=2.0.0 | ORM do bazy danych SQLite (metadane faktur, stan, logi) |
 | `alembic` | >=1.13.0 | Migracje schematu bazy danych |
+| `fastapi` | >=0.115.0 | REST API pod UI (endpointy, Swagger docs) |
+| `uvicorn` | >=0.34.0 | ASGI server dla FastAPI (daemon thread) |
+| `slowapi` | >=0.1.9 | Rate limiting middleware dla FastAPI (v0.4) |
 
 ---
 
@@ -410,11 +423,11 @@ Konfiguracja zapisywania plików faktur (XML, PDF). Domyślnie wyłączone.
 
 | Pole | Default | Opis |
 |---|---|---|
-| `save_xml` | `false` | Zapisuj pliki XML faktur (źródłowe dane z KSeF) oraz UPO (dla faktur sprzedażowych). |
+| `save_xml` | `false` | Zapisuj pliki XML faktur (źródłowe dane z KSeF). |
 | `save_pdf` | `false` | Generuj i zapisuj pliki PDF faktur (wymaga `reportlab`). |
 | `output_dir` | `"/data/invoices"` | Katalog docelowy dla zapisanych plików. Tworzony automatycznie jeśli nie istnieje. |
 | `folder_structure` | `""` | Wzorzec podfolderów z placeholderami: `{year}`, `{month}`, `{day}`, `{type}`. Pusty = płaski katalog. |
-| `file_name_pattern` | `"{type}_{date}_{invoice_number}"` | Wzorzec nazw plików. Placeholdery: `{type}` (sprz/zak/upo), `{date}` (YYYYMMDD), `{invoice_number}`, `{ksef}`, `{ksef_short}`, `{seller_nip}`, `{buyer_nip}`. |
+| `file_name_pattern` | `"{type}_{date}_{invoice_number}"` | Wzorzec nazw plików. Placeholdery: `{type}` (sprz/zak), `{date}` (YYYYMMDD), `{invoice_number}`, `{ksef}`, `{ksef_short}`, `{seller_nip}`, `{buyer_nip}`. |
 | `file_exists_strategy` | `"skip"` | Co zrobić gdy plik już istnieje: `skip` (pomiń), `rename` (dodaj suffix `_1`, `_2`...), `overwrite` (nadpisz). |
 
 **Przykład konfiguracji:**
@@ -450,7 +463,7 @@ Dostępne placeholdery: `{year}` (rok), `{month}` (miesiąc 01-12), `{day}` (dzi
 | `"{type}_{seller_nip}_{date}_{invoice_number}"` | `sprz_9730842472_20260227_FV-123_2026.xml` |
 | `"{date}_{type}_{ksef_short}"` | `20260227_sprz_456-78.xml` |
 
-Dostępne placeholdery: `{type}` (sprz/zak/upo), `{date}` (YYYYMMDD), `{invoice_number}`, `{ksef}` (pełny numer KSeF), `{ksef_short}` (ostatnie 6 znaków), `{seller_nip}`, `{buyer_nip}`. Znaki niedozwolone w systemie plików są automatycznie zamieniane na `_`.
+Dostępne placeholdery: `{type}` (sprz/zak), `{date}` (YYYYMMDD), `{invoice_number}`, `{ksef}` (pełny numer KSeF), `{ksef_short}` (ostatnie 6 znaków), `{seller_nip}`, `{buyer_nip}`. Znaki niedozwolone w systemie plików są automatycznie zamieniane na `_`.
 
 **Nazewnictwo plików** (domyślny pattern):
 ```
@@ -458,14 +471,12 @@ sprz_20260227_FV-123_2026.xml    — XML faktury sprzedażowej
 sprz_20260227_FV-123_2026.pdf    — PDF faktury sprzedażowej
 zak_20260227_FV-456_2026.xml     — XML faktury zakupowej
 zak_20260227_FV-456_2026.pdf     — PDF faktury zakupowej
-upo_20260227_FV-123_2026.xml     — UPO (tylko faktury sprzedażowe)
 ```
 
 **Uwagi:**
 - Jeśli oba flagi `save_xml` i `save_pdf` są `false`, żadne pliki nie są pobierane/generowane
 - Generowanie PDF wymaga biblioteki `reportlab` (w `requirements.txt`)
 - Katalog `output_dir` i podfoldery są tworzone automatycznie przy pierwszym zapisie
-- UPO (Urzędowe Poświadczenie Odbioru) zapisywane jest razem z XML (zależne od `save_xml`)
 
 ### Sekcja `database`
 
@@ -493,6 +504,52 @@ Tabele: `invoices` (metadane faktur), `monitor_state` (stan per NIP + subject_ty
 
 Zarządzanie: `python db_admin.py status|invoices|stats|errors|...` — szczegóły: [docs/DATABASE.md](docs/DATABASE.md)
 
+### Sekcja `api`
+
+REST API (FastAPI) do integracji z UI i zewnętrznymi systemami (v0.4).
+
+| Pole | Default | Opis |
+|---|---|---|
+| `enabled` | `false` | Włącz/wyłącz REST API |
+| `port` | `8080` | Port HTTP dla API |
+| `bind_address` | `"127.0.0.1"` | Adres sieciowy |
+| `auth_token` | `""` | Token Bearer auth. Jeśli pusty gdy API włączone — auto-generowany i logowany (F-01). Może być ustawiony przez `API_AUTH_TOKEN` env/Docker secret. |
+| `docs_enabled` | `true` | `/docs`, `/redoc`, `/openapi.json`. Ustaw `false` w produkcji (F-02). |
+| `cors_origins` | `[]` | Lista dozwolonych origin CORS. Wildcard `*` odrzucany gdy `auth_token` jest ustawiony (F-10). |
+| `rate_limit.enabled` | `true` | Włącz rate limiting (slowapi) |
+| `rate_limit.default` | `"60/minute"` | Domyślny limit requestów |
+| `rate_limit.trigger` | `"2/minute"` | Limit dla POST /trigger |
+
+**Przykład konfiguracji:**
+
+```json
+{
+  "api": {
+    "enabled": true,
+    "port": 8080,
+    "auth_token": "",
+    "docs_enabled": false,
+    "rate_limit": {
+      "enabled": true,
+      "default": "60/minute"
+    }
+  }
+}
+```
+
+**Endpointy:**
+
+| Endpoint | Metoda | Opis |
+|---|---|---|
+| `/api/v1/invoices` | GET | Lista faktur (paginacja, filtry, sort) |
+| `/api/v1/invoices/{ksef_number}` | GET | Szczegóły faktury |
+| `/api/v1/stats/summary` | GET | Statystyki faktur |
+| `/api/v1/stats/api` | GET | Statystyki API calls |
+| `/api/v1/monitor/health` | GET | Health check (bez auth) |
+| `/api/v1/monitor/state` | GET | Stan monitoringu per NIP |
+| `/api/v1/monitor/trigger` | POST | Wymuszenie sprawdzenia |
+| `/api/v1/artifacts/pending` | GET | Artefakty oczekujące |
+
 ### Sekcja `prometheus`
 
 Eksport metryk dla systemów monitorowania (Prometheus, Grafana, etc.)
@@ -501,7 +558,7 @@ Eksport metryk dla systemów monitorowania (Prometheus, Grafana, etc.)
 |---|---|---|
 | `enabled` | `true` | Włącz/wyłącz endpoint metryk Prometheus |
 | `port` | `8000` | Port HTTP dla endpointu `/metrics` |
-| `bind_address` | `"0.0.0.0"` | Adres sieciowy do nasłuchu. `0.0.0.0` dla Dockera (domyślnie), `127.0.0.1` dla bare metal |
+| `bind_address` | `"127.0.0.1"` | Adres sieciowy do nasłuchu. `127.0.0.1` (domyślnie, bezpieczeństwo — F-03), `0.0.0.0` dla Dockera z port mapping |
 
 **Dostępne metryki:**
 
@@ -510,6 +567,13 @@ Eksport metryk dla systemów monitorowania (Prometheus, Grafana, etc.)
 | `ksef_last_check_timestamp` | Gauge | Unix timestamp ostatniego sprawdzenia API KSeF (seconds since epoch) |
 | `ksef_new_invoices_total{subject_type}` | Counter | Łączna liczba nowych faktur per `subject_type` (`Subject1`, `Subject2`) |
 | `ksef_monitor_up` | Gauge | Status monitora: `1` = running, `0` = stopped |
+| `ksef_auth_failures_total{status_code}` | Counter | Błędy autentykacji KSeF API |
+| `ksef_api_requests_total{endpoint,status_code}` | Counter | Łączna liczba żądań do KSeF API (v0.4) |
+| `ksef_api_response_time_seconds{endpoint}` | Histogram | Czas odpowiedzi KSeF API (v0.4) |
+| `ksef_api_rate_limit_waits_total` | Counter | Liczba oczekiwań rate limitera (v0.4) |
+| `ksef_api_rate_limit_remaining{window}` | Gauge | Pozostałe żądania w oknie rate limitera (v0.4) |
+| `ksef_artifacts_pending_total{type}` | Gauge | Artefakty oczekujące na pobranie (v0.4) |
+| `ksef_rest_api_requests_total{endpoint,method}` | Counter | Żądania REST API monitora (v0.4) |
 
 **Przykład konfiguracji:**
 
@@ -518,7 +582,7 @@ Eksport metryk dla systemów monitorowania (Prometheus, Grafana, etc.)
   "prometheus": {
     "enabled": true,
     "port": 8000,
-    "bind_address": "0.0.0.0"
+    "bind_address": "127.0.0.1"
   }
 }
 ```
@@ -527,8 +591,8 @@ Eksport metryk dla systemów monitorowania (Prometheus, Grafana, etc.)
 
 | Środowisko | `bind_address` | Uwagi |
 |---|---|---|
-| Docker (domyślnie) | `"0.0.0.0"` | Wymagane, aby metryki były dostępne spoza kontenera. Bezpieczeństwo zapewnia port mapping w `docker-compose.yml` (`127.0.0.1:8000:8000`). |
-| Bare metal / VM | `"127.0.0.1"` | Metryki dostępne tylko lokalnie. Zalecane gdy Prometheus działa na tym samym hoście. |
+| Bare metal / VM (domyślnie) | `"127.0.0.1"` | Metryki dostępne tylko lokalnie. Domyślna wartość od security audit F-03. |
+| Docker | `"0.0.0.0"` | Wymagane, aby metryki były dostępne spoza kontenera. Bezpieczeństwo zapewnia port mapping w `docker-compose.yml` (`127.0.0.1:8000:8000`). |
 
 **Dostęp do metryk:**
 ```bash
@@ -590,6 +654,7 @@ Wrażliwe dane mogą być dostarczone na trzy sposoby. Kolejność priorytetów 
 | Wartość | Zmienne środowiska | Docker secret | Kanał |
 |---|---|---|---|
 | KSeF token | `KSEF_TOKEN` | `ksef_token` | — |
+| API auth token | `API_AUTH_TOKEN` | `api_auth_token` | API (v0.4) |
 | Pushover User Key | `PUSHOVER_USER_KEY` | `pushover_user_key` | Pushover |
 | Pushover API Token | `PUSHOVER_API_TOKEN` | `pushover_api_token` | Pushover |
 | Discord Webhook URL | `DISCORD_WEBHOOK_URL` | `discord_webhook_url` | Discord |
@@ -1266,7 +1331,7 @@ Jeśli problem nie został rozwiązany:
 1. **Zbierz informacje:**
    ```bash
    # Wersja
-   docker logs ksef-invoice-monitor | grep "KSeF Invoice Monitor"
+   docker logs ksef-invoice-monitor | grep "KSeF Monitor"
 
    # Pełne logi (wyczyść sekrety przed udostępnieniem!)
    docker logs ksef-invoice-monitor > ksef-logs.txt

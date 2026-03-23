@@ -1,6 +1,6 @@
-# KSeF Invoice Monitor - Documentation Index
+# KSeF Monitor - Documentation Index
 
-**Version:** v0.3
+**Version:** v0.4
 **Based on:** KSeF API v2.2.0
 **License:** MIT
 
@@ -36,6 +36,12 @@ chmod +x setup.sh && ./setup.sh
 |----------|-------------|-----------|
 | **[NOTIFICATIONS.md](NOTIFICATIONS.md)** | All 5 notification channels guide | Configuring notifications |
 | **[TEMPLATES.md](TEMPLATES.md)** | Jinja2 notification templates (v0.3) | Customizing notification format |
+
+### 🌐 REST API
+
+| Document | Description | Read When |
+|----------|-------------|-----------|
+| **[REST_API.md](REST_API.md)** | REST API endpoints, auth, response schemas (v0.4) | Building integrations, Web UI |
 
 ### 🔐 Security
 
@@ -138,7 +144,7 @@ chmod +x setup.sh && ./setup.sh
 | **Start Monitor** | `docker-compose up -d` | [QUICKSTART.md](QUICKSTART.md) |
 | **View Logs** | `docker-compose logs -f` | [README.md](README.md) |
 | **Stop Monitor** | `docker-compose down` | [README.md](README.md) |
-| **Trigger Check** | `docker kill -s SIGUSR1 ksef-invoice-monitor` | [README.md](README.md) |
+| **Trigger Check** | `docker kill -s SIGUSR1 ksef-monitor` | [README.md](README.md) |
 | **Generate Invoice PDF** | `python examples/test_invoice_pdf.py <ksef-number>` | [PDF_GENERATION.md](PDF_GENERATION.md) |
 | **Test Setup** | See [TESTING.md](TESTING.md) | [TESTING.md](TESTING.md) |
 | **Fix IDE Errors** | See [IDE_TROUBLESHOOTING.md](IDE_TROUBLESHOOTING.md) | [IDE_TROUBLESHOOTING.md](IDE_TROUBLESHOOTING.md) |
@@ -172,16 +178,24 @@ KSeF_Monitor/
 │   └── app/                        # Application package
 │       ├── config_manager.py       # Configuration
 │       ├── secrets_manager.py      # Secrets handling
-│       ├── ksef_client.py          # KSeF API v2.2.0 client
+│       ├── ksef_client.py          # KSeF API v2.1 client (rate limited)
 │       ├── invoice_monitor.py      # Main monitoring logic
-│       ├── invoice_pdf_generator.py # XML parser + ReportLab PDF (fallback)
+│       ├── rate_limiter.py         # Sliding window rate limiter (v0.4)
+│       ├── database.py             # SQLite + SQLAlchemy 2.0 ORM
+│       ├── invoice_xml_parser.py   # FA(3) XML parser (v0.4)
+│       ├── pdf_constants.py        # PDF constants (v0.4)
+│       ├── invoice_pdf_generator.py # ReportLab PDF (fallback)
 │       ├── invoice_pdf_template.py  # HTML/CSS → PDF via xhtml2pdf (primary)
 │       ├── template_renderer.py    # Jinja2 template engine
-│       ├── prometheus_metrics.py   # Prometheus metrics
+│       ├── prometheus_metrics.py   # Prometheus metrics (10 metrics)
 │       ├── scheduler.py            # Flexible scheduling (5 modes)
-│       ├── database.py             # SQLite + SQLAlchemy 2.0 ORM (v0.3)
 │       ├── logging_config.py       # Logging with timezone
 │       ├── templates/              # Built-in Jinja2 templates (6 files)
+│       ├── api/                    # REST API (FastAPI, v0.4)
+│       │   ├── __init__.py         # App factory + auth + security headers
+│       │   ├── server.py           # Uvicorn daemon thread
+│       │   ├── schemas.py          # Pydantic response models
+│       │   └── routers/            # API endpoints (invoices, stats, monitor, artifacts)
 │       └── notifiers/              # Multi-channel notifications (5 channels)
 │
 ├── ⚙️ Configuration & Examples
@@ -314,14 +328,14 @@ Before running in production:
 
 ## 📊 Version Information
 
-**Current Version:** v0.3
+**Current Version:** v0.4
 
 **Features:**
-- ✅ Full KSeF API v2.2.0 support
+- ✅ Full KSeF API v2.2/v2.3 support
 - ✅ Multi-channel notifications (5 channels)
-- ✅ Customizable Jinja2 notification templates (v0.3)
-- ✅ Polish monetary formatting (v0.3)
-- ✅ Prometheus metrics endpoint
+- ✅ Customizable Jinja2 notification templates
+- ✅ Polish monetary formatting
+- ✅ Prometheus metrics endpoint (10 metrics)
 - ✅ Flexible scheduling system
 - ✅ Token-based authentication
 - ✅ Multiple security options
@@ -332,9 +346,14 @@ Before running in production:
 - ✅ Production ready
 - ✅ PDF invoice generation (with QR code, Polish characters)
 - ✅ Configurable XML/PDF file storage with folder structure patterns
-- ✅ SQLite database for invoice metadata + notification log (v0.3)
-- ✅ Database admin CLI tool: `db_admin.py` (v0.3)
-- ✅ Custom HTML/CSS invoice PDF templates (v0.3)
+- ✅ SQLite database for invoice metadata + notification log
+- ✅ Database admin CLI tool: `db_admin.py`
+- ✅ Custom HTML/CSS invoice PDF templates
+- ✅ REST API with FastAPI (read-only, Bearer auth, Swagger UI, rate limiting) (v0.4)
+- ✅ Sliding window rate limiter (3 windows) (v0.4)
+- ✅ API request logging + artifact download tracking (v0.4)
+- ✅ Security audit: 10 controls (SSTI sandbox, auth enforcement, rate limiting, CORS, CRLF, info disclosure) (v0.4)
+- ✅ 423 unit tests (v0.4)
 
 **Requirements:**
 - Docker & Docker Compose

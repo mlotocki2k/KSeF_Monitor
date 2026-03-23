@@ -62,7 +62,7 @@ Zaznacz **tylko** następujące uprawnienia:
 |-------------|----------|------|
 | **Przeglądanie faktur** | **TAK** | Odczyt metadanych i treści faktur |
 | **Pobieranie faktur** | **TAK** | Pobieranie XML faktur (potrzebne do generowania PDF) |
-| **Pobieranie UPO** | **TAK** | Pobieranie Urzędowego Poświadczenia Odbioru |
+| Pobieranie UPO | NIE | Monitor nie pobiera UPO |
 | Wystawianie faktur | **NIE** | Monitor nie wystawia faktur |
 | Zarządzanie tokenami | **NIE** | Nie jest potrzebne |
 | Zarządzanie uprawnieniami | **NIE** | Nie jest potrzebne |

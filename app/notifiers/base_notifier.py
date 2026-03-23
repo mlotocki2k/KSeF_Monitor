@@ -1,5 +1,5 @@
 """
-Base Notifier Interface for KSeF Invoice Monitor
+Base Notifier Interface for KSeF Monitor
 All notification channels must implement this interface
 """
 

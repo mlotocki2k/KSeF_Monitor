@@ -1,4 +1,4 @@
-# Contributing to KSeF Invoice Monitor
+# Contributing to KSeF Monitor
 
 Thank you for your interest in contributing!
 
@@ -81,7 +81,7 @@ Use [GitHub Issues](https://github.com/mlotocki2k/KSeF_Monitor/issues) with the 
 
 ---
 
-# Współtworzenie KSeF Invoice Monitor
+# Współtworzenie KSeF Monitor
 
 Dziękujemy za zainteresowanie projektem!
 

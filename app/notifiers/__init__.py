@@ -1,5 +1,5 @@
 """
-Notification system for KSeF Invoice Monitor
+Notification system for KSeF Monitor
 
 This package provides a flexible multi-channel notification system supporting:
 - Pushover (mobile notifications)

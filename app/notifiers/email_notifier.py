@@ -136,7 +136,7 @@ class EmailNotifier(BaseNotifier):
                     {f'<a href="{safe_url}" class="button">View in KSeF</a>' if safe_url else ''}
                 </div>
                 <div class="footer">
-                    <p>KSeF Invoice Monitor</p>
+                    <p>KSeF Monitor</p>
                     <p>This is an automated notification. Please do not reply to this email.</p>
                 </div>
             </div>
@@ -163,9 +163,10 @@ class EmailNotifier(BaseNotifier):
             return False
 
         try:
-            # Create message
+            # Create message (F-06: strip CRLF from title to prevent header injection)
+            safe_title = title.replace('\r', '').replace('\n', ' ')
             msg = MIMEMultipart('alternative')
-            msg['Subject'] = f"[KSeF Monitor] {title}"
+            msg['Subject'] = f"[KSeF Monitor] {safe_title}"
             msg['From'] = self.from_address
             msg['To'] = ', '.join(self.to_addresses)
             msg['X-Priority'] = self.PRIORITY_HEADER.get(priority, "3")
@@ -209,10 +210,11 @@ class EmailNotifier(BaseNotifier):
 
         try:
             title = context.get("title", "")
+            safe_title = title.replace('\r', '').replace('\n', ' ')
             priority = context.get("priority", 0)
 
             msg = MIMEMultipart('alternative')
-            msg['Subject'] = f"[KSeF Monitor] {title}"
+            msg['Subject'] = f"[KSeF Monitor] {safe_title}"
             msg['From'] = self.from_address
             msg['To'] = ', '.join(self.to_addresses)
             msg['X-Priority'] = self.PRIORITY_HEADER.get(priority, "3")

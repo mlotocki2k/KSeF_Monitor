@@ -1,4 +1,4 @@
-# Audyt Kodu — KSeF Invoice Monitor v0.3
+# Audyt Kodu — KSeF Monitor v0.3
 
 > Data audytu: 2026-02-20
 

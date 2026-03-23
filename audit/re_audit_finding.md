@@ -1,4 +1,4 @@
-# Re-Audyt Bezpieczeństwa — KSeF Invoice Monitor v0.3
+# Re-Audyt Bezpieczeństwa — KSeF Monitor v0.3
 
 > Data re-audytu: 2026-02-20
 > Commit bazowy: 32f5227 (Security audit: fix all 22 findings)

@@ -126,7 +126,7 @@ class TestInvoiceMonitorBuildTemplateContext:
         assert ctx["title"] == "Nowa faktura w KSeF"
 
     def test_buyer_nip_from_identifier(self, monitor, sample_invoice):
-        """Buyer NIP extracted from buyer.identifier.value (API v2.2.0 schema)."""
+        """Buyer NIP extracted from buyer.identifier.value (API v2.2.0/v2.3.0 schema)."""
         ctx = monitor.build_template_context(sample_invoice, "Subject1")
         assert ctx["buyer_nip"] == "1234567890"
 
@@ -345,11 +345,11 @@ class TestInvoiceMonitorResolveSafePath:
     def test_rename_preserves_extension(self, monitor, tmp_path):
         """Strategy 'rename' preserves original file extension."""
         monitor.file_exists_strategy = "rename"
-        path = tmp_path / "UPO_sprz_123.xml"
+        path = tmp_path / "sprz_123.xml"
         path.write_text("content")
         result = monitor._resolve_safe_path(path)
         assert result.suffix == ".xml"
-        assert result.name == "UPO_sprz_123_1.xml"
+        assert result.name == "sprz_123_1.xml"
 
     def test_default_strategy_is_skip(self, monitor):
         """Default file_exists_strategy from config is 'skip'."""
@@ -522,11 +522,6 @@ class TestBuildFileName:
         """Subject2 produces zak_ prefix."""
         result = monitor._build_file_name(sample_invoice, "Subject2")
         assert result.startswith("zak_")
-
-    def test_upo_type(self, monitor, sample_invoice):
-        """file_type='upo' produces upo_ prefix."""
-        result = monitor._build_file_name(sample_invoice, "Subject1", file_type="upo")
-        assert result.startswith("upo_")
 
     def test_custom_pattern_with_ksef(self, monitor, sample_invoice):
         """Custom pattern with {ksef} placeholder."""

@@ -1,5 +1,5 @@
 """
-Notification Manager for KSeF Invoice Monitor
+Notification Manager for KSeF Monitor
 Manages multiple notification channels and sends notifications to all enabled channels
 """
 

@@ -1,5 +1,5 @@
 """
-Prometheus Metrics for KSeF Invoice Monitor
+Prometheus Metrics for KSeF Monitor
 
 Exposes monitoring metrics on HTTP endpoint /metrics (default port 8000)
 """
@@ -9,7 +9,7 @@ import threading
 from datetime import datetime
 from typing import Optional
 
-from prometheus_client import Gauge, Counter, start_http_server
+from prometheus_client import Gauge, Counter, Histogram, start_http_server
 
 logger = logging.getLogger(__name__)
 
@@ -24,13 +24,14 @@ class PrometheusMetrics:
     - ksef_monitor_up: Health check - 1 if monitor is running
     """
 
-    def __init__(self, port: int = 8000, bind_address: str = '0.0.0.0'):  # nosec B104 - configurable, 0.0.0.0 needed for Docker
+    def __init__(self, port: int = 8000, bind_address: str = '127.0.0.1'):
         """
         Initialize Prometheus metrics
 
         Args:
             port: HTTP server port for /metrics endpoint (default: 8000)
-            bind_address: Network interface to bind (default: '0.0.0.0' for Docker)
+            bind_address: Network interface to bind (default: '127.0.0.1',
+                          set to '0.0.0.0' in docker-compose for container access)
         """
         self.port = port
         self.bind_address = bind_address
@@ -61,6 +62,48 @@ class PrometheusMetrics:
             'ksef_auth_failures_total',
             'Total number of KSeF API authentication failures',
             labelnames=['status_code']
+        )
+
+        # Metric: KSeF API requests (v0.4)
+        self.api_requests_total = Counter(
+            'ksef_api_requests_total',
+            'Total KSeF API requests',
+            labelnames=['endpoint', 'status_code']
+        )
+
+        # Metric: API response time (v0.4)
+        self.api_response_time = Histogram(
+            'ksef_api_response_time_seconds',
+            'KSeF API response time',
+            labelnames=['endpoint'],
+            buckets=(0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0),
+        )
+
+        # Metric: Rate limiter waits (v0.4)
+        self.rate_limit_waits_total = Counter(
+            'ksef_api_rate_limit_waits_total',
+            'Total times rate limiter had to wait before request',
+        )
+
+        # Metric: Rate limiter remaining (v0.4)
+        self.rate_limit_remaining = Gauge(
+            'ksef_api_rate_limit_remaining',
+            'Remaining API calls in rate limiter window',
+            labelnames=['window'],
+        )
+
+        # Metric: Pending artifacts (v0.4)
+        self.artifacts_pending = Gauge(
+            'ksef_artifacts_pending_total',
+            'Number of artifacts pending download',
+            labelnames=['type'],
+        )
+
+        # Metric: REST API requests (v0.4)
+        self.rest_api_requests_total = Counter(
+            'ksef_rest_api_requests_total',
+            'Total REST API requests',
+            labelnames=['endpoint', 'method'],
         )
 
         # Initialize as running
