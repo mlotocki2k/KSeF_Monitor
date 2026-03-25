@@ -152,9 +152,10 @@ def main():
         else:
             logger.info("Prometheus metrics disabled in configuration")
 
-        # Wire auth failure metric callback
+        # Wire Prometheus metrics into KSeF client
         if prometheus_metrics:
             ksef_client.on_auth_failure = lambda sc: prometheus_metrics.increment_auth_failures(sc)
+            ksef_client.prometheus_metrics = prometheus_metrics
 
         # Initialize and run monitor
         logger.info("Initializing invoice monitor...")
@@ -175,6 +176,7 @@ def main():
                     cors_origins=api_config.get("cors_origins"),
                     rate_limit_config=api_config.get("rate_limit"),
                     docs_enabled=api_config.get("docs_enabled", True),
+                    prometheus_metrics=prometheus_metrics,
                 )
                 api_server = APIServer(
                     api_app,

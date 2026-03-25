@@ -71,6 +71,7 @@ class KSeFClient:
         self.session_reference = None  # Session referenceNumber for UPO endpoints
         self._ksef_public_key = None
         self.on_auth_failure = None  # Optional callback: on_auth_failure(status_code: int)
+        self.prometheus_metrics = None  # Set externally from main.py
         self.session = requests.Session()
         self.session.verify = True  # Explicit TLS certificate verification
 
@@ -108,13 +109,36 @@ class KSeFClient:
         Raises:
             requests.HTTPError: If non-429 error or retries exhausted
         """
+        # Extract endpoint path for metrics (strip base URL and query params)
+        endpoint = url.replace(self.base_url, "").split("?")[0] if self.base_url in url else url
+
         for attempt in range(self.MAX_429_RETRIES + 1):
             # Proactive rate limiting — acquire slot before sending request
             wait = self.rate_limiter.acquire()
             if wait > 0:
                 logger.debug("Rate limiter waited %.1fs before request", wait)
+                if self.prometheus_metrics:
+                    self.prometheus_metrics.rate_limit_waits_total.inc()
 
+            # Update rate limiter remaining gauge
+            if self.prometheus_metrics:
+                remaining = self.rate_limiter.remaining()
+                for window_label in ("1s", "60s", "3600s"):
+                    self.prometheus_metrics.rate_limit_remaining.labels(window=window_label).set(
+                        remaining.get(window_label, 0)
+                    )
+
+            start_time = time.monotonic()
             response = self.session.request(method, url, **kwargs)
+            elapsed = time.monotonic() - start_time
+
+            # Record API request metrics
+            if self.prometheus_metrics:
+                self.prometheus_metrics.api_requests_total.labels(
+                    endpoint=endpoint, status_code=str(response.status_code)
+                ).inc()
+                self.prometheus_metrics.api_response_time.labels(endpoint=endpoint).observe(elapsed)
+
             if response.status_code != 429:
                 return response
             # Parse response body for details (KSeF TooManyRequestsResponse)

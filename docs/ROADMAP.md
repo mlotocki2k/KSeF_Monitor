@@ -141,6 +141,7 @@ Poprawki niezwiązane z konkretnymi feature'ami, ale krytyczne dla stabilności:
 ### 5) Auth + Metryki Prometheus ✅
 - [x] Token auth z Docker secrets / env / config, open access mode z WARNING
 - [x] 6 nowych metryk Prometheus (API requests, response time, rate limit, artifacts)
+- [x] Podpięcie metryk do kodu: `ksef_client._request_with_retry()`, REST API middleware, `invoice_monitor` (artifacts gauge)
 
 ### 6) Security Audit ✅
 - [x] F-01: Auto-generowanie `auth_token` gdy API włączone bez tokena (`secrets.token_urlsafe(48)`)

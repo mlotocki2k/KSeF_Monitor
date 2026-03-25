@@ -28,6 +28,7 @@ def create_app(
     cors_origins: Optional[list] = None,
     rate_limit_config: Optional[Dict[str, Any]] = None,
     docs_enabled: bool = True,
+    prometheus_metrics=None,
 ) -> FastAPI:
     """Create and configure FastAPI application.
 
@@ -54,6 +55,7 @@ def create_app(
     app.state.db = db
     app.state.monitor = monitor_instance
     app.state.auth_token = auth_token
+    app.state.prometheus_metrics = prometheus_metrics
 
     # Auth middleware (if token configured) — registered FIRST (innermost)
     if auth_token:
@@ -96,6 +98,16 @@ def create_app(
         response.headers["X-Frame-Options"] = "DENY"
         response.headers["Cache-Control"] = "no-store"
         return response
+
+    # REST API Prometheus metrics middleware
+    if prometheus_metrics:
+        @app.middleware("http")
+        async def track_rest_metrics(request: Request, call_next):
+            response = await call_next(request)
+            prometheus_metrics.rest_api_requests_total.labels(
+                endpoint=request.url.path, method=request.method
+            ).inc()
+            return response
 
     # Rate limiting (F-07 security fix)
     rl_config = rate_limit_config or {}

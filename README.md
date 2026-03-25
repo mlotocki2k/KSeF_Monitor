@@ -617,6 +617,25 @@ ksef_new_invoices_total{subject_type="Subject2"} 3
 # HELP ksef_monitor_up KSeF Monitor health status (1 = running, 0 = stopped)
 # TYPE ksef_monitor_up gauge
 ksef_monitor_up 1.0
+
+# HELP ksef_api_requests_total Total KSeF API requests
+# TYPE ksef_api_requests_total counter
+ksef_api_requests_total{endpoint="/v2/auth/challenge",status_code="200"} 12
+
+# HELP ksef_api_response_time_seconds KSeF API response time
+# TYPE ksef_api_response_time_seconds histogram
+ksef_api_response_time_seconds_bucket{endpoint="/v2/auth/challenge",le="0.5"} 10
+
+# HELP ksef_api_rate_limit_remaining Remaining API calls in rate limiter window
+# TYPE ksef_api_rate_limit_remaining gauge
+ksef_api_rate_limit_remaining{window="1s"} 9
+ksef_api_rate_limit_remaining{window="60s"} 25
+ksef_api_rate_limit_remaining{window="3600s"} 108
+
+# HELP ksef_artifacts_pending_total Number of artifacts pending download
+# TYPE ksef_artifacts_pending_total gauge
+ksef_artifacts_pending_total{type="xml"} 0
+ksef_artifacts_pending_total{type="pdf"} 3
 ```
 
 **Integracja z Prometheus:**
