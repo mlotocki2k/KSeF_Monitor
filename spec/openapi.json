@@ -2,7 +2,7 @@
   "openapi": "3.0.4",
   "info": {
     "title": "KSeF API PR",
-    "description": "**Wersja API:** 2.2.0 (build 2.2.0-pr-20260313.1+fa840b089a49c8673d2264e3fdfe5ceca2931c99)<br>\n**Klucze publiczne** Ministerstwa Finansów (dla danego środowiska): [Pobierz klucze](#tag/Certyfikaty-klucza-publicznego)<br>\n**Historia zmian:** [Changelog](https://github.com/CIRFMF/ksef-docs/blob/main/api-changelog.md)<br>\n**Rozszerzona dokumentacja API:** [ksef-docs](https://github.com/CIRFMF/ksef-docs/tree/main)\n\n**Adres serwera API:**\n- Środowisko PRODUKCYJNE: `https://api.ksef.mf.gov.pl/v2`\n",
+    "description": "**Wersja API:** 2.3.0 (build 2.3.0-pr-20260323.2+a9dad84a6f93a88eacc6ce4380728490661f7aa4)<br>\n**Klucze publiczne** Ministerstwa Finansów (dla danego środowiska): [Pobierz klucze](#tag/Certyfikaty-klucza-publicznego)<br>\n**Historia zmian:** [Changelog](https://github.com/CIRFMF/ksef-docs/blob/main/api-changelog.md)<br>\n**Rozszerzona dokumentacja API:** [ksef-docs](https://github.com/CIRFMF/ksef-docs/tree/main)\n\n**Adres serwera API:**\n- Środowisko PRODUKCYJNE: `https://api.ksef.mf.gov.pl/v2`\n",
     "version": "v2"
   },
   "servers": [
@@ -1210,10 +1210,10 @@
                 },
                 "example": {
                   "enrollment": {
-                    "maxEnrollments": 6
+                    "maxEnrollments": 12
                   },
                   "certificate": {
-                    "maxCertificates": 2
+                    "maxCertificates": 6
                   }
                 }
               }
@@ -3067,6 +3067,7 @@
                   "encryptedSymmetricKey": "bdUVjqLj+y2q6aBUuLxxXYAMqeDuIBRTyr+hB96DaWKaGzuVHw9p+Nk9vhzgF/Q5cavK2k6eCh6SdsrWI0s9mFFj4A4UJtsyD8Dn3esLfUZ5A1juuG3q3SBi/XOC/+9W+0T/KdwdE393mbiUNyx1K/0bw31vKJL0COeJIDP7usAMDl42/H1TNvkjk+8iZ80V0qW7D+RZdz+tdiY1xV0f2mfgwJ46V0CpZ+sB9UAssRj+eVffavJ0TOg2b5JaBxE8MCAvrF6rO5K4KBjUmoy7PP7g1qIbm8xI2GO0KnfPOO5OWj8rsotRwBgu7x19Ine3qYUvuvCZlXRGGZ5NHIzWPM4O74+gNalaMgFCsmv8mMhETSU4SfAGmJr9edxPjQSbgD5i2X4eDRDMwvyaAa7CP1b2oICju+0L7Fywd2ZtUcr6El++eTVoi8HYsTArntET++gULT7XXjmb8e3O0nxrYiYsE9GMJ7HBGv3NOoJ1NTm3a7U6+c0ZJiBVLvn6xXw10LQX243xH+ehsKo6djQJKYtqcNPaXtCwM1c9RrsOx/wRXyWCtTffqLiaR0LbYvfMJAcEWceG+RaeAx4p37OiQqdJypd6LAv9/0ECWK8Bip8yyoA+0EYiAJb9YuDz2YlQX9Mx9E9FzFIAsgEQ2w723HZYWgPywLb+dlsum4lTZKQ=",
                   "initializationVector": "c29tZUluaXRWZWN0b3I="
                 },
+                "onlyMetadata": false,
                 "filters": {
                   "subjectType": "Subject1",
                   "dateRange": {
@@ -10046,14 +10047,14 @@
           },
           "reasonCode": {
             "type": "string",
-            "description": " Kod przyczyny odmowy dostępu.\n| Code | Opis |  \n|------|-------------|\n| missing-permissions | Brak wymaganych uprawnień do wykonania operacji w bieżącym kontekście. | \n| ip-not-allowed | Żądanie pochodzi z adresu IP innego niż wskazany podczas uwierzytelnienia. | \n| insufficient-resource-access | Brak dostępu do wskazanego zasobu. | \n| auth-method-not-allowed | Ta operacja nie jest dostępna dla użytej metody uwierzytelnienia. | \n| security-service-blocked | Żądanie zostało zablokowane przez mechanizmy bezpieczeństwa. |"
+            "description": " Kod przyczyny odmowy dostępu.\n| Code | Opis |  \n|------|-------------|\n| missing-permissions | Brak wymaganych uprawnień do wykonania operacji w bieżącym kontekście. | \n| ip-not-allowed | Żądanie pochodzi z adresu IP innego niż wskazany podczas uwierzytelnienia. | \n| insufficient-resource-access | Brak dostępu do wskazanego zasobu. | \n| auth-method-not-allowed | Ta operacja nie jest dostępna dla użytej metody uwierzytelnienia. | \n| security-service-blocked | Żądanie zostało zablokowane przez mechanizmy bezpieczeństwa. | \n| context-type-not-allowed | Operacja nie jest dostępna dla uwierzytelnionego typu kontekstu. |"
           },
           "security": {
             "type": "object",
             "additionalProperties": {
               "nullable": true
             },
-            "description": "Dodatkowe dane zależne od `reasonCode`.\n| Code  | Security |\n|------| ------------ |\n| missing-permissions | requiredAnyOfPermissions: string[], presentPermissions: string[] |\n| ip-not-allowed | clientIp: string |\n| insufficient-resource-access  ||\n| auth-method-not-allowed | authenticationMethodCategory: string  |\n| security-service-blocked | incidentId: string, clientIp: string  |",
+            "description": "Dodatkowe dane zależne od `reasonCode`.\n| Code  | Security |\n|------| ------------ |\n| missing-permissions | requiredAnyOfPermissions: string[], presentPermissions: string[] |\n| ip-not-allowed | clientIp: string |\n| insufficient-resource-access  ||\n| auth-method-not-allowed | authenticationMethodCategory: string  |\n| security-service-blocked | incidentId: string, clientIp: string  |\n| context-type-not-allowed | contextIdentifierType: string |",
             "nullable": true
           },
           "traceId": {
@@ -10371,6 +10372,11 @@
             ],
             "description": "Informacje wymagane do zaszyfrowania wyniku zapytania."
           },
+          "onlyMetadata": {
+            "type": "boolean",
+            "description": "Określa, czy zwrócić tylko metadane faktur (plik _metadata.json bez faktur).",
+            "default": false
+          },
           "filters": {
             "required": [
               "subjectType",
@@ -10518,7 +10524,7 @@
           },
           "vatAmount": {
             "type": "number",
-            "description": "Łączna kwota VAT.",
+            "description": "Łączna kwota VAT wyrażona w PLN.",
             "format": "double"
           },
           "currency": {
@@ -10541,7 +10547,7 @@
                 "$ref": "#/components/schemas/InvoiceType"
               }
             ],
-            "description": "Rodzaj faktury.\n| Wartość | Opis |\n| --- | --- |\n| Vat | (FA) Podstawowa |\n| Zal | (FA) Zaliczkowa |\n| Kor | (FA) Korygująca |\n| Roz | (FA) Rozliczeniowa |\n| Upr | (FA) Uproszczona |\n| KorZal | (FA) Korygująca fakturę zaliczkową |\n| KorRoz | (FA) Korygująca fakturę rozliczeniową |\n| VatPef | (PEF) Podstawowa |\n| VatPefSp | (PEF) Specjalizowana |\n| KorPef | (PEF) Korygująca |\n| VatRr | (RR) Podstawowa |\n| KorVatRr | (RR) Korygująca |\n"
+            "description": "Rodzaj faktury.\n| Wartość | Opis |\n| --- | --- |\n| Vat | (FA) Podstawowa |\n| Zal | (FA) Zaliczkowa |\n| Kor | (FA) Korygująca |\n| Roz | (FA) Rozliczeniowa |\n| Upr | (FA) Uproszczona |\n| KorZal | (FA) Korygująca fakturę zaliczkową |\n| KorRoz | (FA) Korygująca fakturę rozliczeniową |\n| VatPef | (PEF) Podstawowa |\n| VatPefSp | (PEF) Specjalizowana |\n| KorPef | (PEF) Korygująca |\n| VatRr | (FA_RR) Podstawowa |\n| KorVatRr | (FA_RR) Korygująca |\n"
           },
           "formCode": {
             "required": [
@@ -10554,7 +10560,7 @@
                 "$ref": "#/components/schemas/FormCode"
               }
             ],
-            "description": "Struktura dokumentu faktury.\n\nObsługiwane schematy:\n| SystemCode | SchemaVersion | Value |\n| --- | --- | --- |\n| [FA (2)](https://github.com/CIRFMF/ksef-docs/blob/main/faktury/schemy/FA/schemat_FA(2)_v1-0E.xsd) | 1-0E | FA |\n| [FA (3)](https://github.com/CIRFMF/ksef-docs/blob/main/faktury/schemy/FA/schemat_FA(3)_v1-0E.xsd) | 1-0E | FA |\n| [PEF (3)](https://github.com/CIRFMF/ksef-docs/blob/main/faktury/schemy/PEF/Schemat_PEF(3)_v2-1.xsd) | 2-1 | PEF |\n| [PEF_KOR (3)](https://github.com/CIRFMF/ksef-docs/blob/main/faktury/schemy/PEF/Schemat_PEF_KOR(3)_v2-1.xsd) | 2-1 | PEF |\n| [FA_RR (1)](https://github.com/CIRFMF/ksef-docs/blob/main/faktury/schemy/RR/schemat_RR(1)_v1-0E.xsd) | 1-0E | RR |\n| [FA_RR (1)](https://github.com/CIRFMF/ksef-docs/blob/main/faktury/schemy/RR/schemat_RR(1)_v1-1E.xsd) | 1-1E | RR |\n"
+            "description": "Struktura dokumentu faktury.\n\nObsługiwane schematy:\n| SystemCode | SchemaVersion | Value | ValidFrom | ValidTo |\n| --- | --- | --- | --- | --- |\n| [FA (2)](https://github.com/CIRFMF/ksef-docs/blob/main/faktury/schemy/FA/schemat_FA(2)_v1-0E.xsd) | 1-0E | FA |  |  |\n| [FA (3)](https://github.com/CIRFMF/ksef-docs/blob/main/faktury/schemy/FA/schemat_FA(3)_v1-0E.xsd) | 1-0E | FA |  |  |\n| [PEF (3)](https://github.com/CIRFMF/ksef-docs/blob/main/faktury/schemy/PEF/Schemat_PEF(3)_v2-1.xsd) | 2-1 | PEF |  |  |\n| [PEF_KOR (3)](https://github.com/CIRFMF/ksef-docs/blob/main/faktury/schemy/PEF/Schemat_PEF_KOR(3)_v2-1.xsd) | 2-1 | PEF |  |  |\n| [FA_RR (1)](https://github.com/CIRFMF/ksef-docs/blob/main/faktury/schemy/RR/schemat_RR(1)_v1-0E.xsd) | 1-0E | RR |  |  |\n| [FA_RR (1)](https://github.com/CIRFMF/ksef-docs/blob/main/faktury/schemy/RR/schemat_RR(1)_v1-1E.xsd) | 1-1E | RR |  |  |\n| [FA_RR (1)](https://github.com/CIRFMF/ksef-docs/blob/main/faktury/schemy/RR/schemat_FA_RR(1)_v1-1E.xsd) | 1-1E | FA_RR | 01.04.2026 |  |\n"
           },
           "isSelfInvoicing": {
             "type": "boolean",
@@ -11079,7 +11085,7 @@
                 "$ref": "#/components/schemas/InvoiceQueryFormType"
               }
             ],
-            "description": "Typ dokumentu.\n| Wartość | Opis |\n| --- | --- |\n| FA | Faktura VAT |\n| PEF | Faktura PEF |\n| RR | Faktura RR |\n",
+            "description": "Typ dokumentu.\n| Wartość | Opis |\n| --- | --- |\n| FA | Faktura VAT |\n| PEF | Faktura PEF |\n| RR ![Deprecated](https://img.shields.io/badge/Deprecated-orange) | Faktura RR |\n| FA_RR | Faktura RR |\n",
             "nullable": true
           },
           "invoiceTypes": {
@@ -11087,7 +11093,7 @@
             "items": {
               "$ref": "#/components/schemas/InvoiceType"
             },
-            "description": "Rodzaje faktur.\n| Wartość | Opis |\n| --- | --- |\n| Vat | (FA) Podstawowa |\n| Zal | (FA) Zaliczkowa |\n| Kor | (FA) Korygująca |\n| Roz | (FA) Rozliczeniowa |\n| Upr | (FA) Uproszczona |\n| KorZal | (FA) Korygująca fakturę zaliczkową |\n| KorRoz | (FA) Korygująca fakturę rozliczeniową |\n| VatPef | (PEF) Podstawowa |\n| VatPefSp | (PEF) Specjalizowana |\n| KorPef | (PEF) Korygująca |\n| VatRr | (RR) Podstawowa |\n| KorVatRr | (RR) Korygująca |\n",
+            "description": "Rodzaje faktur.\n| Wartość | Opis |\n| --- | --- |\n| Vat | (FA) Podstawowa |\n| Zal | (FA) Zaliczkowa |\n| Kor | (FA) Korygująca |\n| Roz | (FA) Rozliczeniowa |\n| Upr | (FA) Uproszczona |\n| KorZal | (FA) Korygująca fakturę zaliczkową |\n| KorRoz | (FA) Korygująca fakturę rozliczeniową |\n| VatPef | (PEF) Podstawowa |\n| VatPefSp | (PEF) Specjalizowana |\n| KorPef | (PEF) Korygująca |\n| VatRr | (FA_RR) Podstawowa |\n| KorVatRr | (FA_RR) Korygująca |\n",
             "nullable": true
           },
           "hasAttachment": {
@@ -11101,10 +11107,11 @@
         "enum": [
           "FA",
           "PEF",
-          "RR"
+          "RR",
+          "FA_RR"
         ],
         "type": "string",
-        "description": "| Wartość | Opis |\n| --- | --- |\n| FA | Faktura VAT |\n| PEF | Faktura PEF |\n| RR | Faktura RR |\n"
+        "description": "| Wartość | Opis |\n| --- | --- |\n| FA | Faktura VAT |\n| PEF | Faktura PEF |\n| RR ![Deprecated](https://img.shields.io/badge/Deprecated-orange) | Faktura RR |\n| FA_RR | Faktura RR |\n"
       },
       "InvoiceQuerySubjectType": {
         "enum": [
@@ -11168,7 +11175,7 @@
           "KorVatRr"
         ],
         "type": "string",
-        "description": "| Wartość | Opis |\n| --- | --- |\n| Vat | (FA) Podstawowa |\n| Zal | (FA) Zaliczkowa |\n| Kor | (FA) Korygująca |\n| Roz | (FA) Rozliczeniowa |\n| Upr | (FA) Uproszczona |\n| KorZal | (FA) Korygująca fakturę zaliczkową |\n| KorRoz | (FA) Korygująca fakturę rozliczeniową |\n| VatPef | (PEF) Podstawowa |\n| VatPefSp | (PEF) Specjalizowana |\n| KorPef | (PEF) Korygująca |\n| VatRr | (RR) Podstawowa |\n| KorVatRr | (RR) Korygująca |\n"
+        "description": "| Wartość | Opis |\n| --- | --- |\n| Vat | (FA) Podstawowa |\n| Zal | (FA) Zaliczkowa |\n| Kor | (FA) Korygująca |\n| Roz | (FA) Rozliczeniowa |\n| Upr | (FA) Uproszczona |\n| KorZal | (FA) Korygująca fakturę zaliczkową |\n| KorRoz | (FA) Korygująca fakturę rozliczeniową |\n| VatPef | (PEF) Podstawowa |\n| VatPefSp | (PEF) Specjalizowana |\n| KorPef | (PEF) Korygująca |\n| VatRr | (FA_RR) Podstawowa |\n| KorVatRr | (FA_RR) Korygująca |\n"
       },
       "InvoicingMode": {
         "enum": [
@@ -11251,7 +11258,7 @@
                 "$ref": "#/components/schemas/FormCode"
               }
             ],
-            "description": "Schemat faktur wysyłanych w ramach sesji.\n\nObsługiwane schematy:\n| SystemCode | SchemaVersion | Value |\n| --- | --- | --- |\n| [FA (3)](https://github.com/CIRFMF/ksef-docs/blob/main/faktury/schemy/FA/schemat_FA(3)_v1-0E.xsd) | 1-0E | FA |\n"
+            "description": "Schemat faktur wysyłanych w ramach sesji.\n\nObsługiwane schematy:\n| SystemCode | SchemaVersion | Value | ValidFrom | ValidTo |\n| --- | --- | --- | --- | --- |\n| [FA (3)](https://github.com/CIRFMF/ksef-docs/blob/main/faktury/schemy/FA/schemat_FA(3)_v1-0E.xsd) | 1-0E | FA |  |  |\n| [FA_RR (1)](https://github.com/CIRFMF/ksef-docs/blob/main/faktury/schemy/RR/schemat_FA_RR(1)_v1-1E.xsd) | 1-1E | FA_RR | 01.04.2026 |  |\n"
           },
           "batchFile": {
             "required": [
@@ -11327,7 +11334,7 @@
                 "$ref": "#/components/schemas/FormCode"
               }
             ],
-            "description": "Schemat faktur wysyłanych w ramach sesji.\n\nObsługiwane schematy:\n| SystemCode | SchemaVersion | Value |\n| --- | --- | --- |\n| [FA (3)](https://github.com/CIRFMF/ksef-docs/blob/main/faktury/schemy/FA/schemat_FA(3)_v1-0E.xsd) | 1-0E | FA |\n| [PEF (3)](https://github.com/CIRFMF/ksef-docs/blob/main/faktury/schemy/PEF/Schemat_PEF(3)_v2-1.xsd) | 2-1 | PEF |\n| [PEF_KOR (3)](https://github.com/CIRFMF/ksef-docs/blob/main/faktury/schemy/PEF/Schemat_PEF_KOR(3)_v2-1.xsd) | 2-1 | PEF |\n"
+            "description": "Schemat faktur wysyłanych w ramach sesji.\n\nObsługiwane schematy:\n| SystemCode | SchemaVersion | Value | ValidFrom | ValidTo |\n| --- | --- | --- | --- | --- |\n| [FA (3)](https://github.com/CIRFMF/ksef-docs/blob/main/faktury/schemy/FA/schemat_FA(3)_v1-0E.xsd) | 1-0E | FA |  |  |\n| [PEF (3)](https://github.com/CIRFMF/ksef-docs/blob/main/faktury/schemy/PEF/Schemat_PEF(3)_v2-1.xsd) | 2-1 | PEF |  |  |\n| [PEF_KOR (3)](https://github.com/CIRFMF/ksef-docs/blob/main/faktury/schemy/PEF/Schemat_PEF_KOR(3)_v2-1.xsd) | 2-1 | PEF |  |  |\n| [FA_RR (1)](https://github.com/CIRFMF/ksef-docs/blob/main/faktury/schemy/RR/schemat_FA_RR(1)_v1-1E.xsd) | 1-1E | FA_RR | 01.04.2026 |  |\n"
           },
           "encryption": {
             "required": [
@@ -14312,7 +14319,7 @@
       "Bearer": {
         "type": "http",
         "description": "Token dostępu uzyskany w wyniku operacji uwierzytelnienia.",
-        "scheme": "Bearer",
+        "scheme": "bearer",
         "bearerFormat": "JWT"
       }
     }
