@@ -395,6 +395,24 @@ class InvoiceMonitor:
             self.metrics.update_last_check(now)
             for subject_type, count in new_invoices_count.items():
                 self.metrics.increment_new_invoices(subject_type, count)
+
+            # Update pending artifacts gauge
+            if self.db:
+                try:
+                    session = self.db.get_session()
+                    try:
+                        pending = self.db.get_pending_artifacts(session, limit=10000)
+                        by_type = {}
+                        for a in pending:
+                            by_type[a.artifact_type] = by_type.get(a.artifact_type, 0) + 1
+                        for artifact_type in ("xml", "pdf", "upo"):
+                            self.metrics.artifacts_pending.labels(type=artifact_type).set(
+                                by_type.get(artifact_type, 0)
+                            )
+                    finally:
+                        session.close()
+                except Exception as e:
+                    logger.debug("Failed to update artifacts_pending metric: %s", e)
     
     def _get_date_from(self, db_session, subject_type: str, json_state: Dict, now: datetime) -> datetime:
         """Determine date_from for a subject_type. DB has priority over JSON state."""
