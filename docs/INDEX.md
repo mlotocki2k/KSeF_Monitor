@@ -1,7 +1,7 @@
 # KSeF Monitor - Documentation Index
 
 **Version:** v0.4
-**Based on:** KSeF API v2.2.0
+**Based on:** KSeF API v2.4.0
 **License:** MIT
 
 ---
