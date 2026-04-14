@@ -1,6 +1,6 @@
 requests>=2.32.5,<3.0.0
 python-dateutil==2.9.0.post0
-cryptography==46.0.6
+cryptography==46.0.7
 prometheus-client==0.24.1
 pytz==2026.1.post1
 
