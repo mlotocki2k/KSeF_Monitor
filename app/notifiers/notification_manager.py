@@ -44,6 +44,7 @@ class NotificationManager:
         from .slack_notifier import SlackNotifier
         from .email_notifier import EmailNotifier
         from .webhook_notifier import WebhookNotifier
+        from .ios_push_notifier import IosPushNotifier
 
         # Get notifications config
         notifications_config = self.config.get("notifications") or {}
@@ -59,7 +60,8 @@ class NotificationManager:
             "discord": DiscordNotifier,
             "slack": SlackNotifier,
             "email": EmailNotifier,
-            "webhook": WebhookNotifier
+            "webhook": WebhookNotifier,
+            "ios_push": IosPushNotifier,
         }
 
         # Initialize each enabled channel

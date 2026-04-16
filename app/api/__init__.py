@@ -16,7 +16,7 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 from slowapi.util import get_remote_address
 
-from .routers import invoices, stats, monitor, artifacts
+from .routers import invoices, stats, monitor, artifacts, push
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +29,7 @@ def create_app(
     rate_limit_config: Optional[Dict[str, Any]] = None,
     docs_enabled: bool = True,
     prometheus_metrics=None,
+    push_manager=None,
 ) -> FastAPI:
     """Create and configure FastAPI application.
 
@@ -56,6 +57,7 @@ def create_app(
     app.state.monitor = monitor_instance
     app.state.auth_token = auth_token
     app.state.prometheus_metrics = prometheus_metrics
+    app.state.push_manager = push_manager
 
     # Auth middleware (if token configured) — registered FIRST (innermost)
     if auth_token:
@@ -144,6 +146,7 @@ def create_app(
     app.include_router(stats.router, prefix="/api/v1")
     app.include_router(monitor.router, prefix="/api/v1")
     app.include_router(artifacts.router, prefix="/api/v1")
+    app.include_router(push.router, prefix="/api/v1")
 
     # Generic error handler — no stack traces in production
     @app.exception_handler(Exception)
