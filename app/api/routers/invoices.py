@@ -6,11 +6,13 @@ Response models ensure only declared fields are serialized.
 """
 
 import logging
+import os
 import re
+from io import BytesIO
 from typing import Optional
 
 from fastapi import APIRouter, Query, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 
 from ..schemas import InvoiceDetail, InvoiceSummary, PaginatedInvoices
 
@@ -120,3 +122,132 @@ def get_invoice(request: Request, ksef_number: str):
         return InvoiceDetail.model_validate(invoice)
     finally:
         session.close()
+
+
+@router.get("/invoices/{ksef_number}/xml")
+def get_invoice_xml(request: Request, ksef_number: str):
+    """Return invoice XML — from cached file first, then live from KSeF API.
+
+    Returns Content-Type: application/xml.
+    Falls back to fetching from KSeF if local cache not found.
+    """
+    db = request.app.state.db
+    monitor = request.app.state.monitor
+
+    # Try cached artifact path from DB
+    if db:
+        from app.database import Invoice, InvoiceArtifact
+        session = db.get_session()
+        try:
+            invoice = session.query(Invoice).filter_by(ksef_number=ksef_number).first()
+            if not invoice:
+                return JSONResponse(status_code=404, content={"detail": "Invoice not found"})
+
+            artifact = (
+                session.query(InvoiceArtifact)
+                .filter_by(invoice_id=invoice.id, artifact_type="xml", status="downloaded")
+                .first()
+            )
+            if artifact and artifact.file_path and os.path.exists(artifact.file_path):
+                with open(artifact.file_path, "r", encoding="utf-8") as f:
+                    xml_content = f.read()
+                return Response(
+                    content=xml_content,
+                    media_type="application/xml",
+                    headers={"Content-Disposition": f'attachment; filename="{ksef_number}.xml"'},
+                )
+        finally:
+            session.close()
+
+    # Fallback: fetch live from KSeF API
+    if not monitor or not hasattr(monitor, 'ksef'):
+        return JSONResponse(status_code=503, content={"detail": "KSeF client not available"})
+
+    try:
+        result = monitor.ksef.get_invoice_xml(ksef_number)
+        if not result:
+            return JSONResponse(status_code=404, content={"detail": "XML not found on KSeF"})
+        return Response(
+            content=result["xml_content"],
+            media_type="application/xml",
+            headers={"Content-Disposition": f'attachment; filename="{ksef_number}.xml"'},
+        )
+    except Exception as e:
+        logger.error("Failed to fetch XML for %s: %s", ksef_number, e)
+        return JSONResponse(status_code=502, content={"detail": "KSeF API error"})
+
+
+@router.get("/invoices/{ksef_number}/pdf")
+def get_invoice_pdf(request: Request, ksef_number: str):
+    """Generate and return invoice PDF on demand.
+
+    Checks for cached PDF first. If not cached, fetches XML from KSeF
+    and generates PDF using the configured generator chain.
+    Returns Content-Type: application/pdf.
+    """
+    db = request.app.state.db
+    monitor = request.app.state.monitor
+
+    # Try cached PDF first
+    if db:
+        from app.database import Invoice, InvoiceArtifact
+        session = db.get_session()
+        try:
+            invoice = session.query(Invoice).filter_by(ksef_number=ksef_number).first()
+            if not invoice:
+                return JSONResponse(status_code=404, content={"detail": "Invoice not found"})
+
+            artifact = (
+                session.query(InvoiceArtifact)
+                .filter_by(invoice_id=invoice.id, artifact_type="pdf", status="downloaded")
+                .first()
+            )
+            if artifact and artifact.file_path and os.path.exists(artifact.file_path):
+                with open(artifact.file_path, "rb") as f:
+                    pdf_bytes = f.read()
+                return Response(
+                    content=pdf_bytes,
+                    media_type="application/pdf",
+                    headers={"Content-Disposition": f'attachment; filename="{ksef_number}.pdf"'},
+                )
+        finally:
+            session.close()
+
+    # Need to generate PDF: fetch XML first
+    if not monitor or not hasattr(monitor, 'ksef'):
+        return JSONResponse(status_code=503, content={"detail": "KSeF client not available"})
+
+    try:
+        xml_result = monitor.ksef.get_invoice_xml(ksef_number)
+        if not xml_result:
+            return JSONResponse(status_code=404, content={"detail": "XML not found on KSeF"})
+
+        xml_content = xml_result["xml_content"]
+    except Exception as e:
+        logger.error("Failed to fetch XML for %s: %s", ksef_number, e)
+        return JSONResponse(status_code=502, content={"detail": "KSeF API error"})
+
+    # Generate PDF
+    try:
+        from app.invoice_pdf_generator import generate_invoice_pdf
+        environment = monitor.ksef.environment if monitor and hasattr(monitor, 'ksef') else ''
+        tz_name = monitor.config.get_timezone() if monitor and hasattr(monitor.config, 'get_timezone') else ''
+        ksef_gen_url = (monitor.config.get('storage', 'pdf_ksef_generator_url')
+                        if monitor and hasattr(monitor, 'config') else None)
+        buf = generate_invoice_pdf(xml_content, ksef_number=ksef_number,
+                                   environment=environment, timezone=tz_name,
+                                   ksef_generator_url=ksef_gen_url)
+        if buf is None:
+            return JSONResponse(
+                status_code=422,
+                content={"detail": "PDF generation not supported for this invoice schema"},
+            )
+        pdf_bytes = buf.read() if hasattr(buf, 'read') else buf
+        return Response(
+            content=pdf_bytes,
+            media_type="application/pdf",
+            headers={"Content-Disposition": f'attachment; filename="{ksef_number}.pdf"'},
+        )
+    except Exception as e:
+        logger.error("PDF generation failed for %s: %s", ksef_number, e)
+        return JSONResponse(status_code=500, content={"detail": "PDF generation failed"})

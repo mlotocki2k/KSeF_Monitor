@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+    @page {
+        size: A4;
+        margin: 12mm 12mm 18mm 12mm;
+
+        @frame footer_frame {
+            -pdf-frame-content: page-footer-content;
+            left: 12mm;
+            width: 186mm;
+            bottom: 0mm;
+            height: 12mm;
+        }
+    }
+
+    {% if font_paths.regular %}
+    @font-face {
+        font-family: "{{ font_name }}";
+        src: url("{{ font_paths.regular }}");
+    }
+    {% if font_paths.bold %}
+    @font-face {
+        font-family: "{{ font_name }}";
+        font-weight: bold;
+        src: url("{{ font_paths.bold }}");
+    }
+    {% endif %}
+    {% endif %}
+    body {
+        font-family: "{{ font_name }}", "{{ font_name_bold }}", "DejaVuSans", "Arial", "Helvetica", sans-serif;
+        font-size: 9pt;
+        line-height: 1.3;
+        color: #000000;
+        margin: 0;
+        padding: 0;
+    }
+
+    .ksef-branding {
+        font-size: 8pt;
+        font-weight: bold;
+        color: #333333;
+        margin-bottom: 3mm;
+    }
+    .ksef-e { color: red; }
+
+    .invoice-title {
+        font-size: 14pt;
+        font-weight: bold;
+        text-align: center;
+        margin-bottom: 2mm;
+    }
+    .invoice-subtitle {
+        font-size: 11pt;
+        font-weight: bold;
+        text-align: center;
+        margin-bottom: 3mm;
+    }
+
+    /* Info grid */
+    .info-table { width: 100%; margin-bottom: 4mm; border-collapse: collapse; }
+    .info-table td { padding: 1pt 2pt; vertical-align: top; font-size: 8.5pt; }
+    .info-label { font-weight: normal; color: #555555; width: 45mm; }
+    .info-value { font-weight: bold; }
+
+    /* Parties */
+    .parties-table { width: 100%; border-collapse: collapse; margin-bottom: 4mm; }
+    .party-cell {
+        width: 50%;
+        vertical-align: top;
+        border: 0.5pt solid #999999;
+        padding: 3mm;
+    }
+    .party-title { font-size: 7.5pt; font-weight: bold; color: #555555; text-transform: uppercase; letter-spacing: 0.5pt; margin-bottom: 2pt; }
+    .party-name { font-size: 9pt; font-weight: bold; }
+    .party-detail { font-size: 8pt; color: #333333; }
+
+    /* RR specific section */
+    .rr-section { margin-bottom: 4mm; }
+    .rr-section-title {
+        font-size: 8pt;
+        font-weight: bold;
+        color: #555555;
+        text-transform: uppercase;
+        letter-spacing: 0.5pt;
+        border-bottom: 0.5pt solid #cccccc;
+        padding-bottom: 1pt;
+        margin-bottom: 2mm;
+    }
+    .rr-table { width: 100%; border-collapse: collapse; margin-bottom: 4mm; }
+    .rr-table td { padding: 1pt 2pt; vertical-align: top; font-size: 8.5pt; }
+    .rr-label { font-weight: normal; color: #555555; width: 65mm; }
+    .rr-value { font-weight: bold; }
+
+    /* Items table */
+    .items-table { width: 100%; border-collapse: collapse; margin-bottom: 4mm; font-size: 8pt; }
+    .items-table th {
+        background-color: #e8e8e8;
+        font-weight: bold;
+        text-align: center;
+        padding: 2pt 3pt;
+        border: 0.5pt solid #999999;
+    }
+    .items-table td {
+        padding: 2pt 3pt;
+        border: 0.5pt solid #cccccc;
+        vertical-align: top;
+    }
+    .items-table .col-no { width: 6mm; text-align: center; }
+    .items-table .col-name { }
+    .items-table .col-unit { width: 10mm; text-align: center; }
+    .items-table .col-qty { width: 14mm; text-align: right; }
+    .items-table .col-price { width: 22mm; text-align: right; }
+    .items-table .col-net { width: 22mm; text-align: right; }
+    .items-table .col-vat { width: 16mm; text-align: center; }
+
+    /* Totals */
+    .totals-table { width: 100%; border-collapse: collapse; margin-bottom: 4mm; }
+    .totals-table td { padding: 2pt 3pt; font-size: 9pt; }
+    .total-label { text-align: right; color: #333333; }
+    .total-value { font-weight: bold; text-align: right; width: 45mm; }
+    .total-grand { font-size: 11pt; font-weight: bold; border-top: 1pt solid #000000; }
+
+    /* Declaration box */
+    .declaration-box {
+        border: 0.5pt solid #999999;
+        padding: 3mm;
+        margin-bottom: 4mm;
+        font-size: 8pt;
+    }
+    .declaration-title { font-weight: bold; margin-bottom: 2pt; }
+    .declaration-text { line-height: 1.5; }
+
+    /* Page footer */
+    .page-footer {
+        font-size: 6pt;
+        color: #888888;
+        text-align: center;
+    }
+</style>
+</head>
+<body>
+
+<!-- Page footer (repeated on every page via PDF frame) -->
+<div id="page-footer-content">
+    <p class="page-footer">Wygenerowane przez KSeF Monitor | {{ generation_stamp }}</p>
+</div>
+
+<!-- KSeF branding -->
+<p class="ksef-branding">
+    Krajowy System <span class="ksef-e">e</span>-Faktur
+    (KS<span class="ksef-e">e</span>F){% if ksef_number %}: {{ ksef_number }}{% endif %}
+</p>
+
+<!-- Title -->
+<p class="invoice-title">FAKTURA VAT RR</p>
+{% if header.kod_formularza %}
+<p class="invoice-subtitle">{{ header.kod_formularza }}{% if header.wariant %} ({{ header.wariant }}){% endif %}</p>
+{% endif %}
+
+<!-- Invoice header info -->
+<table class="info-table">
+    {% if header.p2 %}
+    <tr>
+        <td class="info-label">Numer faktury:</td>
+        <td class="info-value">{{ header.p2 }}</td>
+    </tr>
+    {% endif %}
+    {% if header.p1 %}
+    <tr>
+        <td class="info-label">Data wystawienia:</td>
+        <td class="info-value">{{ header.p1 }}</td>
+    </tr>
+    {% endif %}
+    {% if header.p1m %}
+    <tr>
+        <td class="info-label">Miejsce wystawienia:</td>
+        <td class="info-value">{{ header.p1m }}</td>
+    </tr>
+    {% endif %}
+    {% if fa_rr.data_odbioru %}
+    <tr>
+        <td class="info-label">Data odbioru produktów:</td>
+        <td class="info-value">{{ fa_rr.data_odbioru }}</td>
+    </tr>
+    {% endif %}
+    {% if header.kod_waluty %}
+    <tr>
+        <td class="info-label">Waluta:</td>
+        <td class="info-value">{{ header.kod_waluty }}</td>
+    </tr>
+    {% endif %}
+</table>
+
+<!-- Parties: skupujący | rolnik -->
+<table class="parties-table">
+    <tr>
+        <td class="party-cell">
+            <p class="party-title">Skupujący (nabywca)</p>
+            <p class="party-name">{{ buyer.nazwa or "—" }}</p>
+            {% if buyer.nip %}<p class="party-detail">NIP: <strong>{{ buyer.nip }}</strong></p>{% endif %}
+            {% if buyer.kod_kraju %}<p class="party-detail">Kraj: {{ buyer.kod_kraju }}</p>{% endif %}
+            {% if buyer.adres_l1 %}
+            <p class="party-detail">
+                {{ buyer.adres_l1 }}{% if buyer.adres_l2 %}, {{ buyer.adres_l2 }}{% endif %}
+            </p>
+            {% endif %}
+        </td>
+        <td class="party-cell">
+            <p class="party-title">Rolnik ryczałtowy (dostawca)</p>
+            <p class="party-name">{{ seller.nazwa or "—" }}</p>
+            {% if seller.nip %}<p class="party-detail">NIP: <strong>{{ seller.nip }}</strong></p>{% endif %}
+            {% if fa_rr.farmer_pesel %}<p class="party-detail">PESEL: <strong>{{ fa_rr.farmer_pesel }}</strong></p>{% endif %}
+            {% if seller.kod_kraju %}<p class="party-detail">Kraj: {{ seller.kod_kraju }}</p>{% endif %}
+            {% if seller.adres_l1 %}
+            <p class="party-detail">
+                {{ seller.adres_l1 }}{% if seller.adres_l2 %}, {{ seller.adres_l2 }}{% endif %}
+            </p>
+            {% endif %}
+        </td>
+    </tr>
+</table>
+
+<!-- Items table -->
+{% if items %}
+<div class="rr-section">
+    <p class="rr-section-title">Pozycje faktury</p>
+    <table class="items-table">
+        <thead>
+            <tr>
+                <th class="col-no">Lp.</th>
+                <th class="col-name">Nazwa (rodzaj) produktu rolnego</th>
+                {% if has_col.p8a %}<th class="col-unit">J.m.</th>{% endif %}
+                {% if has_col.p8b %}<th class="col-qty">Ilość</th>{% endif %}
+                {% if has_col.p9a %}<th class="col-price">Cena jedn. netto</th>{% endif %}
+                {% if has_col.p11 %}<th class="col-net">Wart. netto</th>{% endif %}
+                {% if has_col.p12 %}<th class="col-vat">Stawka VAT RR</th>{% endif %}
+            </tr>
+        </thead>
+        <tbody>
+            {% for item in items %}
+            <tr>
+                <td class="col-no">{{ item.nr or loop.index }}</td>
+                <td class="col-name">{{ item.p7 or "—" }}</td>
+                {% if has_col.p8a %}<td class="col-unit">{{ item.p8a or "" }}</td>{% endif %}
+                {% if has_col.p8b %}<td class="col-qty">{{ item.p8b | fmt_amt if item.p8b else "" }}</td>{% endif %}
+                {% if has_col.p9a %}<td class="col-price">{{ item.p9a | fmt_amt if item.p9a else "" }}</td>{% endif %}
+                {% if has_col.p11 %}<td class="col-net">{{ item.p11 | fmt_amt if item.p11 else "" }}</td>{% endif %}
+                {% if has_col.p12 %}<td class="col-vat">{{ item.p12 | vat_label if item.p12 else "" }}</td>{% endif %}
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
+
+<!-- VAT summary rows (from standard vat_rows) -->
+{% if vat_rows %}
+<div class="rr-section">
+    <p class="rr-section-title">Podliczenie VAT RR</p>
+    <table class="items-table" style="width: 50%;">
+        <thead>
+            <tr>
+                <th>Stawka VAT</th>
+                <th>Wartość netto</th>
+                <th>Kwota VAT</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for row in vat_rows %}
+            <tr>
+                <td style="text-align:center;">{{ row.label }}</td>
+                <td style="text-align:right;">{{ row.net | fmt_amt }}</td>
+                <td style="text-align:right;">{{ row.vat | fmt_amt if row.vat else "—" }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
+
+<!-- RR specific amounts -->
+<div class="rr-section">
+    <table class="totals-table">
+        {% if fa_rr.kwota_vat_rr %}
+        <tr>
+            <td class="total-label">Kwota zryczałtowanego zwrotu podatku (VAT RR):</td>
+            <td class="total-value">{{ fa_rr.kwota_vat_rr | fmt_amt }} {{ header.kod_waluty or "PLN" }}</td>
+        </tr>
+        {% endif %}
+        {% if fa_rr.p15_rr or header.p15 %}
+        <tr class="total-grand">
+            <td class="total-label">Kwota należności ogółem:</td>
+            <td class="total-value">{{ (fa_rr.p15_rr or header.p15) | fmt_amt }} {{ header.kod_waluty or "PLN" }}</td>
+        </tr>
+        {% endif %}
+    </table>
+</div>
+
+<!-- Oświadczenie rolnika -->
+{% if fa_rr.oswiadczenie %}
+<div class="declaration-box">
+    <p class="declaration-title">Oświadczenie rolnika ryczałtowego</p>
+    <p class="declaration-text">{{ fa_rr.oswiadczenie }}</p>
+</div>
+{% else %}
+<div class="declaration-box">
+    <p class="declaration-title">Oświadczenie rolnika ryczałtowego</p>
+    <p class="declaration-text">
+        Oświadczam, że jestem rolnikiem ryczałtowym zwolnionym od podatku od towarów i usług
+        na podstawie art. 43 ust. 1 pkt 3 ustawy o podatku od towarów i usług.
+    </p>
+</div>
+{% endif %}
+
+<!-- Payment -->
+{% if payment and (payment.terminy or payment.rachunki) %}
+<div class="rr-section">
+    <p class="rr-section-title">Płatność</p>
+    <table class="rr-table">
+        {% if payment.forma %}
+        <tr>
+            <td class="rr-label">Forma płatności:</td>
+            <td class="rr-value">{{ payment.forma | payment_method }}</td>
+        </tr>
+        {% endif %}
+        {% for termin in payment.terminy %}
+        {% if termin.termin %}
+        <tr>
+            <td class="rr-label">Termin płatności:</td>
+            <td class="rr-value">{{ termin.termin }}</td>
+        </tr>
+        {% endif %}
+        {% endfor %}
+        {% for r in payment.rachunki %}
+        {% if r.nr_rb %}
+        <tr>
+            <td class="rr-label">Rachunek bankowy:</td>
+            <td class="rr-value">{{ r.nr_rb }}{% if r.nazwa_banku %} ({{ r.nazwa_banku }}){% endif %}</td>
+        </tr>
+        {% endif %}
+        {% endfor %}
+    </table>
+</div>
+{% endif %}
+
+<!-- Footer metadata -->
+{% if header.data_wytworzenia %}
+<p style="font-size: 7pt; color: #888888; margin-top: 3mm;">
+    Data wytworzenia faktury: {{ header.data_wytworzenia }}
+</p>
+{% endif %}
+
+</body>
+</html>

@@ -4,6 +4,16 @@
 {% block content %}
 <div class="space-y-6">
 
+  <!-- KSeF API status widget -->
+  <div class="card px-4 py-3 flex flex-wrap items-center gap-4">
+    <span class="text-xs font-semibold text-gray-500 uppercase tracking-wide">Status KSeF API</span>
+    <div id="ksef-status-badge">
+      <span class="badge-warn text-xs animate-pulse">Sprawdzam…</span>
+    </div>
+    <span id="ksef-status-detail" class="text-xs text-gray-400"></span>
+    <button onclick="refreshKsefStatus()" class="ml-auto btn-secondary text-xs py-0.5 px-2">Odśwież</button>
+  </div>
+
   <!-- Stat cards -->
   <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
     <div class="card p-4">
@@ -178,5 +188,26 @@
 <script>
 // Auto-refresh dashboard every 60 seconds
 setTimeout(() => location.reload(), 60000);
+
+// KSeF API status probe
+async function refreshKsefStatus() {
+  const badge = document.getElementById('ksef-status-badge');
+  const detail = document.getElementById('ksef-status-detail');
+  try {
+    const r = await fetch('/api/v1/monitor/ksef-status');
+    const d = await r.json();
+    if (d.available) {
+      badge.innerHTML = '<span class="badge-ok text-xs">Dostępne</span>';
+      detail.textContent = `${d.environment} • ${d.latency_ms} ms`;
+    } else {
+      badge.innerHTML = '<span class="badge-err text-xs">Niedostępne</span>';
+      detail.textContent = d.error || `HTTP ${d.http_status}`;
+    }
+  } catch (e) {
+    badge.innerHTML = '<span class="badge-err text-xs">Błąd</span>';
+    detail.textContent = e.message;
+  }
+}
+refreshKsefStatus();
 </script>
 {% endblock %}

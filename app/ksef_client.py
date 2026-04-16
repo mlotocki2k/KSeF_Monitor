@@ -836,3 +836,40 @@ class KSeFClient:
             logger.error(f"Unexpected error while getting invoice XML: {e}")
             return None
 
+    def get_api_status(self) -> Dict:
+        """Check KSeF API availability without authentication.
+
+        Uses the public /security/public-key-certificates endpoint as a
+        connectivity probe — it requires no auth and is available in all
+        environments.
+
+        Returns:
+            {"available": bool, "environment": str, "url": str,
+             "latency_ms": int|None, "error": str|None}
+        """
+        url = f"{self.base_url}/{self.API_VERSION}/security/public-key-certificates"
+        import time as _time
+        t0 = _time.monotonic()
+        try:
+            response = self.session.get(url, timeout=10, verify=True)
+            latency_ms = int((_time.monotonic() - t0) * 1000)
+            available = response.status_code < 500
+            return {
+                "available": available,
+                "environment": self.environment,
+                "url": self.base_url,
+                "latency_ms": latency_ms,
+                "http_status": response.status_code,
+                "error": None if available else f"HTTP {response.status_code}",
+            }
+        except Exception as e:
+            latency_ms = int((_time.monotonic() - t0) * 1000)
+            return {
+                "available": False,
+                "environment": self.environment,
+                "url": self.base_url,
+                "latency_ms": latency_ms,
+                "http_status": None,
+                "error": str(e),
+            }
+

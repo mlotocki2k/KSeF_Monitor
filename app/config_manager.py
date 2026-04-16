@@ -426,6 +426,13 @@ class ConfigManager:
                     f"Built-in default template will be used."
                 )
 
+        # Optional CIRFMF ksef-pdf-generator microservice URL.
+        # If set, PDF generation tries this service first before local rendering.
+        # Example: "http://ksef-pdf-generator:8080"
+        pdf_ksef_generator_url = storage.get("pdf_ksef_generator_url")
+        if pdf_ksef_generator_url:
+            logger.info(f"CIRFMF PDF generator URL configured: {pdf_ksef_generator_url}")
+
         logger.info(f"Storage: save_xml={storage['save_xml']}, save_pdf={storage['save_pdf']}, output_dir={storage['output_dir']}")
 
     def _apply_rate_limit_defaults(self, config: Dict[str, Any]):

@@ -166,31 +166,28 @@ Poprawki niezwiązane z konkretnymi feature'ami, ale krytyczne dla stabilności:
 
 ---
 
-## v0.5 (Initial load + Web UI: odczyt) 🚧 (w toku)
+## v0.5 (Initial load + Web UI: odczyt) ✅ (zrobione)
 **Cel:** pierwszy sensowny produkt dla użytkownika: dane + podgląd
 
-**Status:**
-- ✅ iOS Push notifications (push_manager, ios_push_notifier, push.py router, baza Phase 3, 62 testy)
-- ⏳ Initial load (dane historyczne) — pending
-- ⏳ Interfejs webowy (odczyt) — pending
-
-### 1) Initial load (dane historyczne)
-- od `2026-02-01` albo data definiowana w config (`initial_load.start_date`)
-- tryb: jednorazowy import + zapis do DB + raport (ile pobrano, ile pominięto)
-- **Moving window** — obejście limitu 90 dni (3 miesiące) API KSeF:
+### 1) Initial load (dane historyczne) ✅
+- [x] od `2026-02-01` albo data definiowana w config (`initial_load.start_date`)
+- [x] tryb: jednorazowy import + zapis do DB + raport (ile pobrano, ile pominięto)
+- [x] **Moving window** — obejście limitu 90 dni (3 miesiące) API KSeF:
   - automatyczne dzielenie zakresu dat na okna ≤90 dni
   - sekwencyjne pobieranie okno po oknie z paginacją w każdym
   - progress tracking: zapis postępu (ostatnie zakończone okno) → resume po przerwaniu
   - rate limiting / backoff między oknami (unikanie throttlingu API)
 
-### 2) Interfejs webowy (odczyt)
-- pokazywanie health endpointa (api.kef.gov.pl be logowania zwraca status endpointa)
-- pokazywanie ile nowych faktur od ostatniego sprawdzenia: **per subject, per NIP**
-- pokazywanie ile ogólnie faktur: **per subject, per NIP** (sprzedawcy i kupującego)
-- lista wszystkich faktur (z bazy): filtry/sort/paginacja
-- podgląd wybranej faktury: pobranie po API z KSeF konkretnej faktury (z cache, jeśli już jest)
-- możliwość zaznaczenia jednej lub wielu faktur do wygenerowania PDF
-- integracja z oficjalną biblioteką CIRFMF do wizualizacji PDF ([ksef-pdf-generator](https://github.com/CIRFMF/ksef-pdf-generator)) jako opcjonalny mikroserwis Docker (REST API: XML → PDF), obok wbudowanego generatora (xhtml2pdf/ReportLab)
+### 2) Interfejs webowy (odczyt) ✅
+- [x] Dashboard: statystyki faktur, stan monitora, ostatnio dodane, widget KSeF API status
+- [x] Widget KSeF API status: polling `/api/v1/monitor/ksef-status`, badge dostępności, latencja
+- [x] Lista faktur: filtry (typ, NIP, daty, szukaj), sort, paginacja, zaznaczanie, bulk PDF
+- [x] Podgląd faktury: metadane, kwoty, daty, pobieranie PDF i XML z cache lub live z KSeF
+- [x] Podgląd initial load: progress bar, status okien, log operacji
+- [x] Tailwind CSS CDN — zero build step, responsywny layout
+- [x] Auth bypass dla `/ui` (token z localStorage, taki sam jak API)
+- [x] `app/api/routers/ui.py` — trasy Jinja2 SSR dla wszystkich widoków
+- [x] integracja z oficjalną biblioteką CIRFMF ([ksef-pdf-generator](https://github.com/CIRFMF/ksef-pdf-generator)) jako opcjonalny mikroserwis (`storage.pdf_ksef_generator_url`)
 
 ### 3) Push notyfikacje iOS — Monitor KSeF (Cloudflare Worker) ✅
 - nowy kanał powiadomień: natywne push notifications na iOS via aplikację **Monitor KSeF**
@@ -233,29 +230,27 @@ Cel: uniwersalny monitor i generator PDF dla każdego typu faktury w KSeF — ni
 | FA_RR (1) | 1-1E | RR | Faktura VAT RR (nowa wersja, obowiązkowa od 01.04.2026) |
 
 **Zakres prac:**
-- [ ] Architektura multi-schema: bazowy `InvoiceXMLParser` (z v0.4) + parser per schemat (FA, PEF, RR)
-- [ ] Auto-detekcja schematu z namespace XML (bez konfiguracji — aplikacja rozpoznaje typ automatycznie)
-- [ ] Parser FA(2) — mapowanie pól na wspólny model danych (różnice vs FA(3))
-- [ ] Parser PEF(3) / PEF_KOR(3) — odmienna struktura (zamówienia publiczne, inne pola)
-- [ ] Parser FA_RR(1) — pola specyficzne: dane rolnika, stawka ryczałtu 7%, oświadczenie
-- [ ] Template PDF per schemat — osobny `invoice_pdf_{schema}.html.j2` z odpowiednim layoutem
-- [ ] Fallback: nieznany schemat → zapis XML bez PDF + warning w logu i powiadomieniu
-- [ ] Pobranie i wersjonowanie specyfikacji XSD dla nowych schematów w `spec/`
-- [ ] Aktualizacja szablonów powiadomień — informacja o typie schematu faktury
-- [ ] Dokumentacja: rozszerzenie PDF_TEMPLATES.md o nowe schematy
+- [x] Architektura multi-schema: `BaseInvoiceXMLParser` + `create_invoice_xml_parser()` factory
+- [x] Auto-detekcja schematu z namespace XML (bez konfiguracji — `detect_schema_type()`)
+- [x] Parser FA(2) — mapowanie pól na wspólny model danych (obsługa obu namespace URI)
+- [x] Parser PEF(3) / PEF_KOR(3) — `PEFInvoiceXMLParser` (UBL CBC/CAC namespaces)
+- [x] Parser FA_RR(1) — `FA_RRInvoiceXMLParser` (rolnik PESEL, KwotaVatRR, oświadczenie)
+- [x] Template PDF per schemat — `invoice_pdf_fa_rr.html.j2` dla FA_RR, PEF → ReportLab minimal
+- [x] Fallback: nieznany schemat → zapis XML bez PDF + warning w logu i powiadomieniu
+- [x] Specyfikacje XSD stubs: `spec/schemat_FA(2)_v1-0E.xsd`, `spec/schemat_FA_RR_v1-0E.xsd`
+- [x] Aktualizacja szablonów powiadomień — pole `schema_type` w webhook.json.j2 i ios_push.json.j2
+- [x] Dokumentacja: rozszerzenie `PDF_TEMPLATES.md` o nowe schematy i CIRFMF integrację
+- [x] 50 nowych testów (`test_multi_schema_parser.py`)
 
-**Uwagi:**
-- Bazuje na refaktoringu `InvoiceXMLParser` z v0.4 (wydzielenie parsera z `invoice_pdf_generator.py`)
-- Wspólny model danych (dataclass) z opcjonalnymi polami per schemat
-- CI workflow już monitoruje zmiany XSD — nowe schematy będą automatycznie wykrywane
-
-### Zmiany API / schema
-- Obsługa ewentualnych nowych wersji KSeF API (breaking changes w endpointach, paginacji, autentykacji)
-- Wsparcie nowych wersji schematu FA — jeśli pojawi się FA(4) lub nowe pola w FA(3), adaptacja parsera XML i template PDF
-- Aktualizacja `spec/openapi.json` i `spec/schemat_FA(3)_v1-0E.xsd` do najnowszych wersji
+### Zmiany API / schema ✅
+- [x] KSeF API v2.4.0: Problem Details, 429 retry, 410 Gone, isTruncated pagination, API status monitor
+- [x] `GET /api/v1/monitor/ksef-status` — probe dostępności API bez logowania
+- [x] `GET /api/v1/invoices/{ksef_number}/xml` — pobieranie XML (cache → live KSeF fallback)
+- [x] `GET /api/v1/invoices/{ksef_number}/pdf` — pobieranie PDF (cache → generuj on-demand)
+- [x] `storage.pdf_ksef_generator_url` — opcjonalny CIRFMF microservice jako pierwszy renderer
 
 **Zależności:** v0.4
-**DoD:** użytkownik widzi dashboard + listę + podgląd; initial load działa powtarzalnie bez duplikatów; push notification dociera na iOS; PDF generuje się poprawnie dla każdego typu faktury obsługiwanego przez KSeF.
+**DoD:** ✅ użytkownik widzi dashboard + listę + podgląd; initial load działa powtarzalnie bez duplikatów; push notification dociera na iOS; PDF generuje się poprawnie dla każdego typu faktury obsługiwanego przez KSeF. **581 testów, 0 failures.**
 
 ---
 

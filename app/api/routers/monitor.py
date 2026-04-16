@@ -54,6 +54,30 @@ def get_monitor_state(request: Request):
         session.close()
 
 
+@router.get("/monitor/ksef-status")
+def ksef_api_status(request: Request):
+    """Check KSeF API availability (public endpoint, no KSeF auth required).
+
+    Probes /security/public-key-certificates as a connectivity check.
+    Returns available, environment, latency_ms, http_status.
+    """
+    monitor = request.app.state.monitor
+    if not monitor or not hasattr(monitor, 'ksef'):
+        return JSONResponse(
+            status_code=503,
+            content={"available": False, "error": "Monitor not initialised", "environment": "unknown"},
+        )
+    try:
+        status = monitor.ksef.get_api_status()
+        return JSONResponse(content=status)
+    except Exception as e:
+        logger.error("KSeF status probe failed: %s", e)
+        return JSONResponse(
+            status_code=500,
+            content={"available": False, "error": str(e), "environment": "unknown"},
+        )
+
+
 @router.post("/monitor/trigger", response_model=TriggerResponse)
 def trigger_check(request: Request):
     """Trigger an immediate invoice check."""

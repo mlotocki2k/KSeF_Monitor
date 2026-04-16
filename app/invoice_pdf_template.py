@@ -55,6 +55,7 @@ from .pdf_constants import (
 )
 
 TEMPLATE_NAME = "invoice_pdf.html.j2"
+TEMPLATE_NAME_FA_RR = "invoice_pdf_fa_rr.html.j2"
 
 
 def fmt_amt_filter(val) -> str:
@@ -131,7 +132,8 @@ class InvoicePDFTemplateRenderer:
 
     def render(self, invoice_data: Dict, ksef_number: str = '',
                xml_content: str = '', environment: str = '',
-               timezone: str = '', output_path: str = None) -> BytesIO:
+               timezone: str = '', output_path: str = None,
+               schema_type: str = '') -> BytesIO:
         """
         Render invoice data to PDF via HTML template.
 
@@ -142,6 +144,7 @@ class InvoicePDFTemplateRenderer:
             environment: KSeF environment ('test', 'demo', 'prod')
             timezone: IANA timezone name for generation timestamp
             output_path: File path to write PDF (if None, returns BytesIO)
+            schema_type: Schema type string (e.g. 'FA_RR') for template dispatch
 
         Returns:
             BytesIO with PDF content
@@ -152,8 +155,18 @@ class InvoicePDFTemplateRenderer:
         # Prepare template context
         context = self._prepare_context(invoice_data, ksef_number, qr_data_uri, timezone)
 
+        # Add FA_RR specific fields to context
+        if schema_type == 'FA_RR':
+            context['fa_rr'] = invoice_data.get('fa_rr', {})
+
+        # Dispatch to schema-specific template
+        if schema_type == 'FA_RR':
+            template_name = TEMPLATE_NAME_FA_RR
+        else:
+            template_name = TEMPLATE_NAME
+
         # Render Jinja2 template to HTML
-        template = self.env.get_template(TEMPLATE_NAME)
+        template = self.env.get_template(template_name)
         html_content = template.render(**context)
 
         # Convert HTML to PDF using xhtml2pdf

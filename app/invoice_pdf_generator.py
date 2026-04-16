@@ -1108,11 +1108,14 @@ except ImportError:
 def generate_invoice_pdf(xml_content: str, ksef_number: str = '',
                          output_path: str = None, environment: str = '',
                          timezone: str = '',
-                         template_dir: str = None) -> BytesIO:
+                         template_dir: str = None,
+                         ksef_generator_url: str = None) -> BytesIO:
     """Generate PDF from KSeF invoice XML.
 
-    Uses HTML template rendering (xhtml2pdf) when available, with automatic
-    fallback to direct ReportLab generation.
+    Generation chain (first success wins):
+      1. CIRFMF ksef-pdf-generator microservice (if ksef_generator_url set)
+      2. HTML template rendering via xhtml2pdf (FA/FA_RR use schema-specific templates)
+      3. ReportLab fallback generator
 
     Args:
         xml_content: Raw XML string of the KSeF invoice
@@ -1121,6 +1124,7 @@ def generate_invoice_pdf(xml_content: str, ksef_number: str = '',
         environment: KSeF environment ('test', 'demo', 'prod') for QR code URL
         timezone: IANA timezone name for generation timestamp (default: Europe/Warsaw)
         template_dir: Custom PDF template directory (overrides built-in default)
+        ksef_generator_url: Base URL of CIRFMF ksef-pdf-generator microservice
     """
     # Auto-detect schema and dispatch to appropriate parser
     parser = create_invoice_xml_parser(xml_content)
@@ -1135,6 +1139,15 @@ def generate_invoice_pdf(xml_content: str, ksef_number: str = '',
             ksef_number,
         )
         return None
+
+    # Step 1: try CIRFMF ksef-pdf-generator microservice
+    if ksef_generator_url:
+        result = _try_ksef_generator(xml_content, ksef_number, ksef_generator_url)
+        if result is not None:
+            if output_path:
+                with open(output_path, 'wb') as f:
+                    f.write(result.getvalue())
+            return result
 
     invoice_data = parser.parse()
     if ksef_number:
@@ -1151,7 +1164,8 @@ def generate_invoice_pdf(xml_content: str, ksef_number: str = '',
             renderer = InvoicePDFTemplateRenderer(custom_templates_dir=template_dir)
             return renderer.render(invoice_data, ksef_number=ksef_number,
                                    xml_content=xml_content, environment=environment,
-                                   timezone=timezone, output_path=output_path)
+                                   timezone=timezone, output_path=output_path,
+                                   schema_type=schema)
         except Exception as e:
             logger.warning(f"Template PDF rendering failed, falling back to ReportLab: {e}")
 
@@ -1160,6 +1174,57 @@ def generate_invoice_pdf(xml_content: str, ksef_number: str = '',
     return generator.generate(invoice_data, output_path,
                               xml_content=xml_content, environment=environment,
                               timezone=timezone)
+
+
+def _try_ksef_generator(xml_content: str, ksef_number: str,
+                        base_url: str) -> Optional[BytesIO]:
+    """POST invoice XML to CIRFMF ksef-pdf-generator microservice.
+
+    Endpoint: POST {base_url}/api/generate
+    Body: multipart/form-data with field 'xml' (UTF-8 encoded XML)
+    Expected response: application/pdf binary
+
+    Returns BytesIO with PDF on success, None on any failure (caller falls back).
+    """
+    try:
+        import urllib.request
+        import urllib.error
+        import uuid
+
+        url = base_url.rstrip('/') + '/api/generate'
+        boundary = uuid.uuid4().hex
+        xml_bytes = xml_content.encode('utf-8')
+
+        body = (
+            f'--{boundary}\r\n'
+            f'Content-Disposition: form-data; name="xml"; filename="{ksef_number or "invoice"}.xml"\r\n'
+            f'Content-Type: application/xml\r\n\r\n'
+        ).encode('utf-8') + xml_bytes + f'\r\n--{boundary}--\r\n'.encode('utf-8')
+
+        req = urllib.request.Request(
+            url,
+            data=body,
+            headers={
+                'Content-Type': f'multipart/form-data; boundary={boundary}',
+                'Accept': 'application/pdf',
+            },
+            method='POST',
+        )
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            if resp.status == 200:
+                pdf_bytes = resp.read()
+                if pdf_bytes[:4] == b'%PDF':
+                    buf = BytesIO(pdf_bytes)
+                    buf.seek(0)
+                    logger.info("CIRFMF generator returned PDF (%d bytes) for %s",
+                                len(pdf_bytes), ksef_number)
+                    return buf
+                logger.warning("CIRFMF generator returned non-PDF response for %s", ksef_number)
+            else:
+                logger.warning("CIRFMF generator HTTP %s for %s", resp.status, ksef_number)
+    except Exception as e:
+        logger.warning("CIRFMF generator unavailable for %s: %s", ksef_number, e)
+    return None
 
 
 def _generate_pef_pdf(invoice_data: Dict, ksef_number: str,

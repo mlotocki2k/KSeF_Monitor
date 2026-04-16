@@ -63,16 +63,24 @@
 
   <!-- Results -->
   <div class="card">
-    <div class="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
+    <div class="px-4 py-3 border-b border-gray-100 flex items-center justify-between gap-3">
       <h2 class="text-sm font-semibold text-gray-800">
         Faktury
         {% if pagination.total > 0 %}
         <span class="text-gray-400 font-normal ml-1">({{ pagination.total }})</span>
         {% endif %}
       </h2>
-      {% if pagination.pages > 1 %}
-      <span class="text-xs text-gray-400">Strona {{ pagination.page }} / {{ pagination.pages }}</span>
-      {% endif %}
+      <div class="flex items-center gap-2 ml-auto">
+        <button id="btn-bulk-pdf" onclick="bulkPdf()" class="btn-secondary text-xs hidden">
+          <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+          </svg>
+          Pobierz PDF (<span id="sel-count">0</span>)
+        </button>
+        {% if pagination.pages > 1 %}
+        <span class="text-xs text-gray-400">Strona {{ pagination.page }} / {{ pagination.pages }}</span>
+        {% endif %}
+      </div>
     </div>
 
     {% if invoices %}
@@ -80,6 +88,10 @@
       <table class="w-full">
         <thead class="bg-gray-50 border-b border-gray-200">
           <tr>
+            <th class="th w-8">
+              <input type="checkbox" id="chk-all" onchange="toggleAll(this)"
+                class="rounded border-gray-300">
+            </th>
             <th class="th">Nr faktury</th>
             <th class="th">Typ</th>
             <th class="th">Sprzedawca</th>
@@ -91,13 +103,17 @@
         </thead>
         <tbody class="divide-y divide-gray-100">
           {% for inv in invoices %}
-          <tr class="hover:bg-gray-50 cursor-pointer" onclick="location.href='/ui/invoices/{{ inv.ksef_number }}'">
-            <td class="td font-medium text-brand">
+          <tr class="hover:bg-gray-50">
+            <td class="td w-8" onclick="event.stopPropagation()">
+              <input type="checkbox" class="inv-chk rounded border-gray-300"
+                data-ksef="{{ inv.ksef_number }}" onchange="updateBulk()">
+            </td>
+            <td class="td font-medium text-brand cursor-pointer" onclick="location.href='/ui/invoices/{{ inv.ksef_number }}'">
               <a href="/ui/invoices/{{ inv.ksef_number }}" class="hover:underline">
                 {{ inv.invoice_number or "—" }}
               </a>
             </td>
-            <td class="td">
+            <td class="td cursor-pointer" onclick="location.href='/ui/invoices/{{ inv.ksef_number }}'">
               {% if inv.subject_type == "Subject1" %}
                 <span class="badge-s1">Sprz</span>
               {% elif inv.subject_type == "Subject2" %}
@@ -108,17 +124,17 @@
                 <span class="badge-warn">{{ inv.subject_type or "—" }}</span>
               {% endif %}
             </td>
-            <td class="td max-w-[160px] truncate" title="{{ inv.seller_name or '' }}">
+            <td class="td max-w-[160px] truncate cursor-pointer" onclick="location.href='/ui/invoices/{{ inv.ksef_number }}'" title="{{ inv.seller_name or '' }}">
               <div class="truncate">{{ inv.seller_name or "—" }}</div>
               <div class="text-xs text-gray-400 font-mono">{{ inv.seller_nip or "" }}</div>
             </td>
-            <td class="td max-w-[160px] truncate" title="{{ inv.buyer_name or '' }}">
+            <td class="td max-w-[160px] truncate cursor-pointer" onclick="location.href='/ui/invoices/{{ inv.ksef_number }}'" title="{{ inv.buyer_name or '' }}">
               <div class="truncate">{{ inv.buyer_name or "—" }}</div>
               <div class="text-xs text-gray-400 font-mono">{{ inv.buyer_nip or "" }}</div>
             </td>
-            <td class="td text-gray-500">{{ inv.issue_date | fmt_date }}</td>
-            <td class="td text-right font-medium">{{ inv.gross_amount | fmt_amount(inv.currency or "PLN") }}</td>
-            <td class="td text-xs font-mono text-gray-400">{{ inv.ksef_number | ksef_short }}</td>
+            <td class="td text-gray-500 cursor-pointer" onclick="location.href='/ui/invoices/{{ inv.ksef_number }}'">{{ inv.issue_date | fmt_date }}</td>
+            <td class="td text-right font-medium cursor-pointer" onclick="location.href='/ui/invoices/{{ inv.ksef_number }}'">{{ inv.gross_amount | fmt_amount(inv.currency or "PLN") }}</td>
+            <td class="td text-xs font-mono text-gray-400 cursor-pointer" onclick="location.href='/ui/invoices/{{ inv.ksef_number }}'">{{ inv.ksef_number | ksef_short }}</td>
           </tr>
           {% endfor %}
         </tbody>
@@ -153,4 +169,67 @@
   </div>
 
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function toggleAll(chk) {
+  document.querySelectorAll('.inv-chk').forEach(c => c.checked = chk.checked);
+  updateBulk();
+}
+
+function updateBulk() {
+  const checked = document.querySelectorAll('.inv-chk:checked');
+  const btn = document.getElementById('btn-bulk-pdf');
+  const cnt = document.getElementById('sel-count');
+  cnt.textContent = checked.length;
+  btn.classList.toggle('hidden', checked.length === 0);
+  // Sync header checkbox state
+  const all = document.querySelectorAll('.inv-chk');
+  const chkAll = document.getElementById('chk-all');
+  if (chkAll) {
+    chkAll.indeterminate = checked.length > 0 && checked.length < all.length;
+    chkAll.checked = all.length > 0 && checked.length === all.length;
+  }
+}
+
+async function bulkPdf() {
+  const checked = Array.from(document.querySelectorAll('.inv-chk:checked'));
+  if (!checked.length) return;
+  const btn = document.getElementById('btn-bulk-pdf');
+  btn.disabled = true;
+  btn.textContent = 'Generuję…';
+
+  const results = [];
+  for (const chk of checked) {
+    const ksef = chk.dataset.ksef;
+    try {
+      const r = await fetch(`/api/v1/invoices/${ksef}/pdf`);
+      if (!r.ok) { results.push({ ksef, ok: false, status: r.status }); continue; }
+      const blob = await r.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${ksef}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      results.push({ ksef, ok: true });
+    } catch (e) {
+      results.push({ ksef, ok: false, error: e.message });
+    }
+  }
+
+  const failed = results.filter(r => !r.ok);
+  if (failed.length) {
+    alert(`Nie udało się pobrać ${failed.length} z ${results.length} PDF.\n` +
+          failed.map(r => `${r.ksef}: HTTP ${r.status || r.error}`).join('\n'));
+  }
+  btn.disabled = false;
+  btn.innerHTML = `<svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+    <path stroke-linecap="round" stroke-linejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+  </svg> Pobierz PDF (<span id="sel-count">${checked.length}</span>)`;
+}
+</script>
 {% endblock %}
