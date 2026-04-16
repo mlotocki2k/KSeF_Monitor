@@ -479,13 +479,11 @@ class ConfigManager:
             generated_token = secrets.token_urlsafe(48)
             api["auth_token"] = generated_token
             logger.warning("=" * 60)
+            logger.warning("API enabled without auth_token — auto-generated token:")
+            logger.warning("  %s", generated_token)
             logger.warning(
-                "API enabled without auth_token — auto-generated:"
-            )
-            logger.warning("  %s...", generated_token[:8])
-            logger.warning(
-                "Set api.auth_token in config.json or "
-                "API_AUTH_TOKEN env var for a persistent token."
+                "Save this token in config.json (api.auth_token) or "
+                "API_AUTH_TOKEN env var — it changes on every restart!"
             )
             logger.warning("=" * 60)
 
