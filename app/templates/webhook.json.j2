@@ -17,7 +17,8 @@
         "seller_nip": "{{ seller_nip }}",
         "buyer_name": "{{ buyer_name | json_escape }}",
         "buyer_nip": "{{ buyer_nip }}",
-        "subject_type": "{{ subject_type }}"
+        "subject_type": "{{ subject_type }}",
+        "schema_type": "{{ schema_type | default('FA3') }}"
     }
     {% if url %}
     ,"url": "{{ url | json_escape }}"

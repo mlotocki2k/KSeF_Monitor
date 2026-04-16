@@ -15,6 +15,7 @@ from typing import Any, Dict, List, Optional
 from .scheduler import Scheduler
 from .notifiers import NotificationManager
 from .invoice_pdf_generator import generate_invoice_pdf, REPORTLAB_AVAILABLE
+from .invoice_xml_parser import detect_schema_type, SCHEMA_TYPE_UNKNOWN
 from .database import Database, Invoice
 
 # Optional timezone support
@@ -534,6 +535,7 @@ class InvoiceMonitor:
                 20
             ),
             "subject_type": subject_type,
+            "schema_type": self._detect_schema_type_from_metadata(invoice),
             "title": title,
             "priority": self.message_priority,
             "priority_emoji": priority_emojis.get(self.message_priority, "📋"),
@@ -544,7 +546,28 @@ class InvoiceMonitor:
             "url": None,
             "notification_id": str(uuid.uuid4()),
         }
-    
+
+    @staticmethod
+    def _detect_schema_type_from_metadata(invoice: Dict) -> str:
+        """Best-effort schema type detection from KSeF API metadata.
+
+        KSeF API metadata may include a 'type' field ('FA', 'FA_RR', 'PEF').
+        Falls back to 'FA3' (most common) when not available.
+        """
+        from .invoice_xml_parser import (
+            SCHEMA_TYPE_FA3, SCHEMA_TYPE_FA2, SCHEMA_TYPE_FA_RR, SCHEMA_TYPE_PEF,
+        )
+        raw_type = (invoice.get('type') or invoice.get('schemaType') or '').upper()
+        mapping = {
+            'FA': SCHEMA_TYPE_FA3,
+            'FA3': SCHEMA_TYPE_FA3,
+            'FA2': SCHEMA_TYPE_FA2,
+            'FA_RR': SCHEMA_TYPE_FA_RR,
+            'FARR': SCHEMA_TYPE_FA_RR,
+            'PEF': SCHEMA_TYPE_PEF,
+        }
+        return mapping.get(raw_type, SCHEMA_TYPE_FA3)
+
     def _format_date_for_filename(self, date_string: str) -> str:
         """Format date string to YYYYMMDD for filename"""
         try:
@@ -720,6 +743,16 @@ class InvoiceMonitor:
             return
 
         xml_content = xml_result['xml_content']
+
+        # Detect schema type for logging and downstream decisions
+        schema_type = detect_schema_type(xml_content)
+        if schema_type == SCHEMA_TYPE_UNKNOWN:
+            logger.warning(
+                "Unknown XML schema for invoice %s — XML will be saved but PDF skipped",
+                ksef_number,
+            )
+        else:
+            logger.debug("Invoice %s schema: %s", ksef_number, schema_type)
 
         # Save XML
         if self.save_xml:
