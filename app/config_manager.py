@@ -161,6 +161,9 @@ class ConfigManager:
         # Set API defaults
         self._apply_api_defaults(config)
 
+        # Set initial load defaults
+        self._apply_initial_load_defaults(config)
+
     def _validate_schedule(self, schedule: Dict[str, Any]):
         """
         Validate schedule configuration based on mode
@@ -483,6 +486,44 @@ class ConfigManager:
             logger.info(
                 f"API: enabled on {api['bind_address']}:{api['port']}, "
                 f"auth={'enabled' if api['auth_token'] else 'DISABLED (open access)'}"
+            )
+
+    def _apply_initial_load_defaults(self, config: Dict[str, Any]):
+        """Apply defaults for initial_load section."""
+        il = config.setdefault("initial_load", {})
+        il.setdefault("enabled", False)
+        il.setdefault("start_date", "")
+        il.setdefault("subject_types", ["Subject1", "Subject2"])
+        il.setdefault("date_type", "Invoicing")
+
+        if il["enabled"]:
+            if not il["start_date"]:
+                logger.warning("initial_load.enabled=true but start_date not set — initial load disabled")
+                il["enabled"] = False
+            else:
+                # Validate date format
+                from datetime import datetime as _dt
+                try:
+                    _dt.fromisoformat(il["start_date"])
+                except ValueError:
+                    logger.warning(
+                        "initial_load.start_date '%s' is not a valid ISO date — initial load disabled",
+                        il["start_date"],
+                    )
+                    il["enabled"] = False
+
+            valid_types = {"Subject1", "Subject2", "Subject3", "SubjectAuthorized"}
+            invalid = set(il["subject_types"]) - valid_types
+            if invalid:
+                logger.warning(
+                    "initial_load.subject_types contains unknown values: %s — will be ignored",
+                    invalid,
+                )
+
+        if il["enabled"]:
+            logger.info(
+                "Initial load: enabled, start_date=%s, subject_types=%s, date_type=%s",
+                il["start_date"], il["subject_types"], il["date_type"],
             )
 
     _SENTINEL = object()

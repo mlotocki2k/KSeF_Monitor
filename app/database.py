@@ -5,10 +5,12 @@ SQLite + WAL mode + SQLAlchemy 2.0 ORM.
 Phase 1 (v0.3): invoices, monitor_state, notification_log tables.
 Phase 2 (v0.4): api_request_log, invoice_artifacts tables.
 Phase 3 (v0.5): push_instances table.
+Phase 4 (v0.5): initial_load_jobs table.
 """
 
 import json
 import logging
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -319,6 +321,60 @@ class PushInstance(Base):
 
     def __repr__(self) -> str:
         return f"<PushInstance id={self.instance_id!r} label={self.label!r}>"
+
+
+class InitialLoadJob(Base):
+    """Tracks historical invoice import jobs using the /invoices/exports async API.
+
+    Each job covers a date range split into ≤90-day windows per subject_type.
+    Supports resume: current_window_from/to + current_subject_type allow restart
+    after interruption without re-importing already-processed windows.
+
+    Status flow: pending → running → completed | failed | cancelled
+    """
+
+    __tablename__ = "initial_load_jobs"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+
+    # Job config (immutable after creation)
+    status: Mapped[str] = mapped_column(String, nullable=False, default="pending")
+    subject_types: Mapped[str] = mapped_column(Text, nullable=False)  # JSON array
+    date_type: Mapped[str] = mapped_column(String, nullable=False, default="Invoicing")
+    start_date: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    end_date: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+
+    # Resume state (updated as windows are processed)
+    current_window_from: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    current_window_to: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    current_subject_type: Mapped[Optional[str]] = mapped_column(String)
+
+    # Progress counters
+    windows_total: Mapped[int] = mapped_column(Integer, default=0)
+    windows_completed: Mapped[int] = mapped_column(Integer, default=0)
+    invoices_imported: Mapped[int] = mapped_column(Integer, default=0)
+    invoices_skipped: Mapped[int] = mapped_column(Integer, default=0)
+
+    # Error tracking
+    error_message: Mapped[Optional[str]] = mapped_column(Text)
+
+    # Timestamps
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(timezone.utc)
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+    __table_args__ = (
+        Index("ix_initial_load_jobs_status", "status"),
+        Index("ix_initial_load_jobs_created", created_at.desc()),
+    )
+
+    def __repr__(self) -> str:
+        return f"<InitialLoadJob id={self.id!r} status={self.status!r}>"
 
 
 # ── Engine & Session ────────────────────────────────────────────────────────
@@ -708,6 +764,101 @@ class Database:
         session.delete(instance)
         session.flush()
         return True
+
+    # ── Initial Load Jobs ────────────────────────────────────────────────
+
+    def create_initial_load_job(
+        self,
+        session: Session,
+        subject_types: List[str],
+        start_date: datetime,
+        end_date: datetime,
+        date_type: str = "Invoicing",
+        windows_total: int = 0,
+    ) -> "InitialLoadJob":
+        """Create a new initial load job in pending state."""
+        job = InitialLoadJob(
+            subject_types=json.dumps(subject_types),
+            start_date=start_date,
+            end_date=end_date,
+            date_type=date_type,
+            windows_total=windows_total,
+        )
+        session.add(job)
+        session.flush()
+        logger.info("Created initial load job %s (%d windows)", job.id, windows_total)
+        return job
+
+    def get_initial_load_job(self, session: Session, job_id: str) -> Optional["InitialLoadJob"]:
+        """Get job by ID."""
+        return session.query(InitialLoadJob).filter_by(id=job_id).first()
+
+    def get_active_initial_load_job(self, session: Session) -> Optional["InitialLoadJob"]:
+        """Get the currently running or pending job (at most one at a time)."""
+        return (
+            session.query(InitialLoadJob)
+            .filter(InitialLoadJob.status.in_(["pending", "running"]))
+            .order_by(InitialLoadJob.created_at.desc())
+            .first()
+        )
+
+    def get_latest_initial_load_job(self, session: Session) -> Optional["InitialLoadJob"]:
+        """Get most recently created job regardless of status."""
+        return (
+            session.query(InitialLoadJob)
+            .order_by(InitialLoadJob.created_at.desc())
+            .first()
+        )
+
+    def update_initial_load_progress(
+        self,
+        session: Session,
+        job_id: str,
+        status: Optional[str] = None,
+        current_window_from: Optional[datetime] = None,
+        current_window_to: Optional[datetime] = None,
+        current_subject_type: Optional[str] = None,
+        windows_completed_delta: int = 0,
+        invoices_imported_delta: int = 0,
+        invoices_skipped_delta: int = 0,
+        error_message: Optional[str] = None,
+    ) -> Optional["InitialLoadJob"]:
+        """Update job progress after processing a window."""
+        job = self.get_initial_load_job(session, job_id)
+        if not job:
+            return None
+
+        if status is not None:
+            job.status = status
+        if current_window_from is not None:
+            job.current_window_from = current_window_from
+        if current_window_to is not None:
+            job.current_window_to = current_window_to
+        if current_subject_type is not None:
+            job.current_subject_type = current_subject_type
+        if windows_completed_delta:
+            job.windows_completed = (job.windows_completed or 0) + windows_completed_delta
+        if invoices_imported_delta:
+            job.invoices_imported = (job.invoices_imported or 0) + invoices_imported_delta
+        if invoices_skipped_delta:
+            job.invoices_skipped = (job.invoices_skipped or 0) + invoices_skipped_delta
+        if error_message is not None:
+            job.error_message = str(error_message)[:1000]
+
+        job.updated_at = datetime.now(timezone.utc)
+        session.flush()
+        return job
+
+    def cancel_initial_load_job(self, session: Session, job_id: str) -> Optional["InitialLoadJob"]:
+        """Cancel a pending or running job."""
+        job = self.get_initial_load_job(session, job_id)
+        if not job or job.status not in ("pending", "running"):
+            return None
+        job.status = "cancelled"
+        job.updated_at = datetime.now(timezone.utc)
+        session.flush()
+        logger.info("Cancelled initial load job %s", job_id)
+        return job
 
     # ── State Migration ─────────────────────────────────────────────────
 
