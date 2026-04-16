@@ -179,7 +179,7 @@ async function triggerCheck() {
   if (btn) { btn.disabled = true; btn.textContent = '⏳ Sprawdzam…'; }
   try {
     const r = await apiCall('POST', '/api/v1/monitor/trigger');
-    flash(r.message || 'Sprawdzenie wyzwolone.', 'ok');
+    flash(r.message || 'Sprawdzenie wyzwolone.', r.triggered ? 'ok' : 'err');
   } catch (e) {
     flash(`Błąd: ${e.message}`, 'err');
   } finally {
