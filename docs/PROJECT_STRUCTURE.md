@@ -1,6 +1,6 @@
 # Project Structure
 
-This document explains the organization of the KSeF Monitor v0.4 application.
+This document explains the organization of the KSeF Monitor v0.5 application.
 
 ## Directory Layout
 
@@ -16,6 +16,7 @@ KSeF_Monitor/
 │   ├── secrets_manager.py      # Secrets from env / Docker secrets / config
 │   ├── ksef_client.py          # KSeF API v2.2/v2.3 client (auth, metadata, XML, rate limiter)
 │   ├── invoice_monitor.py      # Main monitoring logic + template context
+│   ├── push_manager.py         # PushManager: credentials, rejestracja, QR, wysyłka (v0.5)
 │   ├── rate_limiter.py         # Sliding window rate limiter (3 windows) (v0.4)
 │   ├── database.py             # SQLite + SQLAlchemy 2.0 ORM (invoices, state, logs, artifacts)
 │   ├── invoice_xml_parser.py   # XML parser for FA(3) (extracted from pdf_generator) (v0.4)
@@ -32,7 +33,8 @@ KSeF_Monitor/
 │   │   ├── email.html.j2      # HTML (Email)
 │   │   ├── slack.json.j2      # Block Kit JSON (Slack)
 │   │   ├── discord.json.j2    # Embed JSON (Discord)
-│   │   └── webhook.json.j2    # Payload JSON (Webhook)
+│   │   ├── webhook.json.j2    # Payload JSON (Webhook)
+│   │   └── ios_push.json.j2   # Push payload (iOS Push, v0.5)
 │   ├── api/                    # REST API (FastAPI, v0.4)
 │   │   ├── __init__.py         # App factory (auth, rate limiting, security headers, CORS)
 │   │   ├── server.py           # Uvicorn in daemon thread
@@ -41,7 +43,8 @@ KSeF_Monitor/
 │   │       ├── invoices.py     # GET /api/v1/invoices (pagination, filters, sort)
 │   │       ├── stats.py        # GET /api/v1/stats/summary, /stats/api
 │   │       ├── monitor.py      # GET /health, /state; POST /trigger
-│   │       └── artifacts.py    # GET /api/v1/artifacts/pending
+│   │       ├── artifacts.py    # GET /api/v1/artifacts/pending
+│   │       └── push.py         # GET /push/setup; POST /push/regenerate, /push/reset (v0.5)
 │   └── notifiers/              # Multi-channel notification system
 │       ├── __init__.py
 │       ├── base_notifier.py    # Abstract base + render_and_send()
@@ -50,7 +53,8 @@ KSeF_Monitor/
 │       ├── discord_notifier.py      # Discord webhook with rich embeds
 │       ├── slack_notifier.py        # Slack webhook with Block Kit
 │       ├── email_notifier.py        # SMTP email with HTML
-│       └── webhook_notifier.py      # Generic HTTP endpoint
+│       ├── webhook_notifier.py      # Generic HTTP endpoint
+│       └── ios_push_notifier.py     # Native iOS push via Monitor KSeF (v0.5)
 │
 ├── docs/                        # Documentation
 │   ├── INDEX.md                # Documentation index
@@ -102,11 +106,12 @@ KSeF_Monitor/
 │   ├── script.py.mako          # Migration template
 │   └── versions/               # Migration scripts
 │       ├── a6a08e11ea74_phase1_*.py  # Phase 1: invoices + state + notifications
-│       └── phase2_*.py              # Phase 2: api_request_log + invoice_artifacts (v0.4)
+│       ├── phase2_*.py              # Phase 2: api_request_log + invoice_artifacts (v0.4)
+│       └── c8d3e4f56789_phase3_push_instances.py  # Phase 3: push_instances (v0.5)
 │
 ├── alembic.ini                  # Alembic configuration
 │
-├── tests/                       # Unit tests (pytest, 416 tests)
+├── tests/                       # Unit tests (pytest, 485 tests)
 │   ├── conftest.py             # Shared test fixtures
 │   ├── test_config_manager.py  # Configuration validation tests
 │   ├── test_invoice_monitor.py # Invoice monitor tests
@@ -118,7 +123,9 @@ KSeF_Monitor/
 │   ├── test_api_invoices.py    # API invoice endpoints tests (v0.4)
 │   ├── test_api_stats.py       # API stats endpoints tests (v0.4)
 │   ├── test_api_monitor.py     # API monitor endpoints tests (v0.4)
-│   └── test_security_controls.py # Security audit controls tests (v0.4)
+│   ├── test_security_controls.py # Security audit controls tests (v0.4)
+│   ├── test_ios_push_notifier.py # iOS Push notifier tests (v0.5)
+│   └── test_push_manager.py    # PushManager tests (v0.5)
 │
 ├── db_admin.py                  # Database administration CLI tool
 ├── CONTRIBUTING.md              # How to contribute
@@ -187,6 +194,17 @@ Implements the full KSeF authentication flow:
 - `_handle_401_refresh()` - Token expiry recovery with detailed logging
 
 Integrated with `RateLimiter` — `acquire()` called before every HTTP request (v0.4).
+
+### `app/push_manager.py` (v0.5)
+**iOS Push credential management and notification dispatch**
+
+- `PushManager` — manages instance credentials and registration with Cloudflare Worker
+- Credential generation: `instance_id` (UUID), `instance_key` (32B random), `pairing_code` (8 hex chars)
+- `register_with_worker()` — registers instance with Worker via `POST /instances/register` (SHA-256 hashes)
+- `generate_qr_code()` — generates ASCII QR code for `MKSEF:{pairing_code}` payload (logged at startup)
+- `send_push()` — sends push notification payload to Worker (`X-Instance-Id` + `X-Instance-Key` auth)
+- Persists credentials in `push_instances` DB table (Phase 3 Alembic migration)
+- Auto-generates credentials on first run if not present in DB or config
 
 ### `app/rate_limiter.py` (v0.4)
 **Sliding window rate limiter with 3 time windows**
@@ -299,6 +317,7 @@ See [PDF_TEMPLATES.md](PDF_TEMPLATES.md) for template customization guide.
 - `routers/stats.py` — `GET /api/v1/stats/summary`, `GET /api/v1/stats/api`
 - `routers/monitor.py` — `GET /api/v1/monitor/health`, `GET /api/v1/monitor/state`, `POST /api/v1/monitor/trigger`
 - `routers/artifacts.py` — `GET /api/v1/artifacts/pending`
+- `routers/push.py` — `GET /api/v1/push/setup`, `POST /api/v1/push/regenerate`, `POST /api/v1/push/reset` (v0.5)
 
 **Security controls (audit v0.4):** auth token auto-generation (F-01), configurable docs disable (F-02), rate limiting via slowapi (F-07), CORS wildcard rejection when auth enabled (F-10).
 
@@ -338,6 +357,7 @@ Each notifier overrides `_send_rendered()` for channel-specific formatting:
 | `slack_notifier.py` | Slack | Block Kit JSON with username/icon |
 | `email_notifier.py` | Email | HTML body + plain text fallback |
 | `webhook_notifier.py` | Webhook | JSON payload via configured HTTP method |
+| `ios_push_notifier.py` | iOS Push | Push payload via Cloudflare Worker to APNs (v0.5) |
 
 ## Data Flow
 
