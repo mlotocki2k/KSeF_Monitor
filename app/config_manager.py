@@ -478,12 +478,21 @@ class ConfigManager:
         if api["enabled"] and not api["auth_token"]:
             generated_token = secrets.token_urlsafe(48)
             api["auth_token"] = generated_token
+            # Write full token to file so user can retrieve it without it appearing in logs
+            token_file = Path("/data/api_token.txt")
+            try:
+                token_file.write_text(generated_token + "\n", encoding="utf-8")
+                token_file.chmod(0o600)
+                token_file_msg = f"Full token saved to: {token_file}"
+            except Exception:
+                token_file_msg = "Could not save token to file — set api.auth_token in config.json"
             logger.warning("=" * 60)
-            logger.warning("API enabled without auth_token — auto-generated token:")
-            logger.warning("  %s", generated_token)
+            logger.warning("API enabled without auth_token — auto-generated:")
+            logger.warning("  %s... (first 8 chars)", generated_token[:8])
+            logger.warning(token_file_msg)
             logger.warning(
-                "Save this token in config.json (api.auth_token) or "
-                "API_AUTH_TOKEN env var — it changes on every restart!"
+                "Set api.auth_token in config.json or "
+                "API_AUTH_TOKEN env var for a persistent token."
             )
             logger.warning("=" * 60)
 
