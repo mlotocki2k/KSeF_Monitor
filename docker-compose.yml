@@ -13,6 +13,9 @@ services:
     ports:
       # Prometheus metrics endpoint
       - "127.0.0.1:8000:8000"
+      # REST API + Web UI (/ui, /docs, /api/v1/*)
+      # Change 127.0.0.1 to 0.0.0.0 to expose beyond localhost (e.g. behind reverse proxy)
+      - "127.0.0.1:8080:8080"
 
     volumes:
       # Configuration file - REQUIRED
