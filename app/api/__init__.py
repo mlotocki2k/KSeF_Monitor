@@ -71,19 +71,18 @@ def create_app(
 
         @app.middleware("http")
         async def verify_auth(request: Request, call_next):
-            # Allow docs, health, UI routes, and all endpoints used by the Web UI
-            # without auth. Port is bound to 127.0.0.1 — network access is the
-            # real security boundary. Auth applies only to external API consumers.
+            # Allow docs, health, UI routes, read-only status endpoints, and
+            # invoice file downloads without auth.
+            # Port is bound to 127.0.0.1 — network access is the security boundary.
+            # Mutating endpoints (trigger, initial-load, push) still require auth.
             path = request.url.path
-            _UI_PREFIXES = (
-                "/ui",
+            _EXEMPT_EXACT = {
                 "/docs", "/redoc", "/openapi.json",
-                "/api/v1/monitor/",   # ksef-status, health, trigger
-                "/api/v1/push/",      # setup, regenerate, reset
-                "/api/v1/initial-load/",  # start, cancel, status
-            )
-            _UI_EXACT = {"/api/v1/monitor/health"}
-            if path in _UI_EXACT or any(path.startswith(p) for p in _UI_PREFIXES) or \
+                "/api/v1/monitor/health",
+                "/api/v1/monitor/ksef-status",  # read-only status widget in Web UI
+            }
+            if path in _EXEMPT_EXACT or \
+               path.startswith("/ui") or \
                (path.startswith("/api/v1/invoices/") and
                 (path.endswith("/pdf") or path.endswith("/xml"))):
                 return await call_next(request)
