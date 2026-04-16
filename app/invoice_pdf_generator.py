@@ -1186,42 +1186,35 @@ def _try_ksef_generator(xml_content: str, ksef_number: str,
 
     Returns BytesIO with PDF on success, None on any failure (caller falls back).
     """
+    # Validate scheme — only http/https allowed (reject file://, ftp://, etc.)
+    if not base_url.startswith(('http://', 'https://')):
+        logger.warning("CIRFMF generator URL has unsupported scheme, skipping: %s", base_url)
+        return None
+
     try:
-        import urllib.request
-        import urllib.error
-        import uuid
+        import requests as _requests
 
         url = base_url.rstrip('/') + '/api/generate'
-        boundary = uuid.uuid4().hex
+        filename = f"{ksef_number or 'invoice'}.xml"
         xml_bytes = xml_content.encode('utf-8')
 
-        body = (
-            f'--{boundary}\r\n'
-            f'Content-Disposition: form-data; name="xml"; filename="{ksef_number or "invoice"}.xml"\r\n'
-            f'Content-Type: application/xml\r\n\r\n'
-        ).encode('utf-8') + xml_bytes + f'\r\n--{boundary}--\r\n'.encode('utf-8')
-
-        req = urllib.request.Request(
+        resp = _requests.post(
             url,
-            data=body,
-            headers={
-                'Content-Type': f'multipart/form-data; boundary={boundary}',
-                'Accept': 'application/pdf',
-            },
-            method='POST',
+            files={'xml': (filename, xml_bytes, 'application/xml')},
+            headers={'Accept': 'application/pdf'},
+            timeout=30,
         )
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            if resp.status == 200:
-                pdf_bytes = resp.read()
-                if pdf_bytes[:4] == b'%PDF':
-                    buf = BytesIO(pdf_bytes)
-                    buf.seek(0)
-                    logger.info("CIRFMF generator returned PDF (%d bytes) for %s",
-                                len(pdf_bytes), ksef_number)
-                    return buf
-                logger.warning("CIRFMF generator returned non-PDF response for %s", ksef_number)
-            else:
-                logger.warning("CIRFMF generator HTTP %s for %s", resp.status, ksef_number)
+        if resp.status_code == 200:
+            pdf_bytes = resp.content
+            if pdf_bytes[:4] == b'%PDF':
+                buf = BytesIO(pdf_bytes)
+                buf.seek(0)
+                logger.info("CIRFMF generator returned PDF (%d bytes) for %s",
+                            len(pdf_bytes), ksef_number)
+                return buf
+            logger.warning("CIRFMF generator returned non-PDF response for %s", ksef_number)
+        else:
+            logger.warning("CIRFMF generator HTTP %s for %s", resp.status_code, ksef_number)
     except Exception as e:
         logger.warning("CIRFMF generator unavailable for %s: %s", ksef_number, e)
     return None
