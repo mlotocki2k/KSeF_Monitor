@@ -162,6 +162,10 @@ async function apiCall(method, url, body = null) {
   const opts = { method, headers };
   if (body) opts.body = JSON.stringify(body);
   const resp = await fetch(url, opts);
+  if (resp.status === 401 || resp.status === 403) {
+    showTokenModal();
+    throw new Error('Wymagana autoryzacja — wpisz token i spróbuj ponownie.');
+  }
   if (!resp.ok) {
     const err = await resp.json().catch(() => ({ detail: resp.statusText }));
     throw new Error(err.detail || resp.statusText);
@@ -193,6 +197,11 @@ async function downloadFile(url, filename) {
   if (token) headers['Authorization'] = `Bearer ${token}`;
   try {
     const r = await fetch(url, { headers });
+    if (r.status === 401 || r.status === 403) {
+      showTokenModal();
+      flash('Wpisz token autoryzacji i pobierz ponownie.', 'warn');
+      return;
+    }
     if (!r.ok) {
       const err = await r.json().catch(() => ({ detail: r.statusText }));
       throw new Error(err.detail || r.statusText);

@@ -71,10 +71,13 @@ def create_app(
 
         @app.middleware("http")
         async def verify_auth(request: Request, call_next):
-            # Allow docs, health, and UI without auth (port-bound access assumed)
-            if request.url.path in ("/docs", "/redoc", "/openapi.json",
-                                     "/api/v1/monitor/health") or \
-               request.url.path.startswith("/ui"):
+            # Allow docs, health, UI, and invoice file downloads without auth
+            # (port is bound to 127.0.0.1 — network access is the security boundary)
+            path = request.url.path
+            if path in ("/docs", "/redoc", "/openapi.json", "/api/v1/monitor/health") or \
+               path.startswith("/ui") or \
+               (path.startswith("/api/v1/invoices/") and
+                (path.endswith("/pdf") or path.endswith("/xml"))):
                 return await call_next(request)
 
             auth_header = request.headers.get("Authorization", "")
