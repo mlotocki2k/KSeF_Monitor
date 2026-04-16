@@ -129,7 +129,7 @@ def ui_dashboard(request: Request):
 
     if not db:
         ctx["error"] = "Baza danych niedostępna."
-        return templates.TemplateResponse("dashboard.html", ctx)
+        return templates.TemplateResponse(request, "dashboard.html", ctx)
 
     from app.database import Invoice, MonitorState
 
@@ -167,7 +167,7 @@ def ui_dashboard(request: Request):
         "recent_invoices": recent,
         "il_status": il_status,
     })
-    return templates.TemplateResponse("dashboard.html", ctx)
+    return templates.TemplateResponse(request, "dashboard.html", ctx)
 
 
 # ── Invoice list ──────────────────────────────────────────────────────────────
@@ -208,7 +208,7 @@ def ui_invoices(
         ctx["error"] = "Baza danych niedostępna."
         ctx["invoices"] = []
         ctx["pagination"] = {"page": 1, "pages": 0, "total": 0, "per_page": per_page}
-        return templates.TemplateResponse("invoices.html", ctx)
+        return templates.TemplateResponse(request, "invoices.html", ctx)
 
     # Validate NIP
     errors = []
@@ -264,7 +264,7 @@ def ui_invoices(
         "invoices": items,
         "pagination": {"page": page, "pages": pages, "total": total, "per_page": per_page},
     })
-    return templates.TemplateResponse("invoices.html", ctx)
+    return templates.TemplateResponse(request, "invoices.html", ctx)
 
 
 # ── Invoice detail ────────────────────────────────────────────────────────────
@@ -278,7 +278,7 @@ def ui_invoice_detail(request: Request, ksef_number: str):
 
     if not db:
         ctx["error"] = "Baza danych niedostępna."
-        return templates.TemplateResponse("invoice_detail.html", ctx)
+        return templates.TemplateResponse(request, "invoice_detail.html", ctx)
 
     from app.database import Invoice
 
@@ -287,7 +287,7 @@ def ui_invoice_detail(request: Request, ksef_number: str):
         invoice = session.query(Invoice).filter_by(ksef_number=ksef_number).first()
         if not invoice:
             ctx["error"] = f"Faktura {ksef_number!r} nie znaleziona."
-            return templates.TemplateResponse("invoice_detail.html", ctx, status_code=404)
+            return templates.TemplateResponse(request, "invoice_detail.html", ctx, status_code=404)
 
         # Parse raw_metadata if available
         raw = None
@@ -302,7 +302,7 @@ def ui_invoice_detail(request: Request, ksef_number: str):
     finally:
         session.close()
 
-    return templates.TemplateResponse("invoice_detail.html", ctx)
+    return templates.TemplateResponse(request, "invoice_detail.html", ctx)
 
 
 # ── Initial Load panel ────────────────────────────────────────────────────────
@@ -328,4 +328,4 @@ def ui_initial_load(request: Request):
 
     ctx["cfg_start_date"] = cfg_start_date
     ctx["cfg_subject_types"] = cfg_subject_types
-    return templates.TemplateResponse("initial_load.html", ctx)
+    return templates.TemplateResponse(request, "initial_load.html", ctx)
