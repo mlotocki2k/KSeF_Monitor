@@ -108,12 +108,13 @@
     "port": 8080,
     "bind_address": "127.0.0.1",
     "auth_token": "",
+    "ui_enabled": true,
     "rate_limit": {
       "enabled": true,
       "default": "60/minute",
       "trigger": "2/minute"
     },
-    "description": "REST API for web UI and integrations. Disabled by default. If auth_token is empty when enabled, a random token is auto-generated and logged at startup. rate_limit: slowapi rate limiting (60 req/min default, 2/min for trigger)."
+    "description": "REST API for web UI and integrations. Disabled by default. If auth_token is empty when enabled, a random token is auto-generated and logged at startup. ui_enabled: enable server-rendered Web UI at /ui (default: true). rate_limit: slowapi rate limiting (60 req/min default, 2/min for trigger)."
   },
   "initial_load": {
     "enabled": false,

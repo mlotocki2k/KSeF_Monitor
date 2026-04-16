@@ -16,7 +16,7 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 from slowapi.util import get_remote_address
 
-from .routers import invoices, stats, monitor, artifacts, push, initial_load
+from .routers import invoices, stats, monitor, artifacts, push, initial_load, ui
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +31,7 @@ def create_app(
     prometheus_metrics=None,
     push_manager=None,
     initial_load_manager=None,
+    ui_enabled: bool = True,
 ) -> FastAPI:
     """Create and configure FastAPI application.
 
@@ -70,9 +71,10 @@ def create_app(
 
         @app.middleware("http")
         async def verify_auth(request: Request, call_next):
-            # Allow docs and health without auth
+            # Allow docs, health, and UI without auth (port-bound access assumed)
             if request.url.path in ("/docs", "/redoc", "/openapi.json",
-                                     "/api/v1/monitor/health"):
+                                     "/api/v1/monitor/health") or \
+               request.url.path.startswith("/ui"):
                 return await call_next(request)
 
             auth_header = request.headers.get("Authorization", "")
@@ -150,6 +152,9 @@ def create_app(
     app.include_router(artifacts.router, prefix="/api/v1")
     app.include_router(push.router, prefix="/api/v1")
     app.include_router(initial_load.router, prefix="/api/v1")
+    if ui_enabled:
+        app.include_router(ui.router)
+        logger.info("Web UI enabled at /ui")
 
     # Generic error handler — no stack traces in production
     @app.exception_handler(Exception)

@@ -1,0 +1,156 @@
+{% extends "base.html" %}
+{% block title %}Faktury — Monitor KSeF{% endblock %}
+
+{% block content %}
+<div class="space-y-4">
+
+  <!-- Filter bar -->
+  <div class="card p-4">
+    <form method="get" action="/ui/invoices" class="space-y-3">
+      <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+        <div>
+          <label class="label">Typ</label>
+          <select name="subject_type" class="input">
+            <option value="">Wszystkie</option>
+            <option value="Subject1" {% if filters.subject_type == "Subject1" %}selected{% endif %}>Sprzedażowe</option>
+            <option value="Subject2" {% if filters.subject_type == "Subject2" %}selected{% endif %}>Zakupowe</option>
+            <option value="Subject3" {% if filters.subject_type == "Subject3" %}selected{% endif %}>Inne</option>
+          </select>
+        </div>
+        <div>
+          <label class="label">NIP sprzedawcy</label>
+          <input type="text" name="seller_nip" value="{{ filters.seller_nip }}"
+            class="input" placeholder="10 cyfr" maxlength="10">
+        </div>
+        <div>
+          <label class="label">NIP nabywcy</label>
+          <input type="text" name="buyer_nip" value="{{ filters.buyer_nip }}"
+            class="input" placeholder="10 cyfr" maxlength="10">
+        </div>
+        <div>
+          <label class="label">Data wystawienia od</label>
+          <input type="date" name="issue_date_from" value="{{ filters.issue_date_from }}" class="input">
+        </div>
+        <div>
+          <label class="label">Data wystawienia do</label>
+          <input type="date" name="issue_date_to" value="{{ filters.issue_date_to }}" class="input">
+        </div>
+        <div>
+          <label class="label">Szukaj</label>
+          <input type="text" name="search" value="{{ filters.search }}"
+            class="input" placeholder="Nr faktury, nazwa…" maxlength="100">
+        </div>
+      </div>
+      <div class="flex items-center gap-2">
+        <button type="submit" class="btn-primary">Filtruj</button>
+        <a href="/ui/invoices" class="btn-secondary">Wyczyść</a>
+        <div class="ml-auto flex items-center gap-2">
+          <label class="label mb-0 whitespace-nowrap">Sortuj:</label>
+          <select name="sort_by" class="input w-auto">
+            <option value="created_at" {% if filters.sort_by == "created_at" %}selected{% endif %}>Data dodania</option>
+            <option value="issue_date" {% if filters.sort_by == "issue_date" %}selected{% endif %}>Data wystawienia</option>
+            <option value="gross_amount" {% if filters.sort_by == "gross_amount" %}selected{% endif %}>Kwota</option>
+            <option value="ksef_number" {% if filters.sort_by == "ksef_number" %}selected{% endif %}>Nr KSeF</option>
+          </select>
+          <select name="sort_order" class="input w-auto">
+            <option value="desc" {% if filters.sort_order == "desc" %}selected{% endif %}>Malejąco</option>
+            <option value="asc" {% if filters.sort_order == "asc" %}selected{% endif %}>Rosnąco</option>
+          </select>
+        </div>
+      </div>
+    </form>
+  </div>
+
+  <!-- Results -->
+  <div class="card">
+    <div class="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
+      <h2 class="text-sm font-semibold text-gray-800">
+        Faktury
+        {% if pagination.total > 0 %}
+        <span class="text-gray-400 font-normal ml-1">({{ pagination.total }})</span>
+        {% endif %}
+      </h2>
+      {% if pagination.pages > 1 %}
+      <span class="text-xs text-gray-400">Strona {{ pagination.page }} / {{ pagination.pages }}</span>
+      {% endif %}
+    </div>
+
+    {% if invoices %}
+    <div class="overflow-x-auto">
+      <table class="w-full">
+        <thead class="bg-gray-50 border-b border-gray-200">
+          <tr>
+            <th class="th">Nr faktury</th>
+            <th class="th">Typ</th>
+            <th class="th">Sprzedawca</th>
+            <th class="th">Nabywca</th>
+            <th class="th">Data wystawienia</th>
+            <th class="th text-right">Kwota brutto</th>
+            <th class="th">Nr KSeF</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-100">
+          {% for inv in invoices %}
+          <tr class="hover:bg-gray-50 cursor-pointer" onclick="location.href='/ui/invoices/{{ inv.ksef_number }}'">
+            <td class="td font-medium text-brand">
+              <a href="/ui/invoices/{{ inv.ksef_number }}" class="hover:underline">
+                {{ inv.invoice_number or "—" }}
+              </a>
+            </td>
+            <td class="td">
+              {% if inv.subject_type == "Subject1" %}
+                <span class="badge-s1">Sprz</span>
+              {% elif inv.subject_type == "Subject2" %}
+                <span class="badge-s2">Zak</span>
+              {% elif inv.subject_type == "Subject3" %}
+                <span class="badge-warn">Inne</span>
+              {% else %}
+                <span class="badge-warn">{{ inv.subject_type or "—" }}</span>
+              {% endif %}
+            </td>
+            <td class="td max-w-[160px] truncate" title="{{ inv.seller_name or '' }}">
+              <div class="truncate">{{ inv.seller_name or "—" }}</div>
+              <div class="text-xs text-gray-400 font-mono">{{ inv.seller_nip or "" }}</div>
+            </td>
+            <td class="td max-w-[160px] truncate" title="{{ inv.buyer_name or '' }}">
+              <div class="truncate">{{ inv.buyer_name or "—" }}</div>
+              <div class="text-xs text-gray-400 font-mono">{{ inv.buyer_nip or "" }}</div>
+            </td>
+            <td class="td text-gray-500">{{ inv.issue_date | fmt_date }}</td>
+            <td class="td text-right font-medium">{{ inv.gross_amount | fmt_amount(inv.currency or "PLN") }}</td>
+            <td class="td text-xs font-mono text-gray-400">{{ inv.ksef_number | ksef_short }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Pagination -->
+    {% if pagination.pages > 1 %}
+    <div class="px-4 py-3 border-t border-gray-100 flex items-center justify-between">
+      <span class="text-xs text-gray-500">
+        {{ (pagination.page - 1) * pagination.per_page + 1 }}–{{ [pagination.page * pagination.per_page, pagination.total] | min }}
+        z {{ pagination.total }}
+      </span>
+      <div class="flex gap-1">
+        {% if pagination.page > 1 %}
+        <a href="?{{ request.url.query | replace('page=' ~ pagination.page, 'page=' ~ (pagination.page - 1)) if 'page=' in request.url.query else request.url.query ~ '&page=' ~ (pagination.page - 1) }}"
+           class="btn-secondary text-xs">‹ Poprzednia</a>
+        {% endif %}
+        {% if pagination.page < pagination.pages %}
+        <a href="?{{ request.url.query | replace('page=' ~ pagination.page, 'page=' ~ (pagination.page + 1)) if 'page=' in request.url.query else (request.url.query ~ '&page=' ~ (pagination.page + 1)) }}"
+           class="btn-secondary text-xs">Następna ›</a>
+        {% endif %}
+      </div>
+    </div>
+    {% endif %}
+
+    {% else %}
+    <div class="px-4 py-12 text-center text-sm text-gray-400">
+      Brak faktur spełniających kryteria.
+    </div>
+    {% endif %}
+  </div>
+
+</div>
+{% endblock %}

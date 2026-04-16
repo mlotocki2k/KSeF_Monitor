@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="pl" class="h-full bg-gray-50">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Monitor KSeF{% endblock %}</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            brand: { DEFAULT: '#1d4ed8', light: '#3b82f6', dark: '#1e3a8a' }
+          }
+        }
+      }
+    }
+  </script>
+  <style type="text/tailwindcss">
+    @layer utilities {
+      .nav-link { @apply px-4 py-2 text-sm font-medium rounded-md transition-colors; }
+      .nav-link-active { @apply bg-brand text-white; }
+      .nav-link-idle { @apply text-gray-600 hover:bg-gray-100; }
+      .card { @apply bg-white rounded-lg border border-gray-200 shadow-sm; }
+      .badge-s1 { @apply inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800; }
+      .badge-s2 { @apply inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800; }
+      .badge-ok { @apply inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800; }
+      .badge-err { @apply inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800; }
+      .badge-warn { @apply inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-800; }
+      .btn-primary { @apply inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md bg-brand text-white hover:bg-brand-dark disabled:opacity-50 disabled:cursor-not-allowed transition-colors; }
+      .btn-secondary { @apply inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md bg-white text-gray-700 border border-gray-300 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors; }
+      .btn-danger { @apply inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md bg-red-600 text-white hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors; }
+      .th { @apply px-3 py-2 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide; }
+      .td { @apply px-3 py-2 text-sm text-gray-700; }
+      .input { @apply block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm shadow-sm focus:border-brand focus:ring-1 focus:ring-brand; }
+      .label { @apply block text-xs font-medium text-gray-600 mb-1; }
+    }
+  </style>
+</head>
+<body class="h-full flex flex-col">
+
+<!-- Top navbar -->
+<header class="bg-white border-b border-gray-200 shadow-sm">
+  <div class="max-w-screen-xl mx-auto px-4 flex items-center h-12 gap-6">
+    <a href="/ui" class="flex items-center gap-2 font-bold text-brand text-sm shrink-0">
+      <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+        <path stroke-linecap="round" stroke-linejoin="round"
+          d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+      </svg>
+      Monitor KSeF
+    </a>
+    <nav class="flex items-center gap-1">
+      {% for item in nav %}
+      <a href="{{ item.href }}"
+         class="nav-link {% if request.url.path == item.href or (item.href != '/ui' and request.url.path.startswith(item.href)) %}nav-link-active{% else %}nav-link-idle{% endif %}">
+        {{ item.label }}
+      </a>
+      {% endfor %}
+    </nav>
+    <div class="ml-auto flex items-center gap-3">
+      {% if auth_required %}
+      <button onclick="showTokenModal()"
+        class="nav-link nav-link-idle text-xs flex items-center gap-1" title="Konfiguracja tokena">
+        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round"
+            d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"/>
+        </svg>
+        Token
+      </button>
+      {% endif %}
+      <button id="btn-trigger" onclick="triggerCheck()"
+        class="nav-link nav-link-idle text-xs flex items-center gap-1" title="Wyzwól natychmiastowe sprawdzenie">
+        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+        </svg>
+        Sprawdź
+      </button>
+    </div>
+  </div>
+</header>
+
+<!-- Flash message area -->
+<div id="flash" class="hidden max-w-screen-xl mx-auto px-4 pt-3"></div>
+
+<!-- Main content -->
+<main class="flex-1 max-w-screen-xl mx-auto w-full px-4 py-6">
+  {% if error is defined and error %}
+  <div class="mb-4 rounded-md bg-red-50 border border-red-200 p-4 text-sm text-red-700">
+    <strong>Błąd:</strong> {{ error }}
+  </div>
+  {% endif %}
+  {% if errors is defined %}
+  {% for e in errors %}
+  <div class="mb-2 rounded-md bg-yellow-50 border border-yellow-200 p-3 text-sm text-yellow-800">⚠ {{ e }}</div>
+  {% endfor %}
+  {% endif %}
+  {% block content %}{% endblock %}
+</main>
+
+<!-- Footer -->
+<footer class="border-t border-gray-200 bg-white">
+  <div class="max-w-screen-xl mx-auto px-4 py-2 text-xs text-gray-400 flex justify-between">
+    <span>Monitor KSeF v0.5</span>
+    <a href="/docs" class="hover:text-gray-600">API docs</a>
+  </div>
+</footer>
+
+<!-- Token modal -->
+{% if auth_required %}
+<div id="token-modal" class="hidden fixed inset-0 bg-black/40 z-50 flex items-center justify-center">
+  <div class="card p-6 w-full max-w-sm">
+    <h3 class="text-sm font-semibold mb-3">Token autoryzacji API</h3>
+    <p class="text-xs text-gray-500 mb-3">
+      Wymagany do wykonywania akcji (wyzwól sprawdzenie, start/cancel importu).
+      Przechowywany w localStorage przeglądarki.
+    </p>
+    <input id="token-input" type="password" class="input mb-3" placeholder="Bearer token…">
+    <div class="flex gap-2">
+      <button onclick="saveToken()" class="btn-primary text-xs">Zapisz</button>
+      <button onclick="clearToken()" class="btn-secondary text-xs">Wyczyść</button>
+      <button onclick="hideTokenModal()" class="btn-secondary text-xs ml-auto">Zamknij</button>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<script>
+// ── Token management ──────────────────────────────────────────────────────────
+const TOKEN_KEY = 'mksef_api_token';
+function getToken() { return localStorage.getItem(TOKEN_KEY) || ''; }
+function saveToken() {
+  const v = document.getElementById('token-input').value.trim();
+  if (v) { localStorage.setItem(TOKEN_KEY, v); flash('Token zapisany.', 'ok'); }
+  hideTokenModal();
+}
+function clearToken() { localStorage.removeItem(TOKEN_KEY); flash('Token usunięty.', 'warn'); hideTokenModal(); }
+function showTokenModal() {
+  const el = document.getElementById('token-modal');
+  if (el) { el.classList.remove('hidden'); document.getElementById('token-input').value = getToken(); }
+}
+function hideTokenModal() {
+  const el = document.getElementById('token-modal');
+  if (el) el.classList.add('hidden');
+}
+
+// ── Flash messages ────────────────────────────────────────────────────────────
+function flash(msg, type = 'ok') {
+  const el = document.getElementById('flash');
+  const colors = { ok: 'bg-green-50 border-green-200 text-green-800',
+                   err: 'bg-red-50 border-red-200 text-red-700',
+                   warn: 'bg-yellow-50 border-yellow-200 text-yellow-700' };
+  el.innerHTML = `<div class="rounded-md border p-3 text-sm ${colors[type] || colors.ok}">${msg}</div>`;
+  el.classList.remove('hidden');
+  setTimeout(() => el.classList.add('hidden'), 4000);
+}
+
+// ── API call helper ───────────────────────────────────────────────────────────
+async function apiCall(method, url, body = null) {
+  const headers = { 'Content-Type': 'application/json' };
+  const token = getToken();
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  const opts = { method, headers };
+  if (body) opts.body = JSON.stringify(body);
+  const resp = await fetch(url, opts);
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({ detail: resp.statusText }));
+    throw new Error(err.detail || resp.statusText);
+  }
+  return resp.json().catch(() => ({}));
+}
+
+// ── Trigger check ─────────────────────────────────────────────────────────────
+async function triggerCheck() {
+  const btn = document.getElementById('btn-trigger');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Sprawdzam…'; }
+  try {
+    const r = await apiCall('POST', '/api/v1/monitor/trigger');
+    flash(r.message || 'Sprawdzenie wyzwolone.', 'ok');
+  } catch (e) {
+    flash(`Błąd: ${e.message}`, 'err');
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = `
+      <svg class="w-4 h-4 inline" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+        <path stroke-linecap="round" stroke-linejoin="round"
+          d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+      </svg> Sprawdź`; }
+  }
+}
+{% block extra_js %}{% endblock %}
+</script>
+</body>
+</html>

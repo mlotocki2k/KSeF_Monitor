@@ -482,6 +482,8 @@ class ConfigManager:
             )
             logger.warning("=" * 60)
 
+        api.setdefault("ui_enabled", True)
+
         if api["enabled"]:
             logger.info(
                 f"API: enabled on {api['bind_address']}:{api['port']}, "

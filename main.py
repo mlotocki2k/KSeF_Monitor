@@ -230,6 +230,7 @@ def main():
                     prometheus_metrics=prometheus_metrics,
                     push_manager=push_manager,
                     initial_load_manager=initial_load_manager,
+                    ui_enabled=api_config.get("ui_enabled", True),
                 )
                 api_server = APIServer(
                     api_app,
