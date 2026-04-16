@@ -204,7 +204,10 @@ async function bulkPdf() {
   for (const chk of checked) {
     const ksef = chk.dataset.ksef;
     try {
-      const r = await fetch(`/api/v1/invoices/${ksef}/pdf`);
+      const headers = {};
+      const token = getToken();
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+      const r = await fetch(`/api/v1/invoices/${ksef}/pdf`, { headers });
       if (!r.ok) { results.push({ ksef, ok: false, status: r.status }); continue; }
       const blob = await r.blob();
       const url = URL.createObjectURL(blob);

@@ -186,7 +186,30 @@ async function triggerCheck() {
       </svg> Sprawdź`; }
   }
 }
-{% block extra_js %}{% endblock %}
+// ── File download with auth ───────────────────────────────────────────────────
+async function downloadFile(url, filename) {
+  const headers = {};
+  const token = getToken();
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  try {
+    const r = await fetch(url, { headers });
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({ detail: r.statusText }));
+      throw new Error(err.detail || r.statusText);
+    }
+    const blob = await r.blob();
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(a.href);
+  } catch (e) {
+    flash(`Błąd pobierania: ${e.message}`, 'err');
+  }
+}
 </script>
+{% block extra_js %}{% endblock %}
 </body>
 </html>
