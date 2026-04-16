@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% block title %}Parowanie iOS — Monitor KSeF{% endblock %}
+
+{% block content %}
+<div class="space-y-4 max-w-lg mx-auto">
+
+  <h1 class="text-lg font-semibold text-gray-900">Parowanie z aplikacją iOS</h1>
+
+  {% if not push %}
+  <div class="card px-4 py-8 text-center text-sm text-gray-500">
+    Push nie jest skonfigurowany. Ustaw <code class="bg-gray-100 px-1 rounded">ios_push.enabled = true</code>
+    w pliku konfiguracyjnym.
+  </div>
+
+  {% else %}
+
+  <!-- Status -->
+  <div class="card p-4 flex items-center gap-3">
+    {% if push.is_registered %}
+      <span class="badge-ok">Zarejestrowano</span>
+      <span class="text-xs text-gray-500">Instance: <span class="font-mono">{{ push.instance_id[:8] }}…</span></span>
+      {% if push.registered_at %}
+      <span class="text-xs text-gray-400 ml-auto">od {{ push.registered_at[:10] }}</span>
+      {% endif %}
+    {% else %}
+      <span class="badge-warn">Niezarejestrowano</span>
+      <span class="text-xs text-gray-500">Rejestracja nastąpi przy kolejnym powiadomieniu.</span>
+    {% endif %}
+  </div>
+
+  <!-- QR + code -->
+  <div class="card p-6 flex flex-col items-center gap-4">
+    <p class="text-sm text-gray-600 text-center">
+      Zeskanuj kod QR w aplikacji <strong>Monitor KSeF</strong> lub wpisz kod ręcznie w zakładce Konfiguracja.
+    </p>
+
+    {% if push.qr_data_uri %}
+    <img src="{{ push.qr_data_uri }}" alt="QR kod parowania"
+         class="border border-gray-200 rounded-lg p-2 bg-white"
+         style="width:200px;height:200px;image-rendering:pixelated">
+    {% else %}
+    <div class="w-48 h-48 border-2 border-dashed border-gray-300 rounded-lg flex items-center justify-center text-sm text-gray-400">
+      Brak QR<br>(biblioteka qrcode niedostępna)
+    </div>
+    {% endif %}
+
+    <div class="text-center">
+      <p class="text-xs text-gray-500 mb-1">Kod parowania</p>
+      <p class="text-3xl font-mono font-bold tracking-widest text-gray-900 select-all">
+        {{ push.pairing_code or "—" }}
+      </p>
+    </div>
+  </div>
+
+  <!-- Actions -->
+  <div class="card p-4 flex items-center gap-3">
+    <div class="text-xs text-gray-500 flex-1">
+      Regeneracja kodu rozłączy sparowane urządzenia iOS i wygeneruje nowy QR kod.
+    </div>
+    <button onclick="regenerate()" class="btn-danger text-xs" id="btn-regen">
+      Nowy kod
+    </button>
+  </div>
+
+  {% endif %}
+
+</div>
+{% endblock %}
+
+{% block extra_js %}
+{% if push %}
+<script>
+async function regenerate() {
+  if (!confirm('Wygenerować nowy kod? Sparowane urządzenia iOS zostaną odłączone.')) return;
+  const btn = document.getElementById('btn-regen');
+  btn.disabled = true;
+  btn.textContent = '…';
+  try {
+    await apiCall('POST', '/api/v1/push/regenerate');
+    location.reload();
+  } catch (e) {
+    flash(`Błąd: ${e.message}`, 'err');
+    btn.disabled = false;
+    btn.textContent = 'Nowy kod';
+  }
+}
+</script>
+{% endif %}
+{% endblock %}

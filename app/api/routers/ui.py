@@ -106,15 +106,22 @@ def _auth_token(request: Request) -> Optional[str]:
     return getattr(request.app.state, "auth_token", None) or None
 
 
+def _get_push_manager(request: Request):
+    return getattr(request.app.state, "push_manager", None)
+
+
 def _base_ctx(request: Request) -> dict:
+    nav = [
+        {"href": "/ui", "label": "Dashboard"},
+        {"href": "/ui/invoices", "label": "Faktury"},
+        {"href": "/ui/initial-load", "label": "Import historyczny"},
+    ]
+    if _get_push_manager(request):
+        nav.append({"href": "/ui/push", "label": "Parowanie iOS"})
     return {
         "request": request,
         "auth_required": bool(_auth_token(request)),
-        "nav": [
-            {"href": "/ui", "label": "Dashboard"},
-            {"href": "/ui/invoices", "label": "Faktury"},
-            {"href": "/ui/initial-load", "label": "Import historyczny"},
-        ],
+        "nav": nav,
     }
 
 
@@ -329,3 +336,21 @@ def ui_initial_load(request: Request):
     ctx["cfg_start_date"] = cfg_start_date
     ctx["cfg_subject_types"] = cfg_subject_types
     return templates.TemplateResponse(request, "initial_load.html", ctx)
+
+
+# ── iOS Push pairing ──────────────────────────────────────────────────────────
+
+@router.get("/ui/push", response_class=HTMLResponse)
+def ui_push(request: Request):
+    """iOS Push pairing page — QR code and pairing code."""
+    ctx = _base_ctx(request)
+    ctx["page"] = "push"
+
+    push_manager = _get_push_manager(request)
+    if not push_manager:
+        ctx["error"] = "Push notifications not configured (ios_push.enabled = false)."
+        ctx["push"] = None
+        return templates.TemplateResponse(request, "push.html", ctx)
+
+    ctx["push"] = push_manager.pairing_info
+    return templates.TemplateResponse(request, "push.html", ctx)
