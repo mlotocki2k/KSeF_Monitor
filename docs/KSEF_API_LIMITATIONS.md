@@ -1,6 +1,6 @@
 # Ograniczenia KSeF API — kompletna dokumentacja
 
-Dokument opisuje wszystkie znane ograniczenia i limity KSeF API v2.2.0, ich wpływ na działanie aplikacji oraz zastosowane obejścia.
+Dokument opisuje wszystkie znane ograniczenia i limity KSeF API v2.4.0, ich wpływ na działanie aplikacji oraz zastosowane obejścia.
 
 ---
 
@@ -198,5 +198,5 @@ KSeF API działa w trzech środowiskach z oddzielnymi specyfikacjami:
 
 ---
 
-**Ostatnia aktualizacja:** 2026-03-08
-**Wersja API:** v2.2.0 (produkcja od 2026-02-26)
+**Ostatnia aktualizacja:** 2026-04-13
+**Wersja API:** v2.4.0 (produkcja od 2026-04-16)
