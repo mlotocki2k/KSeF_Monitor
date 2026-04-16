@@ -560,6 +560,61 @@ class PushManager:
             "qr_data_uri": self.generate_qr_data_uri(),
         }
 
+    def get_devices(self) -> list:
+        """Return list of paired devices from Central Push Service.
+
+        Returns:
+            List of dicts: {device_id, index, paired_at, last_push_at} or [] on error.
+            device_id is sha256(device_token) — no raw tokens exposed.
+        """
+        if not self.instance_id or not self.instance_key:
+            return []
+        try:
+            resp = self.session.get(
+                f"{self.central_push_url}/instances/devices",
+                headers={
+                    "X-Instance-Id": self.instance_id,
+                    "X-Instance-Key": self.instance_key,
+                },
+                timeout=self.timeout,
+                allow_redirects=False,
+            )
+            if resp.status_code == 200:
+                return resp.json().get("devices", [])
+            logger.warning("get_devices: Worker returned %s", resp.status_code)
+            return []
+        except Exception as e:
+            logger.error("get_devices failed: %s", e)
+            return []
+
+    def remove_device(self, device_id: str) -> bool:
+        """Remove a specific paired device by its device_id (sha256 of token).
+
+        Returns:
+            True if device was removed, False otherwise.
+        """
+        if not self.instance_id or not self.instance_key:
+            return False
+        try:
+            resp = self.session.post(
+                f"{self.central_push_url}/instances/devices/remove",
+                json={"device_id": device_id},
+                headers={
+                    "X-Instance-Id": self.instance_id,
+                    "X-Instance-Key": self.instance_key,
+                    "Content-Type": "application/json",
+                },
+                timeout=self.timeout,
+                allow_redirects=False,
+            )
+            if resp.status_code == 200:
+                return resp.json().get("removed", False)
+            logger.warning("remove_device: Worker returned %s", resp.status_code)
+            return False
+        except Exception as e:
+            logger.error("remove_device failed: %s", e)
+            return False
+
     @staticmethod
     def _sha256_hex(value: str) -> str:
         """Compute SHA-256 hash of a string, return as hex."""

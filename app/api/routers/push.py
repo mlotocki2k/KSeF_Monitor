@@ -69,3 +69,23 @@ def reset_push(request: Request):
             status_code=500,
             content={"detail": "Failed to reset push credentials"},
         )
+
+
+@router.get("/push/devices")
+def get_devices(request: Request):
+    """List paired iOS devices (no raw tokens — device_id is sha256 of token)."""
+    push_manager = getattr(request.app.state, "push_manager", None)
+    if not push_manager:
+        return JSONResponse(status_code=503, content={"detail": "Push not configured"})
+    devices = push_manager.get_devices()
+    return {"devices": devices, "total": len(devices)}
+
+
+@router.post("/push/devices/remove")
+def remove_device(request: Request, device_id: str):
+    """Remove a specific paired device by device_id."""
+    push_manager = getattr(request.app.state, "push_manager", None)
+    if not push_manager:
+        return JSONResponse(status_code=503, content={"detail": "Push not configured"})
+    removed = push_manager.remove_device(device_id)
+    return {"removed": removed}

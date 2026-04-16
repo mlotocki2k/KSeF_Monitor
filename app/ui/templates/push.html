@@ -52,6 +52,17 @@
     </div>
   </div>
 
+  <!-- Paired devices -->
+  <div class="card" id="devices-card">
+    <div class="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
+      <h2 class="text-sm font-semibold text-gray-800">Sparowane urządzenia</h2>
+      <span id="devices-count" class="text-xs text-gray-400"></span>
+    </div>
+    <div id="devices-list" class="divide-y divide-gray-100">
+      <div class="px-4 py-3 text-xs text-gray-400">Ładowanie…</div>
+    </div>
+  </div>
+
   <!-- Actions -->
   <div class="card p-4 flex items-center gap-3">
     <div class="text-xs text-gray-500 flex-1">
@@ -84,6 +95,63 @@ async function regenerate() {
     btn.textContent = 'Nowy kod';
   }
 }
+
+function fmtTs(ts) {
+  if (!ts) return '—';
+  return new Date(ts * 1000).toLocaleString('pl-PL', {
+    day: '2-digit', month: '2-digit', year: 'numeric',
+    hour: '2-digit', minute: '2-digit'
+  });
+}
+
+async function loadDevices() {
+  const list = document.getElementById('devices-list');
+  const count = document.getElementById('devices-count');
+  try {
+    const r = await fetch('/api/v1/push/devices');
+    const d = await r.json();
+    const devices = d.devices || [];
+    count.textContent = `${devices.length} / 50`;
+    if (devices.length === 0) {
+      list.innerHTML = '<div class="px-4 py-6 text-center text-sm text-gray-400">Brak sparowanych urządzeń.</div>';
+      return;
+    }
+    list.innerHTML = devices.map(dev => `
+      <div class="px-4 py-3 flex items-center gap-3">
+        <div class="flex-1 min-w-0">
+          <p class="text-sm font-medium text-gray-800">Urządzenie ${dev.index}</p>
+          <p class="text-xs text-gray-400">
+            Sparowano: ${fmtTs(dev.paired_at)}
+            ${dev.last_push_at ? ' · Ostatni push: ' + fmtTs(dev.last_push_at) : ''}
+          </p>
+          <p class="text-xs text-gray-300 font-mono truncate">${dev.device_id.slice(0, 16)}…</p>
+        </div>
+        <button onclick="removeDevice('${dev.device_id}', this)" class="btn-danger text-xs shrink-0">
+          Odłącz
+        </button>
+      </div>
+    `).join('');
+  } catch (e) {
+    list.innerHTML = `<div class="px-4 py-3 text-xs text-red-600">Błąd ładowania: ${e.message}</div>`;
+  }
+}
+
+async function removeDevice(deviceId, btn) {
+  if (!confirm('Odłączyć to urządzenie?')) return;
+  btn.disabled = true;
+  btn.textContent = '…';
+  try {
+    await apiCall('POST', `/api/v1/push/devices/remove?device_id=${encodeURIComponent(deviceId)}`);
+    flash('Urządzenie odłączone.', 'ok');
+    loadDevices();
+  } catch (e) {
+    flash(`Błąd: ${e.message}`, 'err');
+    btn.disabled = false;
+    btn.textContent = 'Odłącz';
+  }
+}
+
+loadDevices();
 </script>
 {% endif %}
 {% endblock %}

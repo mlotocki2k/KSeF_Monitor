@@ -80,6 +80,7 @@ def create_app(
                 "/docs", "/redoc", "/openapi.json",
                 "/api/v1/monitor/health",
                 "/api/v1/monitor/ksef-status",  # read-only status widget in Web UI
+                "/api/v1/push/devices",          # read-only device list in Web UI
             }
             if path in _EXEMPT_EXACT or \
                path.startswith("/ui") or \
