@@ -122,6 +122,7 @@ def _base_ctx(request: Request) -> dict:
         "request": request,
         "auth_required": bool(_auth_token(request)),
         "nav": nav,
+        "docs_enabled": request.app.openapi_url is not None,
     }
 
 

@@ -101,7 +101,7 @@
 <footer class="border-t border-gray-200 bg-white">
   <div class="max-w-screen-xl mx-auto px-4 py-2 text-xs text-gray-400 flex justify-between">
     <span>Monitor KSeF v0.5</span>
-    <a href="/docs" class="hover:text-gray-600">API docs</a>
+    {% if docs_enabled %}<a href="/docs" class="hover:text-gray-600">API docs</a>{% endif %}
   </div>
 </footer>
 
