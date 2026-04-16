@@ -69,7 +69,7 @@
                   <span class="badge-warn">{{ s.subject_type }}</span>
                 {% endif %}
               </td>
-              <td class="td text-gray-500">{{ s.last_check_time | fmt_dt }}</td>
+              <td class="td text-gray-500">{{ s.last_check | fmt_dt }}</td>
               <td class="td text-center">
                 {% if s.consecutive_errors > 0 %}
                   <span class="badge-err">{{ s.consecutive_errors }}</span>
@@ -80,7 +80,7 @@
               <td class="td">
                 {% if s.consecutive_errors >= 3 %}
                   <span class="badge-err">Błąd</span>
-                {% elif s.last_check_time %}
+                {% elif s.last_check %}
                   <span class="badge-ok">OK</span>
                 {% else %}
                   <span class="badge-warn">Oczekuje</span>
