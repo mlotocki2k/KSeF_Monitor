@@ -6,15 +6,21 @@ Dokument opisuje wszystkie znane ograniczenia i limity KSeF API v2.4.0, ich wpł
 
 ## Rate limiting (limity zapytań)
 
-Wszystkie endpointy KSeF API podlegają tym samym limitom:
+Limity są **per endpoint** (nie globalnie). Każdy endpoint ma własne `x-rate-limits` w OpenAPI spec (`spec/openapi.json`).
 
-| Limit | Wartość | Okno | Konsekwencja przekroczenia |
-|---|---|---|---|
-| **Per second** | 10 requestów | 1s sliding window | HTTP 429 |
-| **Per minute** | 30 requestów | 60s sliding window | HTTP 429 |
-| **Per hour** | 120 requestów | 3600s sliding window | HTTP 429 |
+### Limity kluczowych endpointów
 
-Źródło: pole `x-rate-limits` w OpenAPI spec (`spec/openapi.json`).
+| Endpoint | /sec | /min | /hour | Uwagi |
+|---|---|---|---|---|
+| `POST /invoices/query/metadata` | 8 | 16 | **20** | ⚠️ najniższy limit — bottleneck monitoringu |
+| `GET /invoices/ksef/{ksefNumber}` | 8 | 16 | 64 | pobieranie XML faktury |
+| `POST /invoices/exports` | 4 | 8 | 20 | eksport zbiorczy |
+| `POST /auth/...` (autentykacja) | 10 | 30 | 120 | challenge, status, redeem |
+| `GET /rate-limits` | 10 | 30 | 120 | sprawdzenie aktualnych limitów |
+
+### Token vs certyfikat — brak różnicy w v2
+
+KSeF API v2.4 obsługuje wyłącznie **Bearer token**. Certyfikatowa autentykacja istniała w v1 (wycofane). W v2 **nie ma rozróżnienia** limitów między metodami autentykacji — identyczne `x-rate-limits` niezależnie od ścieżki auth.
 
 ### Odpowiedź 429 Too Many Requests
 
@@ -26,7 +32,6 @@ Retry-After: 30
 - Header `Retry-After` może zawierać liczbę sekund lub datę HTTP
 - Aplikacja parsuje oba formaty (`ksef_client.py` → `_request_with_retry()`)
 - Max 3 retries po 429, cap na 120s, default 30s jeśli brak headera
-- Limity liczone globalnie per token/sesję — obejmują WSZYSTKIE endpointy łącznie
 
 ### Wpływ na przetwarzanie dużej liczby faktur
 
@@ -178,9 +183,11 @@ KSeF API działa w trzech środowiskach z oddzielnymi specyfikacjami:
 
 | Ograniczenie | Wartość | Gdzie obsłużone |
 |---|---|---|
-| Rate limit per second | 10 req/s | `ksef_client.py` → retry 429 |
-| Rate limit per minute | 30 req/min | `ksef_client.py` → retry 429 |
-| Rate limit per hour | 120 req/h | `ksef_client.py` → retry 429 |
+| Rate limit metadata /sec | 8 req/s | `ksef_client.py` → retry 429 |
+| Rate limit metadata /min | 16 req/min | `ksef_client.py` → retry 429 |
+| Rate limit metadata /hour | **20 req/h** | `ksef_client.py` → retry 429 |
+| Rate limit XML /hour | 64 req/h | `ksef_client.py` → retry 429 |
+| Minimalny bezpieczny polling interval | 4 min (1 subject) / 7 min (2 subjects) | `scheduler.py` config |
 | Max zakres dat | 90 dni | `invoice_monitor.py` → cap |
 | Max rekordów per query | 10 000 | `ksef_client.py` → truncation narrowing |
 | Max pageSize | 250 | `ksef_client.py` → `PAGINATION_PAGE_SIZE` |
@@ -193,10 +200,11 @@ KSeF API działa w trzech środowiskach z oddzielnymi specyfikacjami:
 ## Powiązane dokumenty
 
 - [RATE_LIMITING_DESIGN.md](RATE_LIMITING_DESIGN.md) — plan implementacji globalnego rate limitera
+- [LIGHTWEIGHT_POLLING_DESIGN.md](LIGHTWEIGHT_POLLING_DESIGN.md) — architektura lekkiego pollingu dla iOS / SaaS
 - [DATABASE_DESIGN.md](DATABASE_DESIGN.md) — baza danych z resumable artifact download
 - [SPEC_CHECK_DESIGN.md](SPEC_CHECK_DESIGN.md) — monitoring zmian API i schematu FA
 
 ---
 
-**Ostatnia aktualizacja:** 2026-04-13
+**Ostatnia aktualizacja:** 2026-04-17
 **Wersja API:** v2.4.0 (produkcja od 2026-04-16)

@@ -254,6 +254,34 @@ Cel: uniwersalny monitor i generator PDF dla każdego typu faktury w KSeF — ni
 
 ---
 
+## v0.6 (Lightweight Polling)
+**Cel:** rozdzielenie detekcji nowych faktur od pobierania artefaktów — oszczędność API calls, szybsze push notifications
+
+### Analiza limitów API
+- `POST /invoices/query/metadata`: **hour=20** (nie 120 jak dotąd zakładano — per endpoint, nie globalnie)
+- Minimum bezpieczny polling interval: **4 min** (1 subject) / **7 min** (oba subjects)
+- Poll co 60s = niemożliwe (3× przekroczony limit hour=20)
+
+### 1) Dwufazowy cykl monitoringu
+- [ ] Faza 1: detekcja — `pageSize=10`, tylko metadane, bez XML (1-2 API calls per cykl)
+- [ ] Faza 2: artefakty — lazy/background, osobny rate budget (`GET /invoices/ksef/{ksefNumber}` hour=64)
+- [ ] Konfiguracja interwału pollingu per subject type w `config.json`
+- [ ] Update `invoice_monitor.py` — oddzielenie detekcji od artifact download
+
+### 2) Push notification z metadata (bez XML)
+- [ ] Treść push budowana z pól `InvoiceMetadata` (seller, buyer, kwoty, typ, daty)
+- [ ] XML pobierany lazy dopiero gdy user otwiera fakturę w app
+- [ ] Update `ios_push.json.j2` — template oparty wyłącznie o metadata
+
+### 3) Dokumentacja
+- [x] Analiza limitów per endpoint (z OpenAPI spec `x-rate-limits`) — [KSEF_API_LIMITATIONS.md](KSEF_API_LIMITATIONS.md)
+- [x] Design lekkiego pollingu — [LIGHTWEIGHT_POLLING_DESIGN.md](LIGHTWEIGHT_POLLING_DESIGN.md)
+
+**Zależności:** v0.5
+**DoD:** monitor wykrywa nowe faktury i wysyła push w jednym tanim API call; artefakty pobierane niezależnie; konfigurowalny interwał pollingu; testy aktualne.
+
+---
+
 ## v0.7 (Auto-update)
 **Cel:** wbudowany mechanizm aktualizacji bez potrzeby aktualizowania całego obrazu Docker
 
