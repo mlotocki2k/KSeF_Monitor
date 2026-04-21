@@ -159,7 +159,7 @@ Health check — **nie wymaga autentykacji**.
 ```json
 {
   "status": "ok",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "db_connected": true
 }
 ```
