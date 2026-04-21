@@ -12,6 +12,7 @@ import sys
 import signal
 import logging
 
+from app import __version__
 from app.config_manager import ConfigManager
 from app.ksef_client import KSeFClient
 from app.notifiers import NotificationManager
@@ -54,7 +55,7 @@ def main():
     global monitor
     
     logger.info("=" * 70)
-    logger.info("KSeF Monitor v0.5")
+    logger.info(f"KSeF Monitor v{__version__}")
     logger.info("Based on KSeF API v2.4.0 (github.com/CIRFMF/ksef-docs)")
     logger.info("Multi-channel notifications with Jinja2 templates")
     logger.info("=" * 70)

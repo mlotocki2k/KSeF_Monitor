@@ -10,6 +10,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from app import __version__
 from app.api import create_app
 from app.database import Base, Database, MonitorState
 
@@ -63,7 +64,7 @@ class TestHealthEndpoint:
         assert resp.status_code == 200
         data = resp.json()
         assert data["status"] == "ok"
-        assert data["version"] == "0.4.0"
+        assert data["version"] == __version__
         assert data["db_connected"] is False
         assert "auth_enabled" not in data  # F-09: removed
 
@@ -134,3 +135,16 @@ class TestTriggerEndpoint:
         assert resp.status_code == 200
         data = resp.json()
         assert data["triggered"] is False
+
+
+@pytest.fixture
+def client_open():
+    """Open-access app client (no auth token)."""
+    app = create_app(db=None, auth_token=None)
+    return TestClient(app)
+
+
+def test_health_returns_package_version(client_open):
+    resp = client_open.get("/api/v1/monitor/health")
+    assert resp.status_code == 200
+    assert resp.json()["version"] == __version__

@@ -7,6 +7,7 @@ import logging
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
+from app import __version__
 from ..schemas import HealthResponse, MonitorStateResponse, TriggerResponse
 
 logger = logging.getLogger(__name__)
@@ -32,7 +33,7 @@ def health_check(request: Request):
 
     return HealthResponse(
         status="ok",
-        version="0.4.0",
+        version=__version__,
         db_connected=db_connected,
     )
 

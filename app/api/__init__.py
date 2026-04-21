@@ -16,6 +16,7 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 from slowapi.util import get_remote_address
 
+from app import __version__
 from .routers import invoices, stats, monitor, artifacts, push, initial_load, ui
 
 logger = logging.getLogger(__name__)
@@ -45,7 +46,7 @@ def create_app(
     """
     app = FastAPI(
         title="KSeF Monitor API",
-        version="0.4.0",
+        version=__version__,
         docs_url="/docs" if docs_enabled else None,
         redoc_url="/redoc" if docs_enabled else None,
         openapi_url="/openapi.json" if docs_enabled else None,
