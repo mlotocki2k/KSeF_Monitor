@@ -37,6 +37,7 @@ test = [
     "pytest>=7.0",
     "pytest-mock>=3.10",
     "httpx>=0.24.0",
+    "tomli>=2.0; python_version<'3.11'",
 ]
 
 [project.urls]
