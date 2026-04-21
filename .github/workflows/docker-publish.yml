@@ -28,6 +28,21 @@ jobs:
           fi
           echo "No secrets detected."
 
+      - name: Python dependency vulnerability scan
+        run: |
+          python -m pip install --upgrade pip
+          pip install -q pip-audit
+          pip-audit --requirement requirements.lock --strict --format columns
+
+      - name: Set up Trivy (config scan)
+        uses: aquasecurity/trivy-action@6c175e9c4083a92bbca2f9724c8a5e33bc2d97a5  # 0.33.1
+        with:
+          scan-type: config
+          scan-ref: .
+          severity: CRITICAL,HIGH
+          exit-code: 0   # config scan is advisory
+          ignore-unfixed: true
+
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f  # v3
 
       - name: Login to GHCR
@@ -55,3 +70,11 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+
+      - name: Trivy image scan
+        uses: aquasecurity/trivy-action@6c175e9c4083a92bbca2f9724c8a5e33bc2d97a5  # 0.33.1
+        with:
+          image-ref: ghcr.io/${{ github.repository }}:sha-${{ github.sha }}
+          severity: CRITICAL,HIGH
+          exit-code: 1
+          ignore-unfixed: true

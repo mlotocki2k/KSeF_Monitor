@@ -20,9 +20,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     gosu \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Python dependencies
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Install Python dependencies from hashed lockfile (reproducible builds)
+COPY requirements.lock .
+RUN pip install --no-cache-dir --require-hashes -r requirements.lock
 
 # Remove build-only dependencies to keep image smaller
 RUN apt-get purge -y --auto-remove gcc pkg-config libcairo2-dev
