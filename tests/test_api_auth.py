@@ -109,7 +109,7 @@ class TestTokenAuth:
 
 
 class TestSecurityHeaders:
-    """Security headers present on all responses."""
+    """Security headers present on all responses (V5-05)."""
 
     def test_nosniff_header(self, client_open):
         resp = client_open.get("/api/v1/monitor/health")
@@ -127,6 +127,35 @@ class TestSecurityHeaders:
         """Security headers present even on 401 responses."""
         resp = client_auth.get("/api/v1/invoices")
         assert resp.headers.get("X-Content-Type-Options") == "nosniff"
+
+    def test_xcto_nosniff(self, client_open):
+        resp = client_open.get("/api/v1/monitor/health")
+        assert resp.headers["X-Content-Type-Options"] == "nosniff"
+
+    def test_xfo_deny(self, client_open):
+        resp = client_open.get("/api/v1/monitor/health")
+        assert resp.headers["X-Frame-Options"] == "DENY"
+
+    def test_csp_default_self(self, client_open):
+        resp = client_open.get("/api/v1/monitor/health")
+        csp = resp.headers.get("Content-Security-Policy", "")
+        assert "default-src 'self'" in csp
+        assert "frame-ancestors 'none'" in csp
+
+    def test_hsts_max_age(self, client_open):
+        resp = client_open.get("/api/v1/monitor/health")
+        hsts = resp.headers.get("Strict-Transport-Security", "")
+        assert "max-age=" in hsts
+        assert "includeSubDomains" in hsts
+
+    def test_referrer_policy(self, client_open):
+        resp = client_open.get("/api/v1/monitor/health")
+        assert resp.headers.get("Referrer-Policy") == "strict-origin-when-cross-origin"
+
+    def test_permissions_policy(self, client_open):
+        resp = client_open.get("/api/v1/monitor/health")
+        pp = resp.headers.get("Permissions-Policy", "")
+        assert "geolocation=()" in pp
 
 
 class TestGenericErrorHandler:

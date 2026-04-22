@@ -4,19 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}Monitor KSeF{% endblock %}</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script>
-    tailwind.config = {
-      theme: {
-        extend: {
-          colors: {
-            brand: { DEFAULT: '#1d4ed8', light: '#3b82f6', dark: '#1e3a8a' }
-          }
-        }
-      }
-    }
-  </script>
-  <style type="text/tailwindcss">
+  <link rel="stylesheet" href="/ui/static/tailwind.min.css">
+  <style>
     @layer utilities {
       .nav-link { @apply px-4 py-2 text-sm font-medium rounded-md transition-colors; }
       .nav-link-active { @apply bg-brand text-white; }

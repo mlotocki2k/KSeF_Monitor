@@ -6,11 +6,13 @@ FastAPI application factory with security defaults.
 
 import hmac
 import logging
+from pathlib import Path
 from typing import Any, Dict, Optional
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
@@ -118,6 +120,27 @@ def create_app(
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "DENY"
         response.headers["Cache-Control"] = "no-store"
+        response.headers["Strict-Transport-Security"] = (
+            "max-age=31536000; includeSubDomains"
+        )
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Permissions-Policy"] = (
+            "geolocation=(), camera=(), microphone=()"
+        )
+        # CSP — Tailwind is now self-hosted; data: allowed for QR codes.
+        # 'unsafe-inline' needed for push.html reveal script (Task 5).
+        # Tighten to nonces/hashes in a follow-up when inline <script> moves
+        # to external /ui/static/push.js.
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'self'; "
+            "style-src 'self' 'unsafe-inline'; "
+            "script-src 'self' 'unsafe-inline'; "
+            "img-src 'self' data:; "
+            "connect-src 'self'; "
+            "frame-ancestors 'none'; "
+            "base-uri 'self'; "
+            "form-action 'self'"
+        )
         return response
 
     # REST API Prometheus metrics middleware
@@ -166,6 +189,15 @@ def create_app(
     if ui_enabled:
         app.include_router(ui.router)
         logger.info("Web UI enabled at /ui")
+
+    static_dir = Path(__file__).parent.parent / "ui" / "static"
+    if static_dir.is_dir():
+        app.mount(
+            "/ui/static",
+            StaticFiles(directory=str(static_dir)),
+            name="ui-static",
+        )
+        logger.info("UI static files mounted at /ui/static from %s", static_dir)
 
     # Generic error handler — no stack traces in production
     @app.exception_handler(Exception)
