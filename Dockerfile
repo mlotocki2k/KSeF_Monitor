@@ -1,4 +1,4 @@
-FROM python:3.11-slim@sha256:543d6cace00ffc96bc95d332493bb28a4332c6dd614aab5fcbd649ae8a7953d9
+FROM python:3.11-slim@sha256:ff71127c215572121f1991bacf17f39ec5fcfd2de1f1c01a595835495bb9adfc
 
 LABEL org.opencontainers.image.title="KSeF Monitor" \
       org.opencontainers.image.description="Monitor faktur w Krajowym Systemie e-Faktur" \
@@ -9,16 +9,20 @@ LABEL org.opencontainers.image.title="KSeF Monitor" \
 # Set working directory
 WORKDIR /app
 
-# Install system dependencies:
+# Install system dependencies (+ apply pending security updates):
 #   fonts-dejavu-core  - DejaVu fonts for PDF Polish character support
 #   gcc, libcairo2-dev, pkg-config - build deps for xhtml2pdf (pycairo)
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends \
     fonts-dejavu-core \
     gcc \
     libcairo2-dev \
     pkg-config \
     gosu \
     && rm -rf /var/lib/apt/lists/*
+
+# Upgrade pip/setuptools/wheel to pull bundled-vendor fixes
+# (jaraco.context CVE-2026-23949, wheel CVE-2026-24049 live in setuptools _vendor/)
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel
 
 # Install Python dependencies
 # NOTE: requirements.lock exists but needs regen under Python 3.11 (currently Py3.12).
