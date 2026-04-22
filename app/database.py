@@ -413,26 +413,62 @@ class Database:
         logger.info("Database tables created")
 
     def _migrate_schema(self):
-        """Add missing columns to existing tables (lightweight auto-migration)."""
-        from sqlalchemy import inspect as sa_inspect
-        inspector = sa_inspect(self.engine)
+        """Apply alembic migrations to bring DB schema to head (v0.4 F-07).
 
-        for table in Base.metadata.sorted_tables:
-            if not inspector.has_table(table.name):
-                continue
-            existing = {col["name"] for col in inspector.get_columns(table.name)}
-            for col in table.columns:
-                if col.name not in existing:
-                    col_type = col.type.compile(self.engine.dialect)
-                    default_clause = ""
-                    if col.server_default is not None:
-                        default_clause = f" DEFAULT {col.server_default.arg}"
-                    elif col.default is not None and hasattr(col.default, 'arg') and isinstance(col.default.arg, str):
-                        default_clause = f" DEFAULT '{col.default.arg}'"
-                    stmt = f"ALTER TABLE {table.name} ADD COLUMN {col.name} {col_type}{default_clause}"
-                    with self.engine.begin() as conn:
-                        conn.execute(text(stmt))
-                    logger.info("Schema migration: added column %s.%s", table.name, col.name)
+        Previously built ALTER TABLE statements via f-string interpolation —
+        an anti-pattern flagged as F-07.  Now delegates to alembic, which is a
+        hard dependency of this project.
+
+        Strategy:
+        - If tables already exist but alembic_version is absent (fresh install
+          bootstrapped by create_all), stamp to head so future upgrades work.
+        - Otherwise run upgrade(head) normally (e.g. incremental production
+          upgrade, or the very first run with no tables at all).
+
+        NOTE for existing production DBs created before v0.5:
+        Those DBs have no alembic_version row.  This code will stamp them at
+        head rather than replaying migrations.  If columns added by intermediate
+        migrations are missing, the operator must run:
+            alembic stamp <known-revision>
+            alembic upgrade head
+        manually.
+        """
+        try:
+            from alembic import command
+            from alembic.config import Config
+            from sqlalchemy import inspect as sa_inspect
+        except ImportError:
+            logger.error("alembic not installed — schema may be out of date")
+            return
+
+        try:
+            project_root = Path(__file__).resolve().parent.parent
+            alembic_cfg = Config(str(project_root / "alembic.ini"))
+            # Override sqlalchemy.url so each Database instance (e.g. test
+            # fixtures using tmp_path) targets the correct file.
+            alembic_cfg.set_main_option(
+                "sqlalchemy.url", f"sqlite:///{self.db_path}"
+            )
+
+            inspector = sa_inspect(self.engine)
+            table_names = inspector.get_table_names()
+            has_tables = bool(table_names)
+            has_alembic_version = "alembic_version" in table_names
+
+            if has_tables and not has_alembic_version:
+                # create_all already built the latest schema; just stamp so
+                # alembic knows the DB is at head.
+                command.stamp(alembic_cfg, "head")
+                logger.info("Alembic version stamped to head (fresh DB)")
+            else:
+                # Either a pristine DB with no tables (alembic creates them)
+                # or an existing tracked DB that needs incremental upgrades.
+                command.upgrade(alembic_cfg, "head")
+                logger.info("Alembic upgrade to head complete")
+        except Exception as e:
+            logger.error("Alembic migration failed: %s", e)
+            # create_all already put the tables in place, so the app can still
+            # start; schema drift is possible for incremental upgrades.
 
     def get_session(self) -> Session:
         """Get a new session. Caller must close it."""
