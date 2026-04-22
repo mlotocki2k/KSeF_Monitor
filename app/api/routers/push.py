@@ -14,15 +14,29 @@ router = APIRouter(tags=["push"])
 
 @router.get("/push/setup")
 def get_push_setup(request: Request):
-    """Get push pairing info: QR code (base64), pairing_code, status."""
+    """Masked pairing info — safe for UI landing page (no code, no QR)."""
     push_manager = getattr(request.app.state, "push_manager", None)
     if not push_manager:
         return JSONResponse(
             status_code=503,
             content={"detail": "Push notifications not configured"},
         )
-
     return push_manager.pairing_info
+
+
+@router.get("/push/pairing")
+def reveal_pairing(request: Request):
+    """Full pairing info (plaintext code + QR). Auth-gated (V5-02).
+
+    Never exempted from auth — Task 4 removed any /push/** bypass.
+    """
+    push_manager = getattr(request.app.state, "push_manager", None)
+    if not push_manager:
+        return JSONResponse(
+            status_code=503,
+            content={"detail": "Push notifications not configured"},
+        )
+    return push_manager.pairing_info_full
 
 
 @router.post("/push/regenerate")

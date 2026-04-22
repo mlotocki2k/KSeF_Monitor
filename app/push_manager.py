@@ -237,11 +237,11 @@ class PushManager:
 
         - instance_id: UUID4
         - instance_key: 32 bytes random hex (64 chars)
-        - pairing_code: 4 bytes random hex uppercase (8 chars)
+        - pairing_code: 8 bytes random hex uppercase (16 chars, 64-bit)
         """
         self.instance_id = str(uuid.uuid4())
         self.instance_key = secrets.token_hex(32)
-        self.pairing_code = secrets.token_hex(4).upper()
+        self.pairing_code = secrets.token_hex(8).upper()  # 64-bit
         logger.info("Generated new push credentials (instance: %s)", self.instance_id)
 
     # ── Worker Registration ──────────────────────────────────────────────
@@ -390,7 +390,7 @@ class PushManager:
             logger.error("Cannot regenerate: instance not configured")
             return False
 
-        new_code = secrets.token_hex(4).upper()
+        new_code = secrets.token_hex(8).upper()  # 64-bit
 
         try:
             response = self.session.post(
@@ -547,11 +547,27 @@ class PushManager:
 
     @property
     def pairing_info(self) -> Dict[str, Any]:
-        """Return pairing status info for Web UI.
+        """V5-02: masked pairing info for unauthenticated UI.
 
-        Returns:
-            Dict with instance_id, pairing_code, registered_at, is_registered, qr_data_uri
+        No plaintext code, no QR (which embeds the code). Authorized
+        admin can fetch the plaintext via `/api/v1/push/pairing`.
         """
+        code = self.pairing_code
+        masked = (
+            f"{code[:2]}\u2026{code[-2:]}"
+            if code and len(code) >= 4
+            else None
+        )
+        return {
+            "instance_id": self.instance_id,
+            "pairing_code_masked": masked,
+            "registered_at": self.registered_at,
+            "is_registered": self.is_registered,
+        }
+
+    @property
+    def pairing_info_full(self) -> Dict[str, Any]:
+        """Full pairing info with plaintext code + QR. Auth-gated only."""
         return {
             "instance_id": self.instance_id,
             "pairing_code": self.pairing_code,

@@ -48,9 +48,10 @@ class TestPushManagerCredentials:
         int(pm.instance_key, 16)  # validates hex
 
     @patch.object(PushManager, "_register_instance", return_value=True)
-    def test_generate_pairing_code_is_8_hex_uppercase(self, mock_register, tmp_path):
+    def test_generate_pairing_code_is_16_hex_uppercase(self, mock_register, tmp_path):
+        # V5-02: widened from 8 to 16 hex chars (32-bit → 64-bit)
         pm = PushManager(_make_config(), data_dir=str(tmp_path))
-        assert len(pm.pairing_code) == 8
+        assert len(pm.pairing_code) == 16
         assert pm.pairing_code == pm.pairing_code.upper()
         int(pm.pairing_code, 16)  # validates hex
 
@@ -368,7 +369,7 @@ class TestPushManagerRegenerate:
         result = pm.regenerate_pairing_code()
         assert result is True
         assert pm.pairing_code != old_code
-        assert len(pm.pairing_code) == 8
+        assert len(pm.pairing_code) == 16  # V5-02: 64-bit
 
     @patch.object(PushManager, "_register_instance", return_value=True)
     def test_regenerate_failure(self, mock_register, tmp_path):
@@ -409,14 +410,30 @@ class TestPushManagerProperties:
 
     @patch.object(PushManager, "_register_instance", return_value=True)
     def test_pairing_info_keys(self, mock_register, tmp_path):
+        # V5-02: pairing_info now returns masked variant only
         pm = PushManager(_make_config(), data_dir=str(tmp_path))
         info = pm.pairing_info
+
+        assert "instance_id" in info
+        assert "pairing_code_masked" in info
+        assert "registered_at" in info
+        assert "is_registered" in info
+        # plaintext code and QR must NOT be present in masked variant
+        assert "pairing_code" not in info
+        assert "qr_data_uri" not in info
+
+    @patch.object(PushManager, "_register_instance", return_value=True)
+    def test_pairing_info_full_keys(self, mock_register, tmp_path):
+        # V5-02: pairing_info_full returns plaintext code + QR
+        pm = PushManager(_make_config(), data_dir=str(tmp_path))
+        info = pm.pairing_info_full
 
         assert "instance_id" in info
         assert "pairing_code" in info
         assert "registered_at" in info
         assert "is_registered" in info
         assert "qr_data_uri" in info
+        assert "pairing_code_masked" not in info
 
 
 # ── DB Storage ──────────────────────────────────────────────────────────────
@@ -507,3 +524,43 @@ class TestPushManagerDBStorage:
             assert instance.pairing_code != old_code
         finally:
             session.close()
+
+
+# ── V5-02: 64-bit pairing code ────────────────────────────────────────────────
+
+
+def test_generated_pairing_code_is_16_hex_chars(tmp_path):
+    """V5-02: pairing code must be 64-bit (16 hex chars), was 32-bit."""
+    from app.push_manager import PushManager
+    mgr = PushManager(
+        {"worker_url": "https://unused.test"},
+        data_dir=str(tmp_path),
+        db=None,
+    )
+    assert mgr.pairing_code is not None
+    assert len(mgr.pairing_code) == 16
+    assert all(c in "0123456789ABCDEF" for c in mgr.pairing_code)
+
+
+def test_regenerate_pairing_code_is_16_hex_chars(tmp_path, monkeypatch):
+    """Regeneration also produces 64-bit codes."""
+    from app.push_manager import PushManager
+    import requests
+
+    # Stub out the HTTP call to Central Push Service
+    def _fake_post(url, *args, **kwargs):
+        class R:
+            status_code = 200
+            def json(self): return {}
+        return R()
+    monkeypatch.setattr(requests.Session, "post", lambda self, *a, **kw: _fake_post(None))
+
+    mgr = PushManager(
+        {"worker_url": "https://unused.test"},
+        data_dir=str(tmp_path),
+        db=None,
+    )
+    mgr.regenerate_pairing_code()
+    assert mgr.pairing_code is not None
+    assert len(mgr.pairing_code) == 16
+    assert all(c in "0123456789ABCDEF" for c in mgr.pairing_code)

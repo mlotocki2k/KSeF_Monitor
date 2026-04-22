@@ -28,7 +28,7 @@
     {% endif %}
   </div>
 
-  <!-- QR + code -->
+  <!-- QR + code (V5-02: sensitive data hidden until admin authenticates) -->
   <div class="card p-6 flex flex-col items-center gap-4">
     <p class="text-sm text-gray-600 text-center">
       Zeskanuj kod QR w aplikacji <strong>Monitor KSeF</strong> lub wpisz kod ręcznie w zakładce Konfiguracja.
@@ -39,21 +39,31 @@
       Pobierz Monitor KSeF z App Store
     </a>
 
-    {% if push.qr_data_uri %}
-    <img src="{{ push.qr_data_uri }}" alt="QR kod parowania"
-         class="border border-gray-200 rounded-lg p-2 bg-white"
-         style="width:200px;height:200px;image-rendering:pixelated">
-    {% else %}
-    <div class="w-48 h-48 border-2 border-dashed border-gray-300 rounded-lg flex items-center justify-center text-sm text-gray-400">
-      Brak QR<br>(biblioteka qrcode niedostępna)
+    <!-- QR (shown only after auth reveal) -->
+    <div id="pairing-full" class="hidden flex flex-col items-center gap-4">
+      <img id="pairing-qr" alt="QR kod parowania"
+           class="border border-gray-200 rounded-lg p-2 bg-white"
+           style="width:200px;height:200px;image-rendering:pixelated">
+      <div class="text-center">
+        <p class="text-xs text-gray-500 mb-1">Kod parowania</p>
+        <p class="text-3xl font-mono font-bold tracking-widest text-gray-900 select-all" id="pairing-code"></p>
+      </div>
     </div>
-    {% endif %}
 
-    <div class="text-center">
-      <p class="text-xs text-gray-500 mb-1">Kod parowania</p>
-      <p class="text-3xl font-mono font-bold tracking-widest text-gray-900 select-all">
-        {{ push.pairing_code or "—" }}
-      </p>
+    <!-- Masked code + reveal button (shown before auth) -->
+    <div id="pairing-masked" class="flex flex-col items-center gap-3">
+      <div class="w-48 h-12 border-2 border-dashed border-gray-300 rounded-lg flex items-center justify-center text-sm text-gray-400">
+        QR ukryty
+      </div>
+      <div class="text-center">
+        <p class="text-xs text-gray-500 mb-1">Kod parowania (ukryty)</p>
+        <p class="text-xl font-mono font-bold tracking-widest text-gray-400 select-none" id="pairing-mask">
+          {{ push.pairing_code_masked or "—" }}
+        </p>
+      </div>
+      <button type="button" id="reveal-btn" class="btn-secondary text-xs" onclick="revealPairing()">
+        Pokaż kod parowania
+      </button>
     </div>
   </div>
 
@@ -86,6 +96,23 @@
 {% block extra_js %}
 {% if push %}
 <script>
+async function revealPairing() {
+  const token = prompt("Podaj token API, aby wyświetlić kod parowania:");
+  if (!token) return;
+  const resp = await fetch("/api/v1/push/pairing", {
+    headers: { "Authorization": "Bearer " + token }
+  });
+  if (!resp.ok) {
+    alert("Błąd autoryzacji (status " + resp.status + ")");
+    return;
+  }
+  const data = await resp.json();
+  document.getElementById("pairing-qr").src = data.qr_data_uri || "";
+  document.getElementById("pairing-code").textContent = data.pairing_code || "—";
+  document.getElementById("pairing-full").classList.remove("hidden");
+  document.getElementById("pairing-masked").classList.add("hidden");
+}
+
 async function regenerate() {
   if (!confirm('Wygenerować nowy kod? Sparowane urządzenia iOS zostaną odłączone.')) return;
   const btn = document.getElementById('btn-regen');
