@@ -11,6 +11,8 @@ import requests
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
+from app._ssrf_guard import is_safe_public_url
+
 from .base_notifier import BaseNotifier
 
 logger = logging.getLogger(__name__)
@@ -58,7 +60,6 @@ class WebhookNotifier(BaseNotifier):
     @staticmethod
     def _validate_webhook_url(url: str) -> bool:
         """Validate webhook URL via shared SSRF guard (app._ssrf_guard)."""
-        from app._ssrf_guard import is_safe_public_url
         return is_safe_public_url(url)
 
     def _revalidate_url(self) -> bool:

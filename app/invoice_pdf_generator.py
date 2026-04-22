@@ -23,6 +23,8 @@ from datetime import datetime
 from typing import Dict, Optional, List
 from io import BytesIO
 
+from app._ssrf_guard import is_safe_public_url
+
 try:
     import pytz
     PYTZ_AVAILABLE = True
@@ -1187,7 +1189,6 @@ def _try_ksef_generator(xml_content: str, ksef_number: str,
     Returns BytesIO with PDF on success, None on any failure (caller falls back).
     """
     # Validate URL — must be public HTTP(S) (prevents SSRF to internal services)
-    from app._ssrf_guard import is_safe_public_url
     if not is_safe_public_url(base_url):
         logger.warning("CIRFMF generator URL rejected (non-public or bad scheme): %s", base_url)
         return None
