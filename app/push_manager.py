@@ -554,8 +554,8 @@ class PushManager:
         """
         code = self.pairing_code
         masked = (
-            f"{code[:2]}\u2026{code[-2:]}"
-            if code and len(code) >= 4
+            f"{code[:1]}\u2026{code[-1:]}"
+            if code and len(code) >= 2
             else None
         )
         return {
@@ -566,8 +566,8 @@ class PushManager:
         }
 
     @property
-    def pairing_info_full(self) -> Dict[str, Any]:
-        """Full pairing info with plaintext code + QR. Auth-gated only."""
+    def pairing_info_sensitive(self) -> Dict[str, Any]:
+        """Sensitive pairing info with plaintext code + QR. Auth-gated only."""
         return {
             "instance_id": self.instance_id,
             "pairing_code": self.pairing_code,

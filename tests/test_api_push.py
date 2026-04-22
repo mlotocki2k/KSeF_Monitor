@@ -12,11 +12,11 @@ def mock_push_manager():
     pm = MagicMock()
     pm.pairing_info = {
         "instance_id": "abc-123",
-        "pairing_code_masked": "AB\u2026EF",
+        "pairing_code_masked": "A\u2026F",
         "registered_at": "2026-04-21T00:00:00Z",
         "is_registered": True,
     }
-    pm.pairing_info_full = {
+    pm.pairing_info_sensitive = {
         "instance_id": "abc-123",
         "pairing_code": "ABCD1234ABCD1234",
         "registered_at": "2026-04-21T00:00:00Z",
@@ -53,7 +53,7 @@ class TestPushSetupMasking:
         assert "pairing_code_masked" in body
         assert "pairing_code" not in body
         assert "qr_data_uri" not in body
-        assert body["pairing_code_masked"] == "AB\u2026EF"
+        assert body["pairing_code_masked"] == "A\u2026F"
 
 
 class TestPushPairingFullReveal:

@@ -423,10 +423,10 @@ class TestPushManagerProperties:
         assert "qr_data_uri" not in info
 
     @patch.object(PushManager, "_register_instance", return_value=True)
-    def test_pairing_info_full_keys(self, mock_register, tmp_path):
-        # V5-02: pairing_info_full returns plaintext code + QR
+    def test_pairing_info_sensitive_keys(self, mock_register, tmp_path):
+        # V5-02: pairing_info_sensitive returns plaintext code + QR
         pm = PushManager(_make_config(), data_dir=str(tmp_path))
-        info = pm.pairing_info_full
+        info = pm.pairing_info_sensitive
 
         assert "instance_id" in info
         assert "pairing_code" in info

@@ -26,7 +26,7 @@ def get_push_setup(request: Request):
 
 @router.get("/push/pairing")
 def reveal_pairing(request: Request):
-    """Full pairing info (plaintext code + QR). Auth-gated (V5-02).
+    """Sensitive pairing info (plaintext code + QR). Auth-gated (V5-02).
 
     Never exempted from auth — Task 4 removed any /push/** bypass.
     """
@@ -36,7 +36,7 @@ def reveal_pairing(request: Request):
             status_code=503,
             content={"detail": "Push notifications not configured"},
         )
-    return push_manager.pairing_info_full
+    return push_manager.pairing_info_sensitive
 
 
 @router.post("/push/regenerate")
