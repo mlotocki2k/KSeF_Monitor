@@ -145,3 +145,73 @@ class TestGenericErrorHandler:
         body = resp.json()
         assert body["detail"] == "Internal server error"
         assert "secret" not in str(body)
+
+
+class TestUiAuth:
+    """V5-01: UI routes must require auth by default."""
+
+    def test_ui_requires_auth_by_default(self, client_auth):
+        """GET /ui should return 401 when no token is provided."""
+        resp = client_auth.get("/ui")
+        assert resp.status_code == 401
+
+    def test_ui_invoices_requires_auth(self, client_auth):
+        resp = client_auth.get("/ui/invoices")
+        assert resp.status_code == 401
+
+    def test_ui_push_requires_auth(self, client_auth):
+        resp = client_auth.get("/ui/push")
+        assert resp.status_code == 401
+
+    def test_ui_accessible_with_token(self, app_auth):
+        """With valid token, /ui passes through auth (may 500 if db=None)."""
+        client = TestClient(app_auth, raise_server_exceptions=False)
+        resp = client.get(
+            "/ui", headers={"Authorization": f"Bearer {'a' * 32}"}
+        )
+        assert resp.status_code != 401
+
+    def test_invoice_pdf_requires_auth(self, client_auth):
+        """V5-03: /invoices/{ksef}/pdf must not bypass auth."""
+        resp = client_auth.get(
+            "/api/v1/invoices/1234567890-20260101-ABCDEF-01/pdf"
+        )
+        assert resp.status_code == 401
+
+    def test_invoice_xml_requires_auth(self, client_auth):
+        resp = client_auth.get(
+            "/api/v1/invoices/1234567890-20260101-ABCDEF-01/xml"
+        )
+        assert resp.status_code == 401
+
+    def test_push_devices_requires_auth(self, client_auth):
+        resp = client_auth.get("/api/v1/push/devices")
+        assert resp.status_code == 401
+
+    def test_ksef_status_requires_auth(self, client_auth):
+        resp = client_auth.get("/api/v1/monitor/ksef-status")
+        assert resp.status_code == 401
+
+
+class TestUiPublicOptIn:
+    """V5-01: api.ui_public=True lets UI bypass auth (legacy/reverse-proxy mode)."""
+
+    def test_ui_public_opt_in_allows_ui(self):
+        from app.api import create_app
+        from fastapi.testclient import TestClient
+        app = create_app(auth_token="a" * 32, ui_public=True)
+        client = TestClient(app, raise_server_exceptions=False)
+        resp = client.get("/ui")
+        # UI may 500 (template error, no db) — but NOT 401
+        assert resp.status_code != 401
+
+    def test_ui_public_still_protects_api(self):
+        """ui_public must NOT widen the bypass beyond /ui."""
+        from app.api import create_app
+        from fastapi.testclient import TestClient
+        app = create_app(auth_token="a" * 32, ui_public=True)
+        client = TestClient(app)
+        resp = client.get("/api/v1/push/devices")
+        assert resp.status_code == 401
+        resp2 = client.get("/api/v1/invoices/1-1-1-1/pdf")
+        assert resp2.status_code == 401

@@ -33,6 +33,7 @@ def create_app(
     push_manager=None,
     initial_load_manager=None,
     ui_enabled: bool = True,
+    ui_public: bool = False,     # V5-01 — opt-in bypass for legacy/reverse-proxy
 ) -> FastAPI:
     """Create and configure FastAPI application.
 
@@ -67,26 +68,23 @@ def create_app(
     if auth_token:
         if len(auth_token) < 32:
             logger.warning(
-                "API auth_token is shorter than 32 characters - consider using a stronger token"
+                "API auth_token is shorter than 32 characters - use a stronger token"
             )
+
+        # V5-01: Narrow whitelist — docs + health only. UI and invoice
+        # downloads now require auth. Legacy deployments behind a trusted
+        # reverse proxy can re-enable UI bypass via api.ui_public=true.
+        _EXEMPT_EXACT = {
+            "/docs", "/redoc", "/openapi.json",
+            "/api/v1/monitor/health",
+        }
 
         @app.middleware("http")
         async def verify_auth(request: Request, call_next):
-            # Allow docs, health, UI routes, read-only status endpoints, and
-            # invoice file downloads without auth.
-            # Port is bound to 127.0.0.1 — network access is the security boundary.
-            # Mutating endpoints (trigger, initial-load, push) still require auth.
             path = request.url.path
-            _EXEMPT_EXACT = {
-                "/docs", "/redoc", "/openapi.json",
-                "/api/v1/monitor/health",
-                "/api/v1/monitor/ksef-status",  # read-only status widget in Web UI
-                "/api/v1/push/devices",          # read-only device list in Web UI
-            }
-            if path in _EXEMPT_EXACT or \
-               path.startswith("/ui") or \
-               (path.startswith("/api/v1/invoices/") and
-                (path.endswith("/pdf") or path.endswith("/xml"))):
+            if path in _EXEMPT_EXACT:
+                return await call_next(request)
+            if ui_public and path.startswith("/ui"):
                 return await call_next(request)
 
             auth_header = request.headers.get("Authorization", "")
@@ -95,15 +93,16 @@ def create_app(
                     status_code=401,
                     content={"detail": "Missing or invalid Authorization header"},
                 )
-
-            provided_token = auth_header[7:]  # Strip "Bearer "
-            if not hmac.compare_digest(provided_token, auth_token):
-                logger.warning("Failed auth attempt from %s", request.client.host if request.client else "unknown")
+            provided = auth_header[7:]
+            if not hmac.compare_digest(provided, auth_token):
+                logger.warning(
+                    "Failed auth attempt from %s",
+                    request.client.host if request.client else "unknown",
+                )
                 return JSONResponse(
                     status_code=401,
                     content={"detail": "Invalid authentication token"},
                 )
-
             return await call_next(request)
     else:
         logger.warning("API running without authentication - set api.auth_token for production")

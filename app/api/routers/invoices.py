@@ -10,6 +10,7 @@ import os
 import re
 from io import BytesIO
 from typing import Optional
+from urllib.parse import quote
 
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
@@ -22,7 +23,7 @@ router = APIRouter(tags=["invoices"])
 
 # Validation patterns
 _NIP_PATTERN = re.compile(r"^\d{10}$")
-_KSEF_PATTERN = re.compile(r"^\d{10}-\d{8}-[A-F0-9]{6}-[A-F0-9]{2}$")
+_KSEF_PATTERN = re.compile(r"^\d{10}-\d{8}-[A-Z0-9]{6,}-[A-Z0-9]{2}$")
 
 
 @router.get("/invoices", response_model=PaginatedInvoices)
@@ -107,6 +108,11 @@ def list_invoices(
 @router.get("/invoices/{ksef_number}", response_model=InvoiceDetail)
 def get_invoice(request: Request, ksef_number: str):
     """Get invoice details by KSeF number."""
+    if not _KSEF_PATTERN.match(ksef_number):
+        return JSONResponse(
+            status_code=400,
+            content={"detail": "Invalid KSeF number format"},
+        )
     db = request.app.state.db
     if not db:
         return JSONResponse(status_code=503, content={"detail": "Database not available"})
@@ -131,6 +137,11 @@ def get_invoice_xml(request: Request, ksef_number: str):
     Returns Content-Type: application/xml.
     Falls back to fetching from KSeF if local cache not found.
     """
+    if not _KSEF_PATTERN.match(ksef_number):
+        return JSONResponse(
+            status_code=400,
+            content={"detail": "Invalid KSeF number format"},
+        )
     db = request.app.state.db
     monitor = request.app.state.monitor
 
@@ -151,10 +162,11 @@ def get_invoice_xml(request: Request, ksef_number: str):
             if artifact and artifact.file_path and os.path.exists(artifact.file_path):
                 with open(artifact.file_path, "r", encoding="utf-8") as f:
                     xml_content = f.read()
+                safe_filename = quote(f"{ksef_number}.xml")
                 return Response(
                     content=xml_content,
                     media_type="application/xml",
-                    headers={"Content-Disposition": f'attachment; filename="{ksef_number}.xml"'},
+                    headers={"Content-Disposition": f'attachment; filename="{safe_filename}"'},
                 )
         finally:
             session.close()
@@ -167,10 +179,11 @@ def get_invoice_xml(request: Request, ksef_number: str):
         result = monitor.ksef.get_invoice_xml(ksef_number)
         if not result:
             return JSONResponse(status_code=404, content={"detail": "XML not found on KSeF"})
+        safe_filename = quote(f"{ksef_number}.xml")
         return Response(
             content=result["xml_content"],
             media_type="application/xml",
-            headers={"Content-Disposition": f'attachment; filename="{ksef_number}.xml"'},
+            headers={"Content-Disposition": f'attachment; filename="{safe_filename}"'},
         )
     except Exception as e:
         logger.error("Failed to fetch XML for %s: %s", ksef_number, e)
@@ -185,6 +198,11 @@ def get_invoice_pdf(request: Request, ksef_number: str):
     and generates PDF using the configured generator chain.
     Returns Content-Type: application/pdf.
     """
+    if not _KSEF_PATTERN.match(ksef_number):
+        return JSONResponse(
+            status_code=400,
+            content={"detail": "Invalid KSeF number format"},
+        )
     db = request.app.state.db
     monitor = request.app.state.monitor
 
@@ -205,10 +223,11 @@ def get_invoice_pdf(request: Request, ksef_number: str):
             if artifact and artifact.file_path and os.path.exists(artifact.file_path):
                 with open(artifact.file_path, "rb") as f:
                     pdf_bytes = f.read()
+                safe_filename = quote(f"{ksef_number}.pdf")
                 return Response(
                     content=pdf_bytes,
                     media_type="application/pdf",
-                    headers={"Content-Disposition": f'attachment; filename="{ksef_number}.pdf"'},
+                    headers={"Content-Disposition": f'attachment; filename="{safe_filename}"'},
                 )
         finally:
             session.close()
@@ -243,10 +262,11 @@ def get_invoice_pdf(request: Request, ksef_number: str):
                 content={"detail": "PDF generation not supported for this invoice schema"},
             )
         pdf_bytes = buf.read() if hasattr(buf, 'read') else buf
+        safe_filename = quote(f"{ksef_number}.pdf")
         return Response(
             content=pdf_bytes,
             media_type="application/pdf",
-            headers={"Content-Disposition": f'attachment; filename="{ksef_number}.pdf"'},
+            headers={"Content-Disposition": f'attachment; filename="{safe_filename}"'},
         )
     except Exception as e:
         logger.error("PDF generation failed for %s: %s", ksef_number, e)

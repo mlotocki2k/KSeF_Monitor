@@ -497,6 +497,13 @@ class ConfigManager:
             logger.warning("=" * 60)
 
         api.setdefault("ui_enabled", True)
+        api.setdefault("ui_public", False)
+        if api["ui_public"] and api["auth_token"]:
+            logger.warning(
+                "api.ui_public=true bypasses auth for /ui/* — only safe when "
+                "port is bound to 127.0.0.1 or a trusted reverse proxy enforces "
+                "authentication. Set to false for production."
+            )
 
         if api["enabled"]:
             logger.info(
