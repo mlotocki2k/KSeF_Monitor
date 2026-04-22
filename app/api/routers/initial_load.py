@@ -4,11 +4,13 @@ Initial Load endpoints — start/status/cancel historical invoice import jobs.
 
 import logging
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Annotated, Optional
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, field_validator, model_validator
+from pydantic import BaseModel, StringConstraints, field_validator, model_validator
+
+JobIdPath = Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")]
 
 from app.api._limiter import limiter, _endpoint_limits
 
@@ -116,7 +118,7 @@ def start_initial_load(request: Request, body: StartJobRequest):
 
 
 @router.get("/initial-load/status")
-def get_initial_load_status(request: Request, job_id: Optional[str] = None):
+def get_initial_load_status(request: Request, job_id: Optional[JobIdPath] = None):
     """
     Get status of an initial load job.
 
@@ -140,7 +142,7 @@ def get_initial_load_status(request: Request, job_id: Optional[str] = None):
 
 
 @router.post("/initial-load/cancel")
-def cancel_initial_load(request: Request, job_id: str):
+def cancel_initial_load(request: Request, job_id: JobIdPath):
     """
     Cancel a running or pending initial load job.
     """
