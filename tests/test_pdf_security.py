@@ -146,3 +146,28 @@ def test_cirfmf_rejects_file_scheme():
     from app.invoice_pdf_generator import _try_ksef_generator
     result = _try_ksef_generator("<Faktura/>", "KSEF1", "file:///etc/passwd")
     assert result is None
+
+
+def test_xhtml2pdf_blocks_external_uri():
+    """V5-08: xhtml2pdf link_callback must refuse network/file URIs.
+
+    Allowed: data: URIs (QR codes) + bundled fonts under /app/app/templates/.
+    Blocked: http(s), file://, anything else.
+    """
+    from app.invoice_pdf_template import _pdf_link_callback
+
+    # External URIs blocked
+    assert _pdf_link_callback("http://evil.com/x.css", None) == ""
+    assert _pdf_link_callback("https://cdn.example.com/font.woff2", None) == ""
+    assert _pdf_link_callback("file:///etc/passwd", None) == ""
+    assert _pdf_link_callback("ftp://example.com/evil", None) == ""
+    # Empty / None
+    assert _pdf_link_callback("", None) == ""
+    assert _pdf_link_callback(None, None) == ""
+    # data: URIs allowed (QR code is data:image/png;base64,...)
+    assert _pdf_link_callback("data:image/png;base64,AAAA", None).startswith("data:")
+    # Bundled app templates allowed
+    assert (
+        _pdf_link_callback("/app/app/templates/fonts/DejaVu.ttf", None)
+        .startswith("/app/")
+    )
