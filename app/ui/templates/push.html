@@ -140,8 +140,7 @@ async function loadDevices() {
   const list = document.getElementById('devices-list');
   const count = document.getElementById('devices-count');
   try {
-    const r = await fetch('/api/v1/push/devices');
-    const d = await r.json();
+    const d = await apiCall('GET', '/api/v1/push/devices');
     const devices = d.devices || [];
     count.textContent = `${devices.length} / 50`;
     if (devices.length === 0) {

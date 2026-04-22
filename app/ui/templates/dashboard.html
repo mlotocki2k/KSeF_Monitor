@@ -194,8 +194,7 @@ async function refreshKsefStatus() {
   const badge = document.getElementById('ksef-status-badge');
   const detail = document.getElementById('ksef-status-detail');
   try {
-    const r = await fetch('/api/v1/monitor/ksef-status');
-    const d = await r.json();
+    const d = await apiCall('GET', '/api/v1/monitor/ksef-status');
     if (d.available) {
       badge.innerHTML = '<span class="badge-ok text-xs">Dostępne</span>';
       detail.textContent = `${d.environment} • ${d.latency_ms} ms`;
