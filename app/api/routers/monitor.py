@@ -58,7 +58,7 @@ def get_monitor_state(request: Request):
 
 @router.get("/monitor/ksef-status")
 def ksef_api_status(request: Request):
-    """Check KSeF API availability (public endpoint, no KSeF auth required).
+    """Check KSeF API availability — requires API auth (Task 4).
 
     Probes /security/public-key-certificates as a connectivity check.
     Returns available, environment, latency_ms, http_status.
@@ -76,7 +76,7 @@ def ksef_api_status(request: Request):
         logger.error("KSeF status probe failed: %s", e)
         return JSONResponse(
             status_code=500,
-            content={"available": False, "error": str(e), "environment": "unknown"},
+            content={"available": False, "error": "probe failed", "environment": "unknown"},
         )
 
 
