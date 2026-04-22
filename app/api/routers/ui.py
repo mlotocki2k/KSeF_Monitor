@@ -21,6 +21,8 @@ from fastapi import APIRouter, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 
+from app import __version__
+
 logger = logging.getLogger(__name__)
 
 TEMPLATES_DIR = Path(__file__).parent.parent.parent / "ui" / "templates"
@@ -123,6 +125,7 @@ def _base_ctx(request: Request) -> dict:
         "auth_required": bool(_auth_token(request)),
         "nav": nav,
         "docs_enabled": request.app.openapi_url is not None,
+        "ui_version": __version__,
     }
 
 

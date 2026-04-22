@@ -191,7 +191,7 @@ def create_app(
         logger.info("Web UI enabled at /ui")
 
     static_dir = Path(__file__).parent.parent / "ui" / "static"
-    if static_dir.is_dir():
+    if ui_enabled and static_dir.is_dir():
         app.mount(
             "/ui/static",
             StaticFiles(directory=str(static_dir)),
