@@ -28,6 +28,11 @@ jobs:
           fi
           echo "No secrets detected."
 
+      - name: Install system dependencies for pip-audit
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libcairo2-dev pkg-config
+
       - name: Python dependency vulnerability scan
         run: |
           python -m pip install --upgrade pip
