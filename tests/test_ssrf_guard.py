@@ -63,3 +63,9 @@ class TestIsSafePublicUrl:
     def test_multicast_rejected(self, mock_gai):
         mock_gai.return_value = [(2, 1, 6, "", ("224.0.0.1", 0))]
         assert is_safe_public_url("https://mcast.example/") is False
+
+    @patch("app._ssrf_guard.socket.getaddrinfo")
+    def test_unparseable_ip_rejected(self, mock_gai):
+        """R8: IPv6 scope-id or malformed IP should reject, not silently pass."""
+        mock_gai.return_value = [(10, 1, 6, "", ("fe80::1%eth0", 0, 0, 0))]
+        assert is_safe_public_url("https://scoped.ipv6/") is False

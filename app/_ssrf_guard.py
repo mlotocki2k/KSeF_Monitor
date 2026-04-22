@@ -48,7 +48,8 @@ def is_safe_public_url(url: Optional[str]) -> bool:
         try:
             ip = ipaddress.ip_address(ip_str)
         except ValueError:
-            continue
+            logger.warning("URL rejected: unparseable IP %r", ip_str[:64])
+            return False
         if (ip.is_private or ip.is_loopback or ip.is_link_local
                 or ip.is_multicast or ip.is_reserved or ip.is_unspecified):
             logger.warning("URL rejected: resolves to non-public IP")
