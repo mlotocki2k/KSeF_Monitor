@@ -20,9 +20,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     gosu \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Python dependencies from hashed lockfile (reproducible builds)
-COPY requirements.lock .
-RUN pip install --no-cache-dir --require-hashes -r requirements.lock
+# Install Python dependencies
+# NOTE: requirements.lock exists but needs regen under Python 3.11 (currently Py3.12).
+# Until regen lands (R2 deferred), install from requirements.txt with range pins.
+# Upper bounds + CVE-driven lower bounds guard against supply-chain drift.
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
 
 # Remove build-only dependencies to keep image smaller
 RUN apt-get purge -y --auto-remove gcc pkg-config libcairo2-dev

@@ -1,7 +1,7 @@
 # KSeF Monitor v0.5
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![Docker](https://img.shields.io/badge/Docker-ready-blue?logo=docker)](https://ghcr.io/mlotocki2k/ksef_monitor)
 [![KSeF API](https://img.shields.io/badge/KSeF_API-v2.2.0-green)](https://github.com/CIRFMF/ksef-docs)
 [![Prometheus](https://img.shields.io/badge/Prometheus-metrics-orange?logo=prometheus)](docs/PROJECT_STRUCTURE.md)
@@ -151,7 +151,7 @@ Katalog `data/` powstaje w runtime i zawiera bazę danych `invoices.db` oraz leg
 
 ## Wymagania
 
-- Python 3.9+ lub Docker
+- Python 3.10+ lub Docker
 - Token autoryzacyjny z portalu KSeF (https://ksef.gov.pl)
 - Co najmniej jeden kanał powiadomień (opcjonalnie — możesz wyłączyć wszystkie):
   - **Pushover** — User Key + API Token (https://pushover.net)
