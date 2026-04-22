@@ -19,7 +19,7 @@ classifiers = [
 
 dependencies = [
     "requests>=2.32.5,<3.0.0",
-    "urllib3>=2.6.0,<3.0.0",            # CVE-2025-66418, CVE-2025-66471
+    "urllib3>=2.6.3,<3.0.0",            # CVE-2025-66418, CVE-2025-66471, CVE-2026-21441 (fix in 2.6.3)
     "python-dateutil==2.9.0.post0",
     "cryptography==46.0.7",             # CVE-2026-39892 — was 46.0.5
     "prometheus-client==0.24.1",
@@ -35,7 +35,7 @@ dependencies = [
     "starlette>=0.49.1,<1.0.0",         # CVE-2025-62727 — stay in 0.x for Python 3.9 compat
     "uvicorn[standard]>=0.34.0,<1.0.0",
     "slowapi>=0.1.9,<1.0.0",
-    "python-multipart>=0.0.22,<1.0.0",  # CVE-2024-53981, CVE-2026-40347, CVE-2026-24486
+    "python-multipart>=0.0.26,<1.0.0",  # CVE-2024-53981, CVE-2026-40347 (fix in 0.0.26), CVE-2026-24486
 ]
 
 [project.optional-dependencies]
