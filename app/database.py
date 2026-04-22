@@ -407,7 +407,11 @@ class Database:
         logger.info(f"Database initialized: {self.db_path}")
 
     def create_tables(self):
-        """Create all tables (used only if Alembic is not available)."""
+        """Ensure the DB schema exists and is tracked by alembic.
+
+        Runs `Base.metadata.create_all` for pristine DBs, then delegates to
+        `_migrate_schema` which invokes alembic (stamp-at-head or upgrade).
+        """
         Base.metadata.create_all(self.engine)
         self._migrate_schema()
         logger.info("Database tables created")
@@ -458,6 +462,18 @@ class Database:
             if has_tables and not has_alembic_version:
                 # create_all already built the latest schema; just stamp so
                 # alembic knows the DB is at head.
+                # WARN: for v0.4→v0.5 upgrades on existing prod DBs, this skips
+                # column-level migrations from phases 1-4. Operator must run
+                # `alembic stamp <known-rev>; alembic upgrade head` manually
+                # BEFORE this code path runs.
+                non_alembic_tables = {t for t in table_names if t != "alembic_version"}
+                if non_alembic_tables - set(Base.metadata.tables.keys()):
+                    logger.warning(
+                        "Detected unknown tables %s in DB without alembic_version — "
+                        "possible stale schema. Stamping at head may skip needed "
+                        "migrations; review 'alembic stamp' docs before upgrading.",
+                        non_alembic_tables - set(Base.metadata.tables.keys()),
+                    )
                 command.stamp(alembic_cfg, "head")
                 logger.info("Alembic version stamped to head (fresh DB)")
             else:
