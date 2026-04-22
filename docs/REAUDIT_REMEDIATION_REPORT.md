@@ -1,5 +1,19 @@
 # Re-Audit Remediation Report
 
+> **v0.5 Addendum (2026-04-22)**
+>
+> This document covers the v0.4 post-audit re-audit (findings R-01, R-02, R-03, commit `977f4ae`).
+>
+> For the full v0.5 security hardening cycle (13 tasks, 12 audit findings + 9 v0.4 carryovers), see:
+> - **Original audit:** `audit/20260421_security_audit_docker_v0_5_test_branch.md`
+> - **Post-remediation re-audit:** `audit/20260422_security_reaudit_v0_5_post_remediation.md`
+> - **Implementation plan:** `docs/superpowers/plans/2026-04-21-v0_5-security-audit-remediation.md`
+> - **Full changelog entry:** `CHANGELOG.md` — section `[0.5.0]`
+
+---
+
+
+
 **Project:** KSeF Monitor v0.4
 **Date:** 2026-03-13
 **Scope:** Re-audit findings R-01, R-02, R-03

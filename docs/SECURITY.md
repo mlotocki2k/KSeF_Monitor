@@ -548,6 +548,155 @@ nano config.json  # Set notifications.channels
 docker stack deploy -c docker-compose.yml ksef
 ```
 
+## v0.5 Security Hardening (2026-04)
+
+This section covers security controls introduced in v0.5 as part of audit remediation
+(`audit/20260421_security_audit_docker_v0_5_test_branch.md` + post-remediation re-audit
+`audit/20260422_security_reaudit_v0_5_post_remediation.md`).
+
+### Authentication model
+
+v0.5 uses a **two-layer auth model**:
+
+1. **Bearer token (default)** — all endpoints except the public whitelist require
+   `Authorization: Bearer <token>` verified with `hmac.compare_digest`.
+2. **`api.ui_public` opt-in (default `false`)** — setting `api.ui_public: true` re-enables
+   unauthenticated access to the `/ui` routes for legacy reverse-proxy setups where the
+   proxy enforces auth externally.
+
+### Endpoint auth matrix
+
+| Endpoint | Auth required | Notes |
+|----------|:-------------:|-------|
+| `/docs` | No | Swagger UI; disable with `docs_enabled: false` in prod |
+| `/redoc` | No | ReDoc UI; same as above |
+| `/openapi.json` | No | OpenAPI spec |
+| `/api/v1/monitor/health` | No | Health probe — safe to expose to load balancers |
+| `/ui/**` | **Yes** (unless `api.ui_public: true`) | Web UI routes |
+| `/api/v1/invoices/{ksef}/pdf` | **Yes** | PDF download |
+| `/api/v1/invoices/{ksef}/xml` | **Yes** | XML download |
+| `/api/v1/push/**` | **Yes** | Push setup, pairing, regenerate, reset |
+| All other `/api/v1/**` | **Yes** | Invoices, stats, monitor, artifacts |
+
+Previous versions had a pattern-based whitelist that inadvertently exempted `/ui/**`,
+`/invoices/**/pdf|xml`, and `/push/devices` — this was closed in V5-01.
+
+### `GET /api/v1/push/pairing` — auth-gated plaintext reveal
+
+v0.5 adds a new **authenticated** endpoint that returns the full plaintext pairing code
+and a rendered QR code for pairing the Monitor KSeF iOS app. The pairing code was widened
+from 32-bit to 64-bit (`secrets.token_hex(8)`) in the same release.
+
+`/api/v1/push/setup` (unauthenticated when `ui_public` was set) now returns only a
+**masked** preview (`X…Y`). The actual code is exclusively available at
+`/api/v1/push/pairing` behind auth.
+
+### Per-endpoint rate limits
+
+v0.5 introduces granular `slowapi` rate limits on mutating and sensitive routes (V5-06).
+All limits are overridable via `api.rate_limit.<key>` in `config.json`.
+
+| Endpoint | Method | Default limit | Config key |
+|----------|--------|:-------------:|------------|
+| `/api/v1/monitor/trigger` | POST | 2/min | `api.rate_limit.trigger` |
+| `/api/v1/initial-load/start` | POST | 1/hr | `api.rate_limit.initial_load_start` |
+| `/api/v1/push/regenerate` | POST | 5/hr | `api.rate_limit.push_regenerate` |
+| `/api/v1/push/reset` | POST | 1/hr | `api.rate_limit.push_reset` |
+| `/api/v1/invoices/{ksef}/pdf` | GET | 30/min | `api.rate_limit.invoice_download` |
+| `/api/v1/invoices/{ksef}/xml` | GET | 30/min | `api.rate_limit.invoice_download` |
+| All other endpoints | * | 60/min | `api.rate_limit.default` |
+
+### SSRF guard
+
+`app._ssrf_guard.is_safe_public_url` is a shared validator applied to:
+- **Webhook notifier URLs** (existing, carried forward from v0.4 N-03)
+- **CIRFMF PDF generator URL** (`storage.pdf_ksef_generator_url`) — new in v0.5
+
+The guard rejects private, loopback, link-local, multicast, and IANA-reserved IP
+destinations. Known limitation: TOCTOU DNS rebinding is possible (a server that resolves
+to a public IP at validation time could switch to a private IP before the actual request).
+This is a defense-in-depth gap tracked at INFO level; mitigate with network-level egress
+controls in production.
+
+### Security headers (v0.5)
+
+v0.5 expands the HTTP response header set (V5-05):
+
+| Header | Value |
+|--------|-------|
+| `Content-Security-Policy` | `default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-ancestors 'none'` |
+| `Strict-Transport-Security` | `max-age=31536000; includeSubDomains` |
+| `Referrer-Policy` | `strict-origin-when-cross-origin` |
+| `Permissions-Policy` | `geolocation=(), microphone=(), camera=()` |
+| `X-Content-Type-Options` | `nosniff` (carried forward) |
+| `X-Frame-Options` | `DENY` (carried forward) |
+| `Cache-Control` | `no-store` (carried forward) |
+
+Known follow-up: `script-src 'unsafe-inline'` is required while `push.html` contains
+inline JS. Tracked item — move to `app/ui/static/push.js` and switch to hashed/nonce CSP.
+
+### `xhtml2pdf` link_callback restrictions (V5-08)
+
+The PDF generator (`invoice_pdf_template.py`) passes a `link_callback` to
+`xhtml2pdf.pisa.CreatePDF`. The callback allows only:
+- `data:` URIs (inline base64 images — used for QR codes and embedded fonts)
+- Paths under the bundled template directory
+
+Any other URI (external HTTP, absolute filesystem paths outside the template root) is
+**blocked**. This prevents SSRF and LFI through user-customized HTML/CSS PDF templates.
+
+### Tailwind CSS — self-hosted (V5-10)
+
+The Web UI no longer loads Tailwind CSS from `cdn.tailwindcss.com`. v0.5 bundles a
+14 KB scanned/purged build at `app/ui/static/tailwind.min.css`. This eliminates the CDN
+supply-chain dependency and the Content-Security-Policy violation that CDN loading caused.
+Cache-busting is done via `?v={version}` query string on the static file reference.
+
+### CVE-driven dependency pins (V5-04)
+
+| Package | Pinned version | CVE(s) closed |
+|---------|:-------------:|---------------|
+| `urllib3` | `>=2.6.3` | CVE-2025-66418 (CVSS 8.9), CVE-2025-66471 |
+| `starlette` | `>=0.49.1,<1.0.0` | CVE-2025-62727 |
+| `python-multipart` | `>=0.0.26` | CVE-2024-53981, CVE-2026-40347, CVE-2026-24486 |
+| `cryptography` | `==46.0.7` | CVE-2026-39892 |
+
+`requirements.lock` is generated with `pip-compile --generate-hashes`; the Dockerfile
+installs via `pip install --require-hashes` to enforce the lockfile. CI runs `pip-audit
+--strict` against the lockfile and `trivy image` scan of the built container (exit-code 1
+on CRITICAL/HIGH findings).
+
+### Rootless entrypoint (v0.4 F-09 carried into v0.5)
+
+`entrypoint.sh` detects `id -u != 0` at runtime. When non-root (Podman rootless,
+userns-remap, rootless Docker), the `usermod`/`groupmod`/`chown` operations are skipped
+and the application is exec'd directly, avoiding permission errors in restricted container
+runtimes.
+
+### Alembic migrations replace ad-hoc ALTER TABLE (v0.4 F-07 carried into v0.5)
+
+The `_migrate_schema` method's runtime `ALTER TABLE` f-string loop was replaced by
+`alembic.command.upgrade(head)` / `stamp(head)` detection based on the `alembic_version`
+table. For databases upgrading from v0.4, operators should run:
+
+```bash
+alembic stamp <current_rev>
+alembic upgrade head
+```
+
+if the `alembic_version` table is absent (a warning is logged on startup in that case).
+
+### Known deferred items
+
+1. **Regenerate `requirements.lock` under Python 3.11** — current lockfile was compiled
+   with Python 3.12. Blocked on Docker Desktop availability in the build environment.
+2. **Tighten CSP `script-src 'unsafe-inline'`** — requires moving `push.html` inline JS
+   to `app/ui/static/push.js` and switching to a hashed/nonce-based script allowlist.
+3. **TOCTOU DNS rebinding in SSRF guard** — defense-in-depth gap; mitigate with
+   network-level egress controls. Tracked at INFO log level.
+
+---
+
 ## Security Hardening (v0.4 Audit)
 
 The following security controls were implemented based on a v0.4 security audit:

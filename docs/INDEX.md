@@ -47,7 +47,11 @@ chmod +x setup.sh && ./setup.sh
 
 | Document | Description | Read When |
 |----------|-------------|-----------|
-| **[SECURITY.md](SECURITY.md)** | Complete security guide | Before production deployment |
+| **[SECURITY.md](SECURITY.md)** | Complete security guide (updated for v0.5) | Before production deployment |
+| **[CHANGELOG.md](../CHANGELOG.md)** | Full release history with security changelog | Reviewing what changed per release |
+| **[audit/20260421_security_audit_docker_v0_5_test_branch.md](../audit/20260421_security_audit_docker_v0_5_test_branch.md)** | v0.5 security audit report (original findings) | Reviewing audit scope and findings |
+| **[audit/20260422_security_reaudit_v0_5_post_remediation.md](../audit/20260422_security_reaudit_v0_5_post_remediation.md)** | v0.5 post-remediation re-audit | Verifying all findings were closed |
+| **[REAUDIT_REMEDIATION_REPORT.md](REAUDIT_REMEDIATION_REPORT.md)** | v0.4 re-audit remediation report (R-01…R-03) | Reviewing v0.4 remediation lineage |
 | **[.env.example](.env.example)** | Environment variables template | Setting up secrets |
 
 **Key Security Methods:**

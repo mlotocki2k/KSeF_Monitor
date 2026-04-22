@@ -242,6 +242,24 @@ Cel: uniwersalny monitor i generator PDF dla każdego typu faktury w KSeF — ni
 - [x] Dokumentacja: rozszerzenie `PDF_TEMPLATES.md` o nowe schematy i CIRFMF integrację
 - [x] 50 nowych testów (`test_multi_schema_parser.py`)
 
+### 5) Security hardening — audit remediation ✅
+_Źródło: `audit/20260421_security_audit_docker_v0_5_test_branch.md` + `audit/20260422_security_reaudit_v0_5_post_remediation.md`. Pełna lista zmian: `CHANGELOG.md` [0.5.0]._
+
+- [x] **V5-01** Zawężenie whitelist auth do `{/docs, /redoc, /openapi.json, /api/v1/monitor/health}`. Nowa opcja `api.ui_public` (domyślnie `false`) jako opt-in dla reverse-proxy.
+- [x] **V5-02** Pairing code rozszerzony 32-bit → 64-bit, maskowany w UI (`X…Y`). Plaintext code + QR przeniesiony za auth do `GET /api/v1/push/pairing`.
+- [x] **V5-03** Auth bypass `/invoices/{ksef}/pdf|xml` usunięty. `KsefNumberPath` Pydantic type waliduje `ksef_number` na poziomie path-param (422 przy niezgodności). `Content-Disposition` używa `urllib.parse.quote()`.
+- [x] **V5-04** CVE-driven pinning: `urllib3>=2.6.3`, `starlette>=0.49.1,<1.0.0`, `python-multipart>=0.0.26`, `cryptography==46.0.7`. `requirements.lock` z hashami, CI: `pip-audit` + `trivy image`.
+- [x] **V5-05** Security headers: CSP, HSTS (`max-age=31536000`), `Referrer-Policy`, `Permissions-Policy`.
+- [x] **V5-06** Per-endpoint rate limity: `/monitor/trigger` 2/min, `/initial-load/start` 1/hr, `/push/regenerate` 5/hr, `/push/reset` 1/hr, `/invoices/{}/pdf|xml` 30/min. Konfigurowalne przez `api.rate_limit.*`.
+- [x] **V5-07** SSRF guard `app._ssrf_guard.is_safe_public_url` — wspólny walidator dla webhook + CIRFMF PDF generator URL.
+- [x] **V5-08** `xhtml2pdf` `link_callback` blokuje zewnętrzne URI — dozwolone tylko `data:` i ścieżki bundlowanych szablonów.
+- [x] **V5-09/V5-12** Ujednolicenie stringa wersji do `0.5.0`, single-source przez `app.__version__`.
+- [x] **V5-10** Tailwind CSS self-hosted (`app/ui/static/tailwind.min.css`, 14 KB). Usunięta zależność CDN.
+- [x] **V5-11** `StartJobRequest` odrzuca zakresy dat > 5 lat przez Pydantic `model_validator`.
+- [x] **v0.4 F-06** Jinja2 autoescape extension-driven — callable `_jinja_autoescape(name)`.
+- [x] **v0.4 F-07** `_migrate_schema` zastąpiony przez `alembic.command.upgrade(head)` / `stamp(head)`.
+- [x] **v0.4 F-09** `entrypoint.sh` — rootless mode: `id -u` check, pomija `usermod`/`chown` gdy non-root.
+
 ### Zmiany API / schema ✅
 - [x] KSeF API v2.4.0: Problem Details, 429 retry, 410 Gone, isTruncated pagination, API status monitor
 - [x] `GET /api/v1/monitor/ksef-status` — probe dostępności API bez logowania
