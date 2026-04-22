@@ -8,12 +8,11 @@ Response models ensure only declared fields are serialized.
 import logging
 import os
 import re
-from io import BytesIO
 from typing import Optional
 from urllib.parse import quote
 
 from fastapi import APIRouter, Query, Request
-from fastapi.responses import JSONResponse, Response, StreamingResponse
+from fastapi.responses import JSONResponse, Response
 
 from app.api._limiter import limiter, _endpoint_limits
 from app.api.path_params import KsefNumberPath
