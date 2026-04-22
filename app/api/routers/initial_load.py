@@ -8,7 +8,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, field_validator, model_validator
 
 from app.api._limiter import limiter, _endpoint_limits
 
@@ -41,6 +41,20 @@ class StartJobRequest(BaseModel):
         if v not in allowed:
             raise ValueError(f"date_type must be one of {allowed}")
         return v
+
+    @model_validator(mode="after")
+    def check_range_not_excessive(self):
+        """V5-11: reject ranges > 5 years to prevent KSeF API abuse / DB churn."""
+        from datetime import datetime, timedelta
+        try:
+            start = datetime.fromisoformat(self.start_date)
+            end = datetime.fromisoformat(self.end_date)
+        except ValueError:
+            # Let the endpoint's own date-parsing return 422 with a clearer msg
+            return self
+        if (end - start) > timedelta(days=1826):
+            raise ValueError("date range exceeds 5 years (1826 days) — split into smaller jobs")
+        return self
 
 
 def _parse_date(date_str: str) -> Optional[datetime]:
