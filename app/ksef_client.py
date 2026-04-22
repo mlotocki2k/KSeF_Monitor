@@ -18,8 +18,10 @@ from cryptography.x509 import load_der_x509_certificate
 # Handle imports for both package and direct execution
 try:
     from .rate_limiter import RateLimiter
+    from .api.path_params import KSEF_NUMBER_PATTERN as _KSEF_NUMBER_PATTERN
 except ImportError:
     from app.rate_limiter import RateLimiter
+    from app.api.path_params import KSEF_NUMBER_PATTERN as _KSEF_NUMBER_PATTERN
 
 logger = logging.getLogger(__name__)
 
@@ -775,16 +777,13 @@ class KSeFClient:
             self.refresh_token = None
             self.session.close()
 
-    # KSeF number format: NIP(10digits)-YYYYMMDD-RANDOM(6+ alnum)-SUFFIX(2 alnum)
-    _KSEF_NUMBER_PATTERN = re.compile(r'^\d{10}-\d{8}-[A-Za-z0-9]{6,}-[A-Za-z0-9]{2}$')
-
     @staticmethod
     def _validate_ksef_number(ksef_number: str) -> bool:
         """
         Validate KSeF number format.
-        Expected: NIP(10digits)-YYYYMMDD-RANDOM(6+alnum)-XX(2 alnum)
+        Expected: NIP(10digits)-YYYYMMDD-RANDOM(6+alnum uppercase)-XX(2 alnum uppercase)
         """
-        return bool(KSeFClient._KSEF_NUMBER_PATTERN.match(ksef_number))
+        return bool(_KSEF_NUMBER_PATTERN.match(ksef_number))
 
     def get_invoice_xml(self, ksef_number: str) -> Optional[Dict]:
         """

@@ -16,6 +16,7 @@ from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 
 from app.api._limiter import limiter, _endpoint_limits
+from app.api.path_params import KsefNumberPath
 from ..schemas import InvoiceDetail, InvoiceSummary, PaginatedInvoices
 
 logger = logging.getLogger(__name__)
@@ -24,7 +25,6 @@ router = APIRouter(tags=["invoices"])
 
 # Validation patterns
 _NIP_PATTERN = re.compile(r"^\d{10}$")
-_KSEF_PATTERN = re.compile(r"^\d{10}-\d{8}-[A-Z0-9]{6,}-[A-Z0-9]{2}$")
 
 
 @router.get("/invoices", response_model=PaginatedInvoices)
@@ -107,13 +107,8 @@ def list_invoices(
 
 
 @router.get("/invoices/{ksef_number}", response_model=InvoiceDetail)
-def get_invoice(request: Request, ksef_number: str):
+def get_invoice(request: Request, ksef_number: KsefNumberPath):
     """Get invoice details by KSeF number."""
-    if not _KSEF_PATTERN.match(ksef_number):
-        return JSONResponse(
-            status_code=400,
-            content={"detail": "Invalid KSeF number format"},
-        )
     db = request.app.state.db
     if not db:
         return JSONResponse(status_code=503, content={"detail": "Database not available"})
@@ -133,17 +128,12 @@ def get_invoice(request: Request, ksef_number: str):
 
 @router.get("/invoices/{ksef_number}/xml")
 @limiter.limit(lambda key: _endpoint_limits["invoice_download"])
-def get_invoice_xml(request: Request, ksef_number: str):
+def get_invoice_xml(request: Request, ksef_number: KsefNumberPath):
     """Return invoice XML — from cached file first, then live from KSeF API.
 
     Returns Content-Type: application/xml.
     Falls back to fetching from KSeF if local cache not found.
     """
-    if not _KSEF_PATTERN.match(ksef_number):
-        return JSONResponse(
-            status_code=400,
-            content={"detail": "Invalid KSeF number format"},
-        )
     db = request.app.state.db
     monitor = request.app.state.monitor
 
@@ -194,18 +184,13 @@ def get_invoice_xml(request: Request, ksef_number: str):
 
 @router.get("/invoices/{ksef_number}/pdf")
 @limiter.limit(lambda key: _endpoint_limits["invoice_download"])
-def get_invoice_pdf(request: Request, ksef_number: str):
+def get_invoice_pdf(request: Request, ksef_number: KsefNumberPath):
     """Generate and return invoice PDF on demand.
 
     Checks for cached PDF first. If not cached, fetches XML from KSeF
     and generates PDF using the configured generator chain.
     Returns Content-Type: application/pdf.
     """
-    if not _KSEF_PATTERN.match(ksef_number):
-        return JSONResponse(
-            status_code=400,
-            content={"detail": "Invalid KSeF number format"},
-        )
     db = request.app.state.db
     monitor = request.app.state.monitor
 

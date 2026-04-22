@@ -247,27 +247,27 @@ class TestKsefNumberValidation:
     def test_get_invoice_xml_rejects_path_traversal(self, client_auth):
         # Starlette normalises %2F-encoded slashes before routing,
         # so the path traversal attempt never reaches our validator
-        # and returns 404 (no route matched). Either 400 or 404 is safe —
-        # neither is 200, which is what matters.
+        # and returns 404 (no route matched). Pydantic may return 422 for
+        # other invalid inputs. Neither 404 nor 422 is 200 — both are safe.
         resp = client_auth.get(
             "/api/v1/invoices/..%2F..%2Fetc%2Fpasswd/xml",
             headers={"Authorization": "Bearer " + "a" * 32},
         )
-        assert resp.status_code in (400, 404)
+        assert resp.status_code in (404, 422)
 
     def test_get_invoice_pdf_rejects_bad_chars(self, client_auth):
         resp = client_auth.get(
             "/api/v1/invoices/FAKE%0d%0aX-Bad%3Ahi/pdf",
             headers={"Authorization": "Bearer " + "a" * 32},
         )
-        assert resp.status_code == 400
+        assert resp.status_code == 422
 
     def test_get_invoice_pdf_rejects_random_string(self, client_auth):
         resp = client_auth.get(
             "/api/v1/invoices/not-a-ksef-number/pdf",
             headers={"Authorization": "Bearer " + "a" * 32},
         )
-        assert resp.status_code == 400
+        assert resp.status_code == 422
 
     def test_get_invoice_accepts_valid_format(self, client_auth):
         """Valid format should pass validation (may still 404/503 downstream)."""
@@ -275,4 +275,4 @@ class TestKsefNumberValidation:
             "/api/v1/invoices/1234567890-20260101-ABCDEF-01",
             headers={"Authorization": "Bearer " + "a" * 32},
         )
-        assert resp.status_code != 400
+        assert resp.status_code != 422
