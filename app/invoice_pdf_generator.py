@@ -1186,9 +1186,10 @@ def _try_ksef_generator(xml_content: str, ksef_number: str,
 
     Returns BytesIO with PDF on success, None on any failure (caller falls back).
     """
-    # Validate scheme — only http/https allowed (reject file://, ftp://, etc.)
-    if not base_url.startswith(('http://', 'https://')):
-        logger.warning("CIRFMF generator URL has unsupported scheme, skipping: %s", base_url)
+    # Validate URL — must be public HTTP(S) (prevents SSRF to internal services)
+    from app._ssrf_guard import is_safe_public_url
+    if not is_safe_public_url(base_url):
+        logger.warning("CIRFMF generator URL rejected (non-public or bad scheme): %s", base_url)
         return None
 
     try:
