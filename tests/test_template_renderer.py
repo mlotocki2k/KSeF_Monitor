@@ -9,6 +9,7 @@ from pathlib import Path
 
 from app.template_renderer import (
     TemplateRenderer,
+    _jinja_autoescape,
     money_filter,
     money_raw_filter,
     date_filter,
@@ -235,3 +236,26 @@ class TestTemplateRenderer:
         assert "money_raw" in renderer.env.filters
         assert "date" in renderer.env.filters
         assert "json_escape" in renderer.env.filters
+
+
+class TestJinjaAutoescape:
+    """Tests for _jinja_autoescape() — F-06 extension-based autoescape."""
+
+    def test_autoescape_enabled_for_json_j2_templates(self):
+        """F-06: user-customized JSON templates without explicit json_escape
+        still get HTML autoescape (blocks injection, at cost of uglier output)."""
+        assert _jinja_autoescape("webhook.json.j2") is True
+        assert _jinja_autoescape("slack.json.j2") is True
+        assert _jinja_autoescape("email.html.j2") is True
+        assert _jinja_autoescape("pushover.txt.j2") is False  # plain text
+        assert _jinja_autoescape(None) is False
+
+    def test_autoescape_enabled_for_xml(self):
+        """Autoescape covers XML extensions too."""
+        assert _jinja_autoescape("report.xml") is True
+        assert _jinja_autoescape("report.xml.j2") is True
+
+    def test_autoescape_disabled_for_txt(self):
+        """Plain text templates are not autoescaped."""
+        assert _jinja_autoescape("pushover.txt.j2") is False
+        assert _jinja_autoescape("plain.txt") is False

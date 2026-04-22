@@ -13,10 +13,27 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-from jinja2 import FileSystemLoader, TemplateNotFound, select_autoescape
+from jinja2 import FileSystemLoader, TemplateNotFound
 from jinja2.sandbox import SandboxedEnvironment
 
 logger = logging.getLogger(__name__)
+
+
+def _jinja_autoescape(name):
+    """Enable autoescape for templates that embed data into structured formats.
+
+    F-06: Extends autoescape beyond HTML to cover JSON and XML templates so
+    user-customized templates without explicit | json_escape still get
+    HTML-style escaping (blocks injection; output is valid JSON, but consumers
+    receive HTML entities for <>&\"' characters).
+    Shipped JSON templates opt out via {% autoescape false %} and use the
+    explicit | json_escape filter for semantically-correct output.
+    """
+    if name is None:
+        return False
+    return name.endswith(
+        (".html", ".html.j2", ".htm", ".json.j2", ".xml", ".xml.j2")
+    )
 
 # Default templates directory (shipped with the application)
 DEFAULT_TEMPLATES_DIR = Path(__file__).parent / "templates"
@@ -116,7 +133,7 @@ class TemplateRenderer:
 
         self.env = SandboxedEnvironment(
             loader=FileSystemLoader(search_paths),
-            autoescape=select_autoescape(["html"]),
+            autoescape=_jinja_autoescape,
             trim_blocks=True,
             lstrip_blocks=True,
         )

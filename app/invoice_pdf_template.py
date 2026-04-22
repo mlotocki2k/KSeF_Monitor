@@ -21,8 +21,9 @@ from io import BytesIO
 from pathlib import Path
 from typing import Dict, Optional
 
-from jinja2 import FileSystemLoader, select_autoescape
+from jinja2 import FileSystemLoader
 from jinja2.sandbox import SandboxedEnvironment
+from app.template_renderer import _jinja_autoescape
 
 logger = logging.getLogger(__name__)
 
@@ -139,7 +140,7 @@ class InvoicePDFTemplateRenderer:
 
         self.env = SandboxedEnvironment(
             loader=FileSystemLoader(search_paths),
-            autoescape=select_autoescape(["html"]),
+            autoescape=_jinja_autoescape,
             trim_blocks=True,
             lstrip_blocks=True,
         )

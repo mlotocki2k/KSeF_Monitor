@@ -1,4 +1,4 @@
-{
+{% autoescape false %}{
     "title": "{{ title | json_escape }}",
     "body": "{% if subject_type == 'Subject1' %}Do: {{ buyer_name | json_escape }} - NIP {{ buyer_nip }}{% elif subject_type == 'Subject2' %}Od: {{ seller_name | json_escape }} - NIP {{ seller_nip }}{% else %}Od: {{ seller_name | json_escape }} - NIP {{ seller_nip }}\nDo: {{ buyer_name | json_escape }} - NIP {{ buyer_nip }}{% endif %}\nBrutto: {{ gross_amount | money_raw }} {{ currency }}",
     "data": {
@@ -21,3 +21,4 @@
         "schema_type": "{{ schema_type | default('FA3') }}"
     }
 }
+{% endautoescape %}
