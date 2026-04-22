@@ -7,6 +7,8 @@ import logging
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
+from app.api._limiter import limiter, _endpoint_limits
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["push"])
@@ -40,6 +42,7 @@ def reveal_pairing(request: Request):
 
 
 @router.post("/push/regenerate")
+@limiter.limit(lambda key: _endpoint_limits["push_regenerate"])
 def regenerate_pairing(request: Request):
     """Regenerate pairing code and QR code."""
     push_manager = getattr(request.app.state, "push_manager", None)
@@ -59,6 +62,7 @@ def regenerate_pairing(request: Request):
 
 
 @router.post("/push/reset")
+@limiter.limit(lambda key: _endpoint_limits["push_reset"])
 def reset_push(request: Request):
     """Reset push credentials — generates new instance_id, key, and pairing code.
 

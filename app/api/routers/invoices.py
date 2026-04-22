@@ -15,6 +15,7 @@ from urllib.parse import quote
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 
+from app.api._limiter import limiter, _endpoint_limits
 from ..schemas import InvoiceDetail, InvoiceSummary, PaginatedInvoices
 
 logger = logging.getLogger(__name__)
@@ -131,6 +132,7 @@ def get_invoice(request: Request, ksef_number: str):
 
 
 @router.get("/invoices/{ksef_number}/xml")
+@limiter.limit(lambda key: _endpoint_limits["invoice_download"])
 def get_invoice_xml(request: Request, ksef_number: str):
     """Return invoice XML — from cached file first, then live from KSeF API.
 
@@ -191,6 +193,7 @@ def get_invoice_xml(request: Request, ksef_number: str):
 
 
 @router.get("/invoices/{ksef_number}/pdf")
+@limiter.limit(lambda key: _endpoint_limits["invoice_download"])
 def get_invoice_pdf(request: Request, ksef_number: str):
     """Generate and return invoice PDF on demand.
 

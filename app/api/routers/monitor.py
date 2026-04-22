@@ -8,6 +8,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
 from app import __version__
+from app.api._limiter import limiter, _endpoint_limits
 from ..schemas import HealthResponse, MonitorStateResponse, TriggerResponse
 
 logger = logging.getLogger(__name__)
@@ -80,6 +81,7 @@ def ksef_api_status(request: Request):
 
 
 @router.post("/monitor/trigger", response_model=TriggerResponse)
+@limiter.limit(lambda key: _endpoint_limits["trigger"])
 def trigger_check(request: Request):
     """Trigger an immediate invoice check."""
     monitor = request.app.state.monitor

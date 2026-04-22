@@ -11,12 +11,16 @@ from typing import Any, Dict, Optional
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
-from slowapi.util import get_remote_address
 
 from app import __version__
+
+# Import module-level limiter and per-endpoint limits from dedicated submodule
+# (must come before .routers imports to avoid circular import)
+from ._limiter import limiter, _endpoint_limits, configure_limiter  # noqa: F401
+
 from .routers import invoices, stats, monitor, artifacts, push, initial_load, ui
 
 logger = logging.getLogger(__name__)
@@ -42,7 +46,7 @@ def create_app(
         monitor_instance: InvoiceMonitor for state/trigger access
         auth_token: Shared secret for Bearer auth (None = open access)
         cors_origins: List of allowed CORS origins (empty = CORS disabled)
-        rate_limit_config: Rate limiting settings {"enabled": bool, "default": str, "trigger": str}
+        rate_limit_config: Rate limiting settings {"enabled": bool, "default": str, ...}
         docs_enabled: Enable /docs and /redoc endpoints (False in prod, F-02)
     """
     app = FastAPI(
@@ -126,20 +130,16 @@ def create_app(
             ).inc()
             return response
 
-    # Rate limiting (F-07 security fix)
+    # Rate limiting (F-07 / V5-06 security fix)
     rl_config = rate_limit_config or {}
-    rl_enabled = rl_config.get("enabled", False)
-    default_limit = rl_config.get("default", "60/minute")
-    limiter = Limiter(
-        key_func=get_remote_address,
-        default_limits=[default_limit],
-        enabled=rl_enabled,
-    )
+    configure_limiter(rl_config)
+
     app.state.limiter = limiter
+    app.state.rate_limit_config = rl_config
     app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
     app.add_middleware(SlowAPIMiddleware)
-    if rl_enabled:
-        logger.info("API rate limiting: %s", default_limit)
+    if rl_config.get("enabled", False):
+        logger.info("API rate limiting: default=%s", rl_config.get("default", "60/minute"))
 
     # CORS (disabled by default, F-10: reject wildcard when auth enabled)
     if cors_origins:

@@ -10,6 +10,8 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, field_validator
 
+from app.api._limiter import limiter, _endpoint_limits
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["initial_load"])
@@ -50,7 +52,8 @@ def _parse_date(date_str: str) -> Optional[datetime]:
 
 
 @router.post("/initial-load/start")
-def start_initial_load(body: StartJobRequest, request: Request):
+@limiter.limit(lambda key: _endpoint_limits["initial_load_start"])
+def start_initial_load(request: Request, body: StartJobRequest):
     """
     Start a new historical invoice import job.
 

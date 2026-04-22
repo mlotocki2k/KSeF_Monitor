@@ -473,6 +473,10 @@ class ConfigManager:
         rate_limit.setdefault("enabled", True)
         rate_limit.setdefault("default", "60/minute")
         rate_limit.setdefault("trigger", "2/minute")
+        rate_limit.setdefault("initial_load_start", "1/hour")
+        rate_limit.setdefault("push_regenerate", "5/hour")
+        rate_limit.setdefault("push_reset", "1/hour")
+        rate_limit.setdefault("invoice_download", "30/minute")
 
         # Auto-generate auth token if API enabled without one (F-01 security fix)
         if api["enabled"] and not api["auth_token"]:
