@@ -538,19 +538,27 @@ Zarządzanie: `python db_admin.py status|invoices|stats|errors|...` — szczegó
 
 ### Sekcja `api`
 
-REST API (FastAPI) do integracji z UI i zewnętrznymi systemami (v0.4).
+REST API (FastAPI) + browser UI (v0.5.1).
 
 | Pole | Default | Opis |
 |---|---|---|
 | `enabled` | `false` | Włącz/wyłącz REST API |
 | `port` | `8080` | Port HTTP dla API |
 | `bind_address` | `"127.0.0.1"` | Adres sieciowy |
-| `auth_token` | `""` | Token Bearer auth. Jeśli pusty gdy API włączone — auto-generowany i logowany (F-01). Może być ustawiony przez `API_AUTH_TOKEN` env/Docker secret. |
+| `auth_token` | `""` | Bearer dla curl/integracji/iOS pairing. Pusty gdy API on → auto-gen, logowany (F-01). Env: `API_AUTH_TOKEN`. **V5-13:** jeśli ustawiony przy świeżym uruchomieniu z pustym DB userów → automatycznie tworzy konto UI `admin` z hasłem = `auth_token`. |
 | `docs_enabled` | `true` | `/docs`, `/redoc`, `/openapi.json`. Ustaw `false` w produkcji (F-02). |
 | `cors_origins` | `[]` | Lista dozwolonych origin CORS. Wildcard `*` odrzucany gdy `auth_token` jest ustawiony (F-10). |
+| `ui_enabled` | `true` | Włącz browser UI pod `/ui` |
+| `ui_public` | `false` | Bypass auth dla `/ui` — tylko gdy zewnętrzny reverse-proxy załatwia auth |
 | `rate_limit.enabled` | `true` | Włącz rate limiting (slowapi) |
 | `rate_limit.default` | `"60/minute"` | Domyślny limit requestów |
 | `rate_limit.trigger` | `"2/minute"` | Limit dla POST /trigger |
+
+**Browser UI auth (V5-13):** osobne konta user/pass w DB (bcrypt), HttpOnly
+cookie session 7 dni. Pierwszy start: `/ui/setup` (kreator konta) lub
+auto-bootstrap `admin` z `auth_token` (upgrade-friendly z v0.5.0). Bearer
+nadal działa dla curl/integracji. CLI: `python -m app.user_admin {list|add|reset-password|delete|cleanup-sessions}`.
+Patrz [docs/SECURITY.md](docs/SECURITY.md) i [docs/REST_API.md](docs/REST_API.md).
 
 **Przykład konfiguracji:**
 

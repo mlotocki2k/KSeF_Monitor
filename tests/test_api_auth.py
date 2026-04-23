@@ -228,98 +228,25 @@ class TestUiAuth:
         assert resp.status_code == 401
 
 
-class TestUiCookieSession:
-    """V5-12: HttpOnly cookie session for browser UI."""
+class TestUiAuthEndpointsExempt:
+    """V5-12 + V5-13: /ui/login, /ui/logout, /ui/setup must stay public so the
+    auth flow itself is reachable. Detailed cookie session + user/pass coverage
+    lives in tests/test_ui_user_auth.py."""
 
-    TOKEN = "a" * 32
-
-    def test_login_form_public(self, client_auth):
-        """GET /ui/login is accessible without auth."""
+    def test_login_get_is_public(self, client_auth):
+        # No DB attached → login form fallback path: bounce to /ui (open-mode shortcut).
+        # Either way, must NOT 401.
         resp = client_auth.get("/ui/login")
-        assert resp.status_code == 200
-        assert "Token" in resp.text
+        assert resp.status_code in (200, 303)
 
-    def test_login_with_correct_token_sets_cookie(self, app_auth):
-        client = TestClient(app_auth, follow_redirects=False)
-        resp = client.post("/ui/login", data={"token": self.TOKEN, "next": "/ui"})
-        assert resp.status_code == 303
-        assert resp.headers["location"] == "/ui"
-        cookie = resp.cookies.get("mksef_session")
-        assert cookie == self.TOKEN
+    def test_setup_get_is_public(self, client_auth):
+        resp = client_auth.get("/ui/setup")
+        assert resp.status_code in (200, 303)
 
-    def test_login_with_wrong_token_redirects_with_error(self, app_auth):
-        client = TestClient(app_auth, follow_redirects=False)
-        resp = client.post("/ui/login", data={"token": "wrong", "next": "/ui"})
-        assert resp.status_code == 303
-        assert "error=invalid" in resp.headers["location"]
-        assert resp.cookies.get("mksef_session") is None
-
-    def test_cookie_grants_ui_access(self, app_auth):
-        client = TestClient(app_auth, raise_server_exceptions=False)
-        client.cookies.set("mksef_session", self.TOKEN)
-        resp = client.get("/ui")
+    def test_logout_post_is_public(self, client_auth):
+        # Logout without a session is a no-op redirect, never 401.
+        resp = client_auth.post("/ui/logout")
         assert resp.status_code != 401
-        assert resp.status_code != 303
-
-    def test_cookie_grants_api_access(self, app_auth):
-        """Cookie also authorizes API endpoints (browser fetch from UI)."""
-        client = TestClient(app_auth)
-        client.cookies.set("mksef_session", self.TOKEN)
-        resp = client.get("/api/v1/monitor/ksef-status")
-        assert resp.status_code != 401
-
-    def test_wrong_cookie_value_rejected(self, app_auth):
-        client = TestClient(app_auth, follow_redirects=False)
-        client.cookies.set("mksef_session", "wrong")
-        resp = client.get("/ui")
-        assert resp.status_code == 303
-
-    def test_logout_clears_cookie_and_redirects(self, app_auth):
-        client = TestClient(app_auth, follow_redirects=False)
-        client.cookies.set("mksef_session", self.TOKEN)
-        resp = client.post("/ui/logout")
-        assert resp.status_code == 303
-        assert resp.headers["location"] == "/ui/login"
-        set_cookie = resp.headers.get("set-cookie", "")
-        assert "mksef_session" in set_cookie
-        assert ("Max-Age=0" in set_cookie) or ('expires=' in set_cookie.lower())
-
-    def test_login_next_redirect_safe(self, app_auth):
-        """next= parameter must be restricted to /ui paths (open-redirect guard)."""
-        client = TestClient(app_auth, follow_redirects=False)
-        resp = client.post(
-            "/ui/login",
-            data={"token": self.TOKEN, "next": "https://evil.example/x"},
-        )
-        assert resp.status_code == 303
-        assert resp.headers["location"] == "/ui"
-
-    def test_login_protocol_relative_next_rejected(self, app_auth):
-        client = TestClient(app_auth, follow_redirects=False)
-        resp = client.post(
-            "/ui/login", data={"token": self.TOKEN, "next": "//evil.example"}
-        )
-        assert resp.status_code == 303
-        assert resp.headers["location"] == "/ui"
-
-    def test_cookie_is_httponly(self, app_auth):
-        client = TestClient(app_auth, follow_redirects=False)
-        resp = client.post("/ui/login", data={"token": self.TOKEN})
-        set_cookie = resp.headers.get("set-cookie", "").lower()
-        assert "httponly" in set_cookie
-        assert "samesite=strict" in set_cookie
-
-    def test_login_endpoint_exempt_from_auth(self, client_auth):
-        """Even with auth required, /ui/login GET stays public."""
-        resp = client_auth.get("/ui/login")
-        assert resp.status_code == 200
-
-    def test_login_redirects_to_ui_when_no_auth_configured(self, app_open):
-        """If server has no auth_token, /ui/login just bounces to /ui."""
-        client = TestClient(app_open, follow_redirects=False)
-        resp = client.get("/ui/login")
-        assert resp.status_code == 303
-        assert resp.headers["location"] == "/ui"
 
 
 class TestUiPublicOptIn:

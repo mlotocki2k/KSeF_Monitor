@@ -48,17 +48,51 @@ API uruchamia się automatycznie razem z monitorem (daemon thread). Konfiguracja
 
 ## Autentykacja
 
-Bearer token w nagłówku `Authorization`:
+Dwie równoległe ścieżki auth (v0.5.1):
+
+### 1. Bearer token (curl, integracje, iOS push pairing)
 
 ```bash
 curl -H "Authorization: Bearer YOUR_TOKEN" http://localhost:8080/api/v1/invoices
 ```
 
-- Token porównywany przez `hmac.compare_digest` (timing-safe)
-- Automatycznie generowany token zapisywany w Docker secrets / env / config
-- Publiczna whitelist (nie wymaga autentykacji): `/docs`, `/redoc`, `/openapi.json`, `/api/v1/monitor/health`
-- Wszystkie pozostałe endpointy — w tym `/ui/**`, `/invoices/{}/pdf|xml`, `/push/**` — wymagają auth (v0.5)
+- Token z `api.auth_token` w configu
+- Porównywany przez `hmac.compare_digest` (timing-safe)
+- Automatycznie generowany jeśli puste, zapisywany w Docker secrets / env / config
+
+### 2. Cookie session (przeglądarka, V5-13)
+
+- Login form: `GET /ui/login` → POST z `username` + `password`
+- Cookie: `mksef_session`, opaque 64-char hex, HttpOnly, SameSite=Strict, Secure (https), 7-dni rolling TTL
+- Sesje persisted w tabeli `ui_sessions` (Alembic head: `e0f1g2h34567`)
+- Pierwszy uruchomienie:
+  - **Fresh install:** `/ui` → redirect `/ui/setup` → wizard tworzy konto admin
+  - **Upgrade z v0.5.0:** jeśli `api.auth_token` był ustawiony, `main.py` automatycznie tworzy usera `admin` z hasłem = `auth_token`. Login: `admin` / `<your existing token>`. Zmień hasło w `/ui/account`.
+- `POST /ui/logout` revoke sesję w DB + clear cookie
+- `POST /ui/account/password` zmiana własnego hasła (revoke wszystkich sesji w tym bieżącej)
+
+### Uprawnienia / endpointy publiczne
+
+- Whitelist (bez auth): `/docs`, `/redoc`, `/openapi.json`, `/api/v1/monitor/health`, `/ui/login`, `/ui/logout`, `/ui/setup`
+- Brak auth na `/ui/*` → 303 redirect do `/ui/login` (lub `/ui/setup` jeśli 0 userów w DB)
+- Brak auth na `/api/*` → 401 JSON `{"detail":"Missing or invalid Authorization header"}`
 - Opcja `api.ui_public: true` re-włącza bypass dla `/ui` (legacy reverse-proxy)
+
+### CLI — zarządzanie kontami
+
+```bash
+python -m app.user_admin list                       # lista kont
+python -m app.user_admin add <username>             # dodaj
+python -m app.user_admin reset-password <username>  # zresetuj (revoke sesje)
+python -m app.user_admin delete <username>          # usuń (refuse last user)
+python -m app.user_admin cleanup-sessions           # purge expired
+```
+
+### Rate limits na auth
+
+- `POST /ui/login` → 5/min
+- `POST /ui/setup` → 3/min
+- `POST /ui/account/password` → 5/min
 
 ## Swagger UI
 

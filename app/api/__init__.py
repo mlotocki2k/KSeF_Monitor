@@ -77,16 +77,14 @@ def create_app(
                 "API auth_token is shorter than 32 characters - use a stronger token"
             )
 
-        # V5-01: Narrow whitelist — docs + health only. UI and invoice
-        # downloads now require auth. Legacy deployments behind a trusted
-        # reverse proxy can re-enable UI bypass via api.ui_public=true.
-        # V5-12: Browser UI uses HttpOnly cookie session set by /ui/login;
-        # /ui/login itself must stay public so unauthenticated users can reach
-        # the form.
+        # V5-01: narrow whitelist — docs + health only. UI requires auth.
+        # V5-12: HttpOnly cookie session for browser UI (was: localStorage Bearer).
+        # V5-13: cookie value is now an opaque DB session ID (was: token-equals);
+        # /ui/setup is public so first-launch wizard can run.
         _EXEMPT_EXACT = {
             "/docs", "/redoc", "/openapi.json",
             "/api/v1/monitor/health",
-            "/ui/login", "/ui/logout",
+            "/ui/login", "/ui/logout", "/ui/setup",
         }
         _SESSION_COOKIE = "mksef_session"
 
@@ -98,9 +96,18 @@ def create_app(
             if ui_public and path.startswith("/ui"):
                 return await call_next(request)
 
-            cookie_token = request.cookies.get(_SESSION_COOKIE, "")
-            if cookie_token and hmac.compare_digest(cookie_token, auth_token):
-                return await call_next(request)
+            db = getattr(request.app.state, "db", None)
+            sid = request.cookies.get(_SESSION_COOKIE)
+            if sid and db:
+                from app.ui_auth import validate_session
+
+                with db.get_session() as s:
+                    result = validate_session(s, sid)
+                    if result is not None:
+                        user, _ = result
+                        request.state.ui_user_id = user.id
+                        request.state.ui_username = user.username
+                        return await call_next(request)
 
             auth_header = request.headers.get("Authorization", "")
             if auth_header.startswith("Bearer "):
@@ -117,6 +124,15 @@ def create_app(
                 )
 
             if path.startswith("/ui"):
+                # First-launch redirect: no users yet → setup wizard.
+                if db:
+                    from app.ui_auth import count_users
+
+                    with db.get_session() as s:
+                        if count_users(s) == 0:
+                            return RedirectResponse(
+                                url="/ui/setup", status_code=303
+                            )
                 return RedirectResponse(
                     url=f"/ui/login?next={path}", status_code=303
                 )

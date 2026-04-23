@@ -272,6 +272,30 @@ _Źródło: `audit/20260421_security_audit_docker_v0_5_test_branch.md` + `audit/
 
 ---
 
+## v0.5.1 (UI auth UX) ✅
+_Źródło: regresja UX po V5-01 — token modal blokował dashboard. Pełna lista: `CHANGELOG.md` [0.5.1]._
+
+- [x] **V5-12** Cookie session zamiast localStorage Bearer (interim — value = api.auth_token).
+- [x] **V5-13** User accounts w DB (bcrypt) + opaque DB-backed sessions (256-bit, 7-dni rolling TTL).
+  - Tabele `ui_users`, `ui_sessions` (Alembic head: `e0f1g2h34567`).
+  - First-launch wizard `/ui/setup` (form: username + password); locks idempotently po pierwszym userze.
+  - `/ui/login`, `/ui/logout`, `/ui/account` (zmiana hasła revoke wszystkie sesje, w tym bieżącą).
+  - Bearer nadal działa równolegle dla curl/iOS pairing/integracji.
+  - Rate limit: `POST /ui/login` 5/min, `/ui/setup` 3/min, `/ui/account/password` 5/min.
+  - Open-redirect guard na `next=`; cookie `HttpOnly`+`SameSite=Strict`+`Secure` (https).
+  - **Upgrade-friendly:** main.py auto-tworzy usera `admin` z `password = api.auth_token` przy pierwszym starcie z istniejącym tokenem i pustą tabelą userów. Zero key regeneration.
+  - CLI: `python -m app.user_admin {list, add, reset-password, delete, cleanup-sessions}`.
+- [x] **deps:** `bcrypt>=4.2.0,<5.0.0`.
+- [x] **testy:** `tests/test_ui_user_auth.py` (51 nowych); `tests/test_api_auth.py` zaktualizowany; head ref w `test_db_migration.py` bumped.
+
+**Follow-ups (non-blocking):**
+- Multi-user admin panel w UI (obecnie CLI-only)
+- Opcjonalny 2FA / TOTP
+- Lista aktywnych sesji w `/ui/account` (revoke per-device)
+- Rotacja cookie value przy każdym requeście (defense-in-depth)
+
+---
+
 ## v0.6 (Lightweight Polling)
 **Cel:** rozdzielenie detekcji nowych faktur od pobierania artefaktów — oszczędność API calls, szybsze push notifications
 

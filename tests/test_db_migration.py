@@ -68,9 +68,9 @@ class TestDBMigration:
                     text("SELECT version_num FROM alembic_version")
                 ).first()
                 assert row is not None, "alembic_version table has no row"
-                # d9e0f1g2h345 is the head (phase4_initial_load_jobs)
-                assert row[0] == "d9e0f1g2h345", (
-                    f"expected head revision 'd9e0f1g2h345', got {row[0]!r}"
+                # e0f1g2h34567 is the head (phase5_ui_users)
+                assert row[0] == "e0f1g2h34567", (
+                    f"expected head revision 'e0f1g2h34567', got {row[0]!r}"
                 )
         finally:
             engine.dispose()

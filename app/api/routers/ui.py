@@ -12,7 +12,6 @@ to avoid internal HTTP calls and token management in browser.
 
 import json
 import logging
-import hmac
 import re
 from datetime import datetime, timezone
 from pathlib import Path
@@ -123,9 +122,11 @@ def _base_ctx(request: Request) -> dict:
     ]
     if _get_push_manager(request):
         nav.append({"href": "/ui/push", "label": "Parowanie iOS"})
+    username = getattr(request.state, "ui_username", None)
     return {
         "request": request,
         "auth_required": bool(_auth_token(request)),
+        "ui_username": username,
         "nav": nav,
         "docs_enabled": request.app.openapi_url is not None,
         "ui_version": __version__,
@@ -363,7 +364,7 @@ def ui_push(request: Request):
     return templates.TemplateResponse(request, "push.html", ctx)
 
 
-# ── Login / Logout (V5-12 cookie session) ────────────────────────────────────
+# ── Setup / Login / Logout (V5-13 user accounts + DB sessions) ───────────────
 
 _SESSION_COOKIE = "mksef_session"
 _COOKIE_MAX_AGE = 60 * 60 * 24 * 7  # 7 days
@@ -376,9 +377,98 @@ def _safe_next(value: Optional[str]) -> str:
     return value
 
 
+def _set_session_cookie(resp, sid: str, scheme: str) -> None:
+    resp.set_cookie(
+        key=_SESSION_COOKIE,
+        value=sid,
+        max_age=_COOKIE_MAX_AGE,
+        httponly=True,
+        secure=scheme == "https",
+        samesite="strict",
+        path="/",
+    )
+
+
+@router.get("/ui/setup", response_class=HTMLResponse)
+def ui_setup_form(request: Request, error: Optional[str] = None):
+    """First-launch wizard: create the initial user. Locked once any user exists."""
+    db = _get_db(request)
+    if db is not None:
+        from app.ui_auth import count_users
+
+        with db.get_session() as s:
+            if count_users(s) > 0:
+                return RedirectResponse(url="/ui/login", status_code=303)
+    ctx = {
+        "request": request,
+        "error": error,
+        "ui_version": __version__,
+        "docs_enabled": request.app.openapi_url is not None,
+    }
+    return templates.TemplateResponse(request, "setup.html", ctx)
+
+
+@router.post("/ui/setup")
+@limiter.limit("3/minute")
+def ui_setup_submit(
+    request: Request,
+    username: str = Form(...),
+    password: str = Form(...),
+    password_confirm: str = Form(...),
+):
+    """Create the initial user atomically (race-safe). Auto-login on success."""
+    from app.ui_auth import (
+        count_users,
+        create_session,
+        create_user,
+        validate_password,
+        validate_username,
+    )
+
+    db = _get_db(request)
+    if db is None:
+        return RedirectResponse(url="/ui/setup?error=db", status_code=303)
+
+    username = username.strip()
+    err = (
+        validate_username(username)
+        or validate_password(password)
+        or (None if password == password_confirm else "Hasła nie są takie same.")
+    )
+    if err:
+        from urllib.parse import quote
+
+        return RedirectResponse(
+            url=f"/ui/setup?error={quote(err)}", status_code=303
+        )
+
+    with db.get_session() as s:
+        if count_users(s) > 0:
+            return RedirectResponse(url="/ui/login", status_code=303)
+        user = create_user(s, username, password)
+        sid = create_session(s, user)
+
+    resp = RedirectResponse(url="/ui", status_code=303)
+    _set_session_cookie(resp, sid, request.url.scheme)
+    return resp
+
+
 @router.get("/ui/login", response_class=HTMLResponse)
-def ui_login_form(request: Request, next: Optional[str] = None, error: Optional[str] = None):
-    """Render login form. Public — no auth required."""
+def ui_login_form(
+    request: Request,
+    next: Optional[str] = None,
+    error: Optional[str] = None,
+):
+    """Render login form. Public. If no users exist, bounce to setup."""
+    db = _get_db(request)
+    if db is not None:
+        from app.ui_auth import count_users
+
+        with db.get_session() as s:
+            if count_users(s) == 0:
+                return RedirectResponse(url="/ui/setup", status_code=303)
+    if not _auth_token(request):
+        return RedirectResponse(url="/ui", status_code=303)
     ctx = {
         "request": request,
         "next": _safe_next(next),
@@ -386,8 +476,6 @@ def ui_login_form(request: Request, next: Optional[str] = None, error: Optional[
         "ui_version": __version__,
         "docs_enabled": request.app.openapi_url is not None,
     }
-    if not _auth_token(request):
-        return RedirectResponse(url="/ui", status_code=303)
     return templates.TemplateResponse(request, "login.html", ctx)
 
 
@@ -395,40 +483,105 @@ def ui_login_form(request: Request, next: Optional[str] = None, error: Optional[
 @limiter.limit("5/minute")
 def ui_login_submit(
     request: Request,
-    token: str = Form(...),
+    username: str = Form(...),
+    password: str = Form(...),
     next: Optional[str] = Form(None),
 ):
-    """Validate token, set HttpOnly session cookie, redirect to next page."""
-    expected = _auth_token(request)
-    if not expected:
-        return RedirectResponse(url="/ui", status_code=303)
+    """Validate user/pass, create DB session, set HttpOnly cookie, redirect."""
+    from app.ui_auth import (
+        count_users,
+        create_session,
+        get_user_by_username,
+        verify_password,
+    )
 
     target = _safe_next(next)
-    if not hmac.compare_digest(token.strip(), expected):
-        logger.warning(
-            "Failed UI login from %s",
-            request.client.host if request.client else "unknown",
-        )
-        return RedirectResponse(
-            url=f"/ui/login?next={target}&error=invalid", status_code=303
-        )
+    db = _get_db(request)
+    if db is None:
+        return RedirectResponse(url="/ui/login?error=db", status_code=303)
+
+    with db.get_session() as s:
+        if count_users(s) == 0:
+            return RedirectResponse(url="/ui/setup", status_code=303)
+        user = get_user_by_username(s, username.strip())
+        if user is None or not verify_password(password, user.password_hash):
+            logger.warning(
+                "Failed UI login for %r from %s",
+                username,
+                request.client.host if request.client else "unknown",
+            )
+            return RedirectResponse(
+                url=f"/ui/login?next={target}&error=invalid", status_code=303
+            )
+        sid = create_session(s, user)
 
     resp = RedirectResponse(url=target, status_code=303)
-    resp.set_cookie(
-        key=_SESSION_COOKIE,
-        value=expected,
-        max_age=_COOKIE_MAX_AGE,
-        httponly=True,
-        secure=request.url.scheme == "https",
-        samesite="strict",
-        path="/",
-    )
+    _set_session_cookie(resp, sid, request.url.scheme)
     return resp
 
 
 @router.post("/ui/logout")
 def ui_logout(request: Request):
-    """Clear session cookie and redirect to login."""
+    """Revoke session in DB and clear cookie."""
+    db = _get_db(request)
+    sid = request.cookies.get(_SESSION_COOKIE)
+    if db is not None and sid:
+        from app.ui_auth import revoke_session
+
+        with db.get_session() as s:
+            revoke_session(s, sid)
     resp = RedirectResponse(url="/ui/login", status_code=303)
+    resp.delete_cookie(_SESSION_COOKIE, path="/")
+    return resp
+
+
+@router.get("/ui/account", response_class=HTMLResponse)
+def ui_account_form(request: Request, error: Optional[str] = None, ok: Optional[str] = None):
+    """Account page — change password."""
+    if getattr(request.state, "ui_user_id", None) is None:
+        return RedirectResponse(url="/ui/login?next=/ui/account", status_code=303)
+    ctx = _base_ctx(request)
+    ctx["page"] = "account"
+    ctx["error"] = error
+    ctx["ok"] = ok
+    return templates.TemplateResponse(request, "account.html", ctx)
+
+
+@router.post("/ui/account/password")
+@limiter.limit("5/minute")
+def ui_account_change_password(
+    request: Request,
+    current_password: str = Form(...),
+    new_password: str = Form(...),
+    new_password_confirm: str = Form(...),
+):
+    """Change own password. Revokes all sessions including current — forces re-login."""
+    from urllib.parse import quote
+
+    from app.database import UiUser
+    from app.ui_auth import set_password, validate_password, verify_password
+
+    user_id = getattr(request.state, "ui_user_id", None)
+    db = _get_db(request)
+    if user_id is None or db is None:
+        return RedirectResponse(url="/ui/login", status_code=303)
+
+    err = validate_password(new_password) or (
+        None if new_password == new_password_confirm else "Hasła nie są takie same."
+    )
+    if err:
+        return RedirectResponse(
+            url=f"/ui/account?error={quote(err)}", status_code=303
+        )
+
+    with db.get_session() as s:
+        fresh = s.get(UiUser, user_id)
+        if fresh is None or not verify_password(current_password, fresh.password_hash):
+            return RedirectResponse(
+                url=f"/ui/account?error={quote('Aktualne hasło nieprawidłowe.')}",
+                status_code=303,
+            )
+        set_password(s, fresh, new_password)
+    resp = RedirectResponse(url="/ui/login?ok=password", status_code=303)
     resp.delete_cookie(_SESSION_COOKIE, path="/")
     return resp

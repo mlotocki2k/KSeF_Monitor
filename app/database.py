@@ -377,6 +377,59 @@ class InitialLoadJob(Base):
         return f"<InitialLoadJob id={self.id!r} status={self.status!r}>"
 
 
+# Phase 5 (v0.5.1): UI user accounts + sessions (V5-13).
+# Self-hosted-style auth — no SSH/CLI needed for first-run, web setup wizard.
+
+
+class UiUser(Base):
+    """Browser-UI user account. Distinct from `api.auth_token` (Bearer key for
+    integrations). Created via /ui/setup wizard on first launch."""
+
+    __tablename__ = "ui_users"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    username: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    password_hash: Mapped[str] = mapped_column(String(255), nullable=False)  # bcrypt
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(timezone.utc)
+    )
+    last_login_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+
+    __table_args__ = (
+        Index("ix_ui_users_username", "username", unique=True),
+    )
+
+    def __repr__(self) -> str:
+        return f"<UiUser id={self.id} username={self.username!r}>"
+
+
+class UiSession(Base):
+    """Browser session — opaque random ID stored in HttpOnly cookie. Decoupled
+    from password_hash so password change can revoke other sessions cleanly."""
+
+    __tablename__ = "ui_sessions"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)  # uuid4 hex
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("ui_users.id", ondelete="CASCADE"), nullable=False
+    )
+    expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(timezone.utc)
+    )
+    last_accessed_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(timezone.utc)
+    )
+
+    __table_args__ = (
+        Index("ix_ui_sessions_user", "user_id"),
+        Index("ix_ui_sessions_expires", "expires_at"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<UiSession id={self.id[:8]}… user_id={self.user_id}>"
+
+
 # ── Engine & Session ────────────────────────────────────────────────────────
 
 

@@ -1,15 +1,48 @@
 # Security Guide - Protecting Sensitive Credentials
 
-This guide explains multiple methods to secure your API tokens and credentials for the KSeF Monitor v0.4.
+This guide explains multiple methods to secure your API tokens and credentials for the KSeF Monitor v0.5.1.
 
 **Protected Credentials:**
 - KSeF API token
 - API auth token (REST API Bearer auth)
+- UI user passwords (bcrypt hashed in DB — V5-13)
 - Pushover User Key & API Token
 - Discord Webhook URL
 - Slack Webhook URL
 - Email SMTP password
 - Webhook authentication token
+
+## Browser UI authentication (V5-13)
+
+Browser UI uses HttpOnly cookie sessions backed by user accounts in DB
+(tables `ui_users`, `ui_sessions`, Alembic head `e0f1g2h34567`). Distinct
+from the API Bearer token, which stays for curl/integrations.
+
+**First launch:**
+- **Fresh install:** visit `/ui` → wizard at `/ui/setup` creates first user
+- **Upgrade from v0.5.0:** if `api.auth_token` was set in config, `main.py`
+  auto-creates user `admin` with password = the existing `auth_token` value.
+  Login at `/ui/login` as `admin` / `<your existing token>`. Change password
+  at `/ui/account`. Old API Bearer flows continue to work unchanged.
+
+**Account management (CLI):**
+```bash
+python -m app.user_admin list
+python -m app.user_admin add <username>
+python -m app.user_admin reset-password <username>   # revokes all sessions
+python -m app.user_admin delete <username>           # refuses last user
+python -m app.user_admin cleanup-sessions
+```
+
+**Cookie:** `mksef_session`, opaque 64-char hex (256-bit), `HttpOnly`,
+`SameSite=Strict`, `Secure` on https, 7-day rolling TTL renewed on each
+authenticated request. Password change revokes all sessions.
+
+**Brute-force guards:** `slowapi` rate limits — `POST /ui/login` 5/min,
+`POST /ui/setup` 3/min, `POST /ui/account/password` 5/min.
+
+**Open-redirect guard:** the `next=` query/form param is whitelisted to
+internal `/ui` paths (rejects `https://evil/x`, `//evil`).
 
 ## 🔐 Security Methods Overview
 

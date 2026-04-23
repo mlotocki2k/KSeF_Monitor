@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}Konto — Monitor KSeF{% endblock %}
+
+{% block content %}
+<div class="max-w-md">
+  <h1 class="text-lg font-semibold mb-1">Konto</h1>
+  {% if ui_username %}
+  <p class="text-xs text-gray-500 mb-4">Zalogowany jako <strong>{{ ui_username }}</strong>.</p>
+  {% endif %}
+
+  {% if ok %}
+  <div class="mb-4 rounded-md bg-green-50 border border-green-200 p-3 text-sm text-green-700">
+    {{ ok }}
+  </div>
+  {% endif %}
+
+  <div class="card p-5">
+    <h2 class="text-sm font-semibold mb-3">Zmień hasło</h2>
+    <p class="text-xs text-gray-500 mb-3">
+      Zmiana hasła wyloguje wszystkie sesje (w tym bieżącą).
+    </p>
+
+    <form method="post" action="/ui/account/password" autocomplete="off">
+      <label for="current_password" class="label">Aktualne hasło</label>
+      <input id="current_password" name="current_password" type="password" class="input mb-3"
+        required autocomplete="current-password">
+
+      <label for="new_password" class="label">Nowe hasło (min. 8 znaków)</label>
+      <input id="new_password" name="new_password" type="password" class="input mb-3"
+        required minlength="8" autocomplete="new-password">
+
+      <label for="new_password_confirm" class="label">Powtórz nowe hasło</label>
+      <input id="new_password_confirm" name="new_password_confirm" type="password" class="input mb-4"
+        required minlength="8" autocomplete="new-password">
+
+      <button type="submit" class="btn-primary">Zmień hasło</button>
+    </form>
+  </div>
+</div>
+{% endblock %}

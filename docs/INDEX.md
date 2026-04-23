@@ -1,6 +1,6 @@
 # KSeF Monitor - Documentation Index
 
-**Version:** v0.5
+**Version:** v0.5.1
 **Based on:** KSeF API v2.4.0
 **License:** MIT
 
@@ -41,13 +41,13 @@ chmod +x setup.sh && ./setup.sh
 
 | Document | Description | Read When |
 |----------|-------------|-----------|
-| **[REST_API.md](REST_API.md)** | REST API endpoints, auth, response schemas (v0.4) | Building integrations, Web UI |
+| **[REST_API.md](REST_API.md)** | REST API endpoints, dual-path auth (Bearer + cookie session), schemas (v0.5.1) | Building integrations, Web UI |
 
 ### 🔐 Security
 
 | Document | Description | Read When |
 |----------|-------------|-----------|
-| **[SECURITY.md](SECURITY.md)** | Complete security guide (updated for v0.5) | Before production deployment |
+| **[SECURITY.md](SECURITY.md)** | Complete security guide (updated for v0.5.1: V5-13 UI user accounts) | Before production deployment |
 | **[CHANGELOG.md](../CHANGELOG.md)** | Full release history with security changelog | Reviewing what changed per release |
 | **[audit/20260421_security_audit_docker_v0_5_test_branch.md](../audit/20260421_security_audit_docker_v0_5_test_branch.md)** | v0.5 security audit report (original findings) | Reviewing audit scope and findings |
 | **[audit/20260422_security_reaudit_v0_5_post_remediation.md](../audit/20260422_security_reaudit_v0_5_post_remediation.md)** | v0.5 post-remediation re-audit | Verifying all findings were closed |

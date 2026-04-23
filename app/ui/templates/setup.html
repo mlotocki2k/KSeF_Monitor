@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Logowanie — Monitor KSeF</title>
+  <title>Konfiguracja konta — Monitor KSeF</title>
   <link rel="stylesheet" href="/ui/static/tailwind.min.css?v={{ ui_version }}">
   <style>
     @layer utilities {
@@ -23,35 +23,34 @@
       </svg>
       Monitor KSeF
     </h1>
-    <p class="text-xs text-gray-500 mb-5">Zaloguj się, aby kontynuować.</p>
+    <p class="text-xs text-gray-500 mb-1">Pierwsze uruchomienie</p>
+    <h2 class="text-sm font-semibold mb-4">Utwórz konto administratora</h2>
 
     {% if error %}
     <div class="mb-4 rounded-md bg-red-50 border border-red-200 p-3 text-sm text-red-700">
-      {% if error == "invalid" %}Nieprawidłowa nazwa użytkownika lub hasło.{% else %}{{ error }}{% endif %}
+      {{ error }}
     </div>
     {% endif %}
 
-    {% if request.query_params.get("ok") == "password" %}
-    <div class="mb-4 rounded-md bg-green-50 border border-green-200 p-3 text-sm text-green-700">
-      Hasło zostało zmienione. Zaloguj się nowym hasłem.
-    </div>
-    {% endif %}
-
-    <form method="post" action="/ui/login" autocomplete="on">
-      <input type="hidden" name="next" value="{{ next }}">
+    <form method="post" action="/ui/setup" autocomplete="off">
       <label for="username" class="label">Nazwa użytkownika</label>
       <input id="username" name="username" type="text" class="input mb-3"
-        required autofocus autocomplete="username">
+        placeholder="np. admin" required autofocus
+        minlength="3" maxlength="64" pattern="[A-Za-z0-9._\-]+">
 
-      <label for="password" class="label">Hasło</label>
-      <input id="password" name="password" type="password" class="input mb-4"
-        required autocomplete="current-password">
+      <label for="password" class="label">Hasło (min. 8 znaków)</label>
+      <input id="password" name="password" type="password" class="input mb-3"
+        required minlength="8">
 
-      <button type="submit" class="btn-primary">Zaloguj</button>
+      <label for="password_confirm" class="label">Powtórz hasło</label>
+      <input id="password_confirm" name="password_confirm" type="password" class="input mb-4"
+        required minlength="8">
+
+      <button type="submit" class="btn-primary">Utwórz konto i zaloguj</button>
     </form>
 
     <p class="mt-4 text-[11px] text-gray-400 text-center">
-      Sesja w HttpOnly cookie, ważna 7 dni z odnawianiem.
+      Konto przechowywane lokalnie w bazie SQLite. Hasło hashowane (bcrypt).
     </p>
   </div>
 </body>

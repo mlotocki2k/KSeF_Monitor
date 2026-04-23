@@ -221,6 +221,34 @@ def main():
                 from app.api import create_app
                 from app.api.server import APIServer
 
+                # V5-13 upgrade-friendly bootstrap: if api.auth_token is set in
+                # config and there are 0 UI users yet, auto-create the 'admin'
+                # user with password = auth_token. Lets v0.5.0 deployments
+                # upgrade without touching the API key — login as 'admin' with
+                # the existing token, then change password via /ui/account.
+                bootstrap_token = (api_config.get("auth_token") or "").strip()
+                if (
+                    database is not None
+                    and bootstrap_token
+                    and len(bootstrap_token) >= 8
+                ):
+                    try:
+                        from app.ui_auth import (
+                            count_users as _count_users,
+                            create_user as _create_user,
+                        )
+
+                        with database.get_session() as _s:
+                            if _count_users(_s) == 0:
+                                _create_user(_s, "admin", bootstrap_token)
+                                logger.warning(
+                                    "Bootstrap: created UI user 'admin' with "
+                                    "password = api.auth_token. Login at /ui/login "
+                                    "and change password via /ui/account."
+                                )
+                    except Exception as _e:
+                        logger.warning(f"UI bootstrap admin skipped: {_e}")
+
                 api_app = create_app(
                     db=database,
                     monitor_instance=monitor,
