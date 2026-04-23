@@ -23,6 +23,8 @@ from typing import Dict, Optional
 
 from jinja2 import FileSystemLoader
 from jinja2.sandbox import SandboxedEnvironment
+
+from app import __version__ as _APP_VERSION
 from app.template_renderer import _jinja_autoescape
 
 logger = logging.getLogger(__name__)
@@ -302,6 +304,7 @@ class InvoicePDFTemplateRenderer:
             'invoice_type_title': invoice_type_title,
             'total_label': total_label,
             'generation_stamp': generation_stamp,
+            'app_version': _APP_VERSION,
             'has_col': has_col,
             'payment_methods': PAYMENT_METHODS,
             'vat_rate_labels': VAT_RATE_LABELS,

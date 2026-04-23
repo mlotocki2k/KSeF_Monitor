@@ -18,6 +18,8 @@ PDF contains ONLY data present in the source XML. No calculations, no defaults.
 import base64
 import hashlib
 import html
+
+from app import __version__ as _APP_VERSION
 import logging
 from datetime import datetime
 from typing import Dict, Optional, List
@@ -999,7 +1001,7 @@ class InvoicePDFGenerator:
             tz_label = tz_name
 
         stamp = now.strftime('%y.%m.%d %H:%M:%S')
-        text = f'Wygenerowane przez KSeF Monitor v0.3 | {stamp} {tz_label}'
+        text = f'Wygenerowane przez KSeF Monitor v{_APP_VERSION} | {stamp} {tz_label}'
         font = self.font
 
         def _draw(canvas_obj, doc):
