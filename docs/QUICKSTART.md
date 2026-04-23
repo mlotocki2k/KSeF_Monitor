@@ -207,12 +207,22 @@ Po uruchomieniu z `api.enabled: true` web UI jest pod `http://localhost:8080/ui`
   curl -H "Authorization: Bearer YOUR_TOKEN" http://localhost:8080/api/v1/invoices
   ```
 
-**Zarządzanie kontami z CLI:**
+**Zarządzanie kontami z CLI (kontekst Docker):**
 ```bash
 docker exec -it ksef-monitor python -m app.user_admin list
 docker exec -it ksef-monitor python -m app.user_admin add <username>
 docker exec -it ksef-monitor python -m app.user_admin reset-password <username>
+docker exec -it ksef-monitor python -m app.user_admin delete <username>
+docker exec -it ksef-monitor python -m app.user_admin cleanup-sessions
 ```
+
+**Trigger natychmiastowego sprawdzenia (z UI):**
+Przycisk **"Sprawdź"** w górnym navbar → `POST /api/v1/monitor/trigger` →
+`InvoiceMonitor.trigger_check()` ustawia flagę `_manual_trigger` → pętla
+monitora zareaguje w następnej iteracji. Status widoczny jako flash message.
+
+**Motyw:** Dark-only, paleta 1:1 z aplikacją iOS Monitor KSeF
+(`--app-bg #0B1A3E`, akcent Apple blue `#007AFF`).
 
 ## Verification
 

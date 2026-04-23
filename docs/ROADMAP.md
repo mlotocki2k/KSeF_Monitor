@@ -286,13 +286,17 @@ _Źródło: regresja UX po V5-01 — token modal blokował dashboard. Pełna lis
   - **Upgrade-friendly:** main.py auto-tworzy usera `admin` z `password = api.auth_token` przy pierwszym starcie z istniejącym tokenem i pustą tabelą userów. Zero key regeneration.
   - CLI: `python -m app.user_admin {list, add, reset-password, delete, cleanup-sessions}`.
 - [x] **deps:** `bcrypt>=4.2.0,<5.0.0`.
-- [x] **testy:** `tests/test_ui_user_auth.py` (51 nowych); `tests/test_api_auth.py` zaktualizowany; head ref w `test_db_migration.py` bumped.
+- [x] **V5-14** Regresja `/ui/account` pod `ui_public=true` / `auth_token=""` — split middleware: `resolve_ui_session` (ZAWSZE) + `verify_auth` (gate tylko gdy `auth_token`). Cookie state populowany niezależnie od ścieżki auth. 4 regresyjne testy.
+- [x] **V5-15** Dark theme spójny z iOS app — paleta 1:1 z `monitor_ksef_ios/.../Assets.xcassets/*.colorset` (dark appearance). `--app-bg #0B1A3E`, `--accent #007AFF`, iOS status colors. Ikona `AppIcon.appiconset/icon_dark_1024.png` reuse (128/64/32 PNG). Dark-only (`color-scheme: dark`); plain CSS (prebuilt tailwind.min.css bez JIT). `base.html`, `login.html`, `setup.html` przepisane.
+- [x] **V5-16** Fix `POST /api/v1/monitor/trigger` — router wołał nieistniejącą `monitor.scheduler.force_next_run()`. Podmiana na `monitor.trigger_check()` (istniejąca metoda w `InvoiceMonitor`, flipuje `_manual_trigger`). Testy `test_api_monitor.py`, `test_api_rate_limit.py` zaktualizowane.
+- [x] **testy:** `tests/test_ui_user_auth.py` (55 testów, w tym 4 z `TestSessionResolver`); `test_api_auth.py`, `test_api_monitor.py`, `test_api_rate_limit.py` zaktualizowane; head ref w `test_db_migration.py` bumped. **91+ testów passes.**
 
 **Follow-ups (non-blocking):**
 - Multi-user admin panel w UI (obecnie CLI-only)
 - Opcjonalny 2FA / TOTP
 - Lista aktywnych sesji w `/ui/account` (revoke per-device)
 - Rotacja cookie value przy każdym requeście (defense-in-depth)
+- Light-mode toggle (obecnie dark-only)
 
 ---
 

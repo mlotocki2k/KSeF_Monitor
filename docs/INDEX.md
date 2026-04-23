@@ -48,6 +48,8 @@ chmod +x setup.sh && ./setup.sh
 | Document | Description | Read When |
 |----------|-------------|-----------|
 | **[SECURITY.md](SECURITY.md)** | Complete security guide (updated for v0.5.1: V5-13 UI user accounts) | Before production deployment |
+| **[TODO.md](TODO.md)** | Pre-prod checklist, user-test scenarios, follow-ups (branch `test`) | Tracking what's left for 0.5.1 ship |
+| **[ROADMAP.md](ROADMAP.md)** | All milestones + per-V5 task detail | Planning ahead / reviewing history |
 | **[CHANGELOG.md](../CHANGELOG.md)** | Full release history with security changelog | Reviewing what changed per release |
 | **[audit/20260421_security_audit_docker_v0_5_test_branch.md](../audit/20260421_security_audit_docker_v0_5_test_branch.md)** | v0.5 security audit report (original findings) | Reviewing audit scope and findings |
 | **[audit/20260422_security_reaudit_v0_5_post_remediation.md](../audit/20260422_security_reaudit_v0_5_post_remediation.md)** | v0.5 post-remediation re-audit | Verifying all findings were closed |

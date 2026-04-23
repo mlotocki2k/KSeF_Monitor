@@ -554,11 +554,18 @@ REST API (FastAPI) + browser UI (v0.5.1).
 | `rate_limit.default` | `"60/minute"` | Domyślny limit requestów |
 | `rate_limit.trigger` | `"2/minute"` | Limit dla POST /trigger |
 
-**Browser UI auth (V5-13):** osobne konta user/pass w DB (bcrypt), HttpOnly
+**Browser UI auth (V5-13/V5-14):** osobne konta user/pass w DB (bcrypt), HttpOnly
 cookie session 7 dni. Pierwszy start: `/ui/setup` (kreator konta) lub
 auto-bootstrap `admin` z `auth_token` (upgrade-friendly z v0.5.0). Bearer
-nadal działa dla curl/integracji. CLI: `python -m app.user_admin {list|add|reset-password|delete|cleanup-sessions}`.
-Patrz [docs/SECURITY.md](docs/SECURITY.md) i [docs/REST_API.md](docs/REST_API.md).
+nadal działa dla curl/integracji. V5-14: session resolver niezależny od
+auth gate — `/ui/account` i navbar (username + Wyloguj) działają też gdy
+`auth_token=""` lub `ui_public=true`.
+CLI (Docker): `docker exec -it ksef-monitor python -m app.user_admin {list|add|reset-password|delete|cleanup-sessions}`.
+
+**Motyw UI (V5-15):** Dark-only, paleta 1:1 z aplikacją iOS Monitor KSeF.
+Ikona współdzielona z `AppIcon.appiconset/icon_dark_1024.png`.
+
+Patrz [docs/SECURITY.md](docs/SECURITY.md), [docs/REST_API.md](docs/REST_API.md), [docs/TODO.md](docs/TODO.md).
 
 **Przykład konfiguracji:**
 
