@@ -11,7 +11,7 @@ from typing import Any, Dict, Optional
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
@@ -80,10 +80,15 @@ def create_app(
         # V5-01: Narrow whitelist — docs + health only. UI and invoice
         # downloads now require auth. Legacy deployments behind a trusted
         # reverse proxy can re-enable UI bypass via api.ui_public=true.
+        # V5-12: Browser UI uses HttpOnly cookie session set by /ui/login;
+        # /ui/login itself must stay public so unauthenticated users can reach
+        # the form.
         _EXEMPT_EXACT = {
             "/docs", "/redoc", "/openapi.json",
             "/api/v1/monitor/health",
+            "/ui/login", "/ui/logout",
         }
+        _SESSION_COOKIE = "mksef_session"
 
         @app.middleware("http")
         async def verify_auth(request: Request, call_next):
@@ -93,14 +98,15 @@ def create_app(
             if ui_public and path.startswith("/ui"):
                 return await call_next(request)
 
+            cookie_token = request.cookies.get(_SESSION_COOKIE, "")
+            if cookie_token and hmac.compare_digest(cookie_token, auth_token):
+                return await call_next(request)
+
             auth_header = request.headers.get("Authorization", "")
-            if not auth_header.startswith("Bearer "):
-                return JSONResponse(
-                    status_code=401,
-                    content={"detail": "Missing or invalid Authorization header"},
-                )
-            provided = auth_header[7:]
-            if not hmac.compare_digest(provided, auth_token):
+            if auth_header.startswith("Bearer "):
+                provided = auth_header[7:]
+                if hmac.compare_digest(provided, auth_token):
+                    return await call_next(request)
                 logger.warning(
                     "Failed auth attempt from %s",
                     request.client.host if request.client else "unknown",
@@ -109,7 +115,15 @@ def create_app(
                     status_code=401,
                     content={"detail": "Invalid authentication token"},
                 )
-            return await call_next(request)
+
+            if path.startswith("/ui"):
+                return RedirectResponse(
+                    url=f"/ui/login?next={path}", status_code=303
+                )
+            return JSONResponse(
+                status_code=401,
+                content={"detail": "Missing or invalid Authorization header"},
+            )
     else:
         logger.warning("API running without authentication - set api.auth_token for production")
 

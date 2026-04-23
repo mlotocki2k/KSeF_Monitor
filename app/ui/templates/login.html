@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="pl" class="h-full bg-gray-50">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Logowanie — Monitor KSeF</title>
+  <link rel="stylesheet" href="/ui/static/tailwind.min.css?v={{ ui_version }}">
+  <style>
+    @layer utilities {
+      .input { @apply block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-brand focus:ring-1 focus:ring-brand; }
+      .label { @apply block text-xs font-medium text-gray-600 mb-1; }
+      .btn-primary { @apply inline-flex items-center justify-center w-full px-3 py-2 text-sm font-medium rounded-md bg-brand text-white hover:bg-brand-dark transition-colors; }
+      .card { @apply bg-white rounded-lg border border-gray-200 shadow-sm; }
+    }
+  </style>
+</head>
+<body class="h-full flex items-center justify-center">
+  <div class="card p-8 w-full max-w-sm mx-4">
+    <h1 class="flex items-center gap-2 font-bold text-brand text-base mb-1">
+      <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+        <path stroke-linecap="round" stroke-linejoin="round"
+          d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+      </svg>
+      Monitor KSeF
+    </h1>
+    <p class="text-xs text-gray-500 mb-5">Wpisz token API z konfiguracji serwera.</p>
+
+    {% if error %}
+    <div class="mb-4 rounded-md bg-red-50 border border-red-200 p-3 text-sm text-red-700">
+      {% if error == "invalid" %}Nieprawidłowy token.{% else %}{{ error }}{% endif %}
+    </div>
+    {% endif %}
+
+    <form method="post" action="/ui/login" autocomplete="off">
+      <input type="hidden" name="next" value="{{ next }}">
+      <label for="token" class="label">Token</label>
+      <input id="token" name="token" type="password" class="input mb-4"
+        placeholder="Bearer token…" required autofocus>
+      <button type="submit" class="btn-primary">Zaloguj</button>
+    </form>
+
+    <p class="mt-4 text-[11px] text-gray-400 text-center">
+      Sesja przechowywana w HttpOnly cookie. Bezpieczna w przeglądarce.
+    </p>
+  </div>
+</body>
+</html>

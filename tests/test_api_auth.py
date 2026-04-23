@@ -177,28 +177,34 @@ class TestGenericErrorHandler:
 
 
 class TestUiAuth:
-    """V5-01: UI routes must require auth by default."""
+    """V5-01 + V5-12: UI routes redirect to /ui/login when unauthenticated."""
 
-    def test_ui_requires_auth_by_default(self, client_auth):
-        """GET /ui should return 401 when no token is provided."""
-        resp = client_auth.get("/ui")
-        assert resp.status_code == 401
+    def test_ui_redirects_to_login(self, app_auth):
+        """GET /ui without auth should 303 to /ui/login."""
+        client = TestClient(app_auth, follow_redirects=False)
+        resp = client.get("/ui")
+        assert resp.status_code == 303
+        assert resp.headers["location"].startswith("/ui/login")
 
-    def test_ui_invoices_requires_auth(self, client_auth):
-        resp = client_auth.get("/ui/invoices")
-        assert resp.status_code == 401
+    def test_ui_invoices_redirects_to_login(self, app_auth):
+        client = TestClient(app_auth, follow_redirects=False)
+        resp = client.get("/ui/invoices")
+        assert resp.status_code == 303
+        assert "/ui/login" in resp.headers["location"]
 
-    def test_ui_push_requires_auth(self, client_auth):
-        resp = client_auth.get("/ui/push")
-        assert resp.status_code == 401
+    def test_ui_push_redirects_to_login(self, app_auth):
+        client = TestClient(app_auth, follow_redirects=False)
+        resp = client.get("/ui/push")
+        assert resp.status_code == 303
 
-    def test_ui_accessible_with_token(self, app_auth):
-        """With valid token, /ui passes through auth (may 500 if db=None)."""
+    def test_ui_accessible_with_bearer(self, app_auth):
+        """Bearer header still works (integrations / curl)."""
         client = TestClient(app_auth, raise_server_exceptions=False)
         resp = client.get(
             "/ui", headers={"Authorization": f"Bearer {'a' * 32}"}
         )
         assert resp.status_code != 401
+        assert resp.status_code != 303
 
     def test_invoice_pdf_requires_auth(self, client_auth):
         """V5-03: /invoices/{ksef}/pdf must not bypass auth."""
@@ -220,6 +226,100 @@ class TestUiAuth:
     def test_ksef_status_requires_auth(self, client_auth):
         resp = client_auth.get("/api/v1/monitor/ksef-status")
         assert resp.status_code == 401
+
+
+class TestUiCookieSession:
+    """V5-12: HttpOnly cookie session for browser UI."""
+
+    TOKEN = "a" * 32
+
+    def test_login_form_public(self, client_auth):
+        """GET /ui/login is accessible without auth."""
+        resp = client_auth.get("/ui/login")
+        assert resp.status_code == 200
+        assert "Token" in resp.text
+
+    def test_login_with_correct_token_sets_cookie(self, app_auth):
+        client = TestClient(app_auth, follow_redirects=False)
+        resp = client.post("/ui/login", data={"token": self.TOKEN, "next": "/ui"})
+        assert resp.status_code == 303
+        assert resp.headers["location"] == "/ui"
+        cookie = resp.cookies.get("mksef_session")
+        assert cookie == self.TOKEN
+
+    def test_login_with_wrong_token_redirects_with_error(self, app_auth):
+        client = TestClient(app_auth, follow_redirects=False)
+        resp = client.post("/ui/login", data={"token": "wrong", "next": "/ui"})
+        assert resp.status_code == 303
+        assert "error=invalid" in resp.headers["location"]
+        assert resp.cookies.get("mksef_session") is None
+
+    def test_cookie_grants_ui_access(self, app_auth):
+        client = TestClient(app_auth, raise_server_exceptions=False)
+        client.cookies.set("mksef_session", self.TOKEN)
+        resp = client.get("/ui")
+        assert resp.status_code != 401
+        assert resp.status_code != 303
+
+    def test_cookie_grants_api_access(self, app_auth):
+        """Cookie also authorizes API endpoints (browser fetch from UI)."""
+        client = TestClient(app_auth)
+        client.cookies.set("mksef_session", self.TOKEN)
+        resp = client.get("/api/v1/monitor/ksef-status")
+        assert resp.status_code != 401
+
+    def test_wrong_cookie_value_rejected(self, app_auth):
+        client = TestClient(app_auth, follow_redirects=False)
+        client.cookies.set("mksef_session", "wrong")
+        resp = client.get("/ui")
+        assert resp.status_code == 303
+
+    def test_logout_clears_cookie_and_redirects(self, app_auth):
+        client = TestClient(app_auth, follow_redirects=False)
+        client.cookies.set("mksef_session", self.TOKEN)
+        resp = client.post("/ui/logout")
+        assert resp.status_code == 303
+        assert resp.headers["location"] == "/ui/login"
+        set_cookie = resp.headers.get("set-cookie", "")
+        assert "mksef_session" in set_cookie
+        assert ("Max-Age=0" in set_cookie) or ('expires=' in set_cookie.lower())
+
+    def test_login_next_redirect_safe(self, app_auth):
+        """next= parameter must be restricted to /ui paths (open-redirect guard)."""
+        client = TestClient(app_auth, follow_redirects=False)
+        resp = client.post(
+            "/ui/login",
+            data={"token": self.TOKEN, "next": "https://evil.example/x"},
+        )
+        assert resp.status_code == 303
+        assert resp.headers["location"] == "/ui"
+
+    def test_login_protocol_relative_next_rejected(self, app_auth):
+        client = TestClient(app_auth, follow_redirects=False)
+        resp = client.post(
+            "/ui/login", data={"token": self.TOKEN, "next": "//evil.example"}
+        )
+        assert resp.status_code == 303
+        assert resp.headers["location"] == "/ui"
+
+    def test_cookie_is_httponly(self, app_auth):
+        client = TestClient(app_auth, follow_redirects=False)
+        resp = client.post("/ui/login", data={"token": self.TOKEN})
+        set_cookie = resp.headers.get("set-cookie", "").lower()
+        assert "httponly" in set_cookie
+        assert "samesite=strict" in set_cookie
+
+    def test_login_endpoint_exempt_from_auth(self, client_auth):
+        """Even with auth required, /ui/login GET stays public."""
+        resp = client_auth.get("/ui/login")
+        assert resp.status_code == 200
+
+    def test_login_redirects_to_ui_when_no_auth_configured(self, app_open):
+        """If server has no auth_token, /ui/login just bounces to /ui."""
+        client = TestClient(app_open, follow_redirects=False)
+        resp = client.get("/ui/login")
+        assert resp.status_code == 303
+        assert resp.headers["location"] == "/ui"
 
 
 class TestUiPublicOptIn:

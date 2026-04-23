@@ -12,14 +12,17 @@ to avoid internal HTTP calls and token management in browser.
 
 import json
 import logging
+import hmac
 import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, Query, Request
+from fastapi import APIRouter, Form, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
+
+from .._limiter import limiter
 
 from app import __version__
 
@@ -358,3 +361,74 @@ def ui_push(request: Request):
 
     ctx["push"] = push_manager.pairing_info
     return templates.TemplateResponse(request, "push.html", ctx)
+
+
+# ── Login / Logout (V5-12 cookie session) ────────────────────────────────────
+
+_SESSION_COOKIE = "mksef_session"
+_COOKIE_MAX_AGE = 60 * 60 * 24 * 7  # 7 days
+
+
+def _safe_next(value: Optional[str]) -> str:
+    """Whitelist redirect target to internal /ui paths only."""
+    if not value or not value.startswith("/ui") or value.startswith("//"):
+        return "/ui"
+    return value
+
+
+@router.get("/ui/login", response_class=HTMLResponse)
+def ui_login_form(request: Request, next: Optional[str] = None, error: Optional[str] = None):
+    """Render login form. Public — no auth required."""
+    ctx = {
+        "request": request,
+        "next": _safe_next(next),
+        "error": error,
+        "ui_version": __version__,
+        "docs_enabled": request.app.openapi_url is not None,
+    }
+    if not _auth_token(request):
+        return RedirectResponse(url="/ui", status_code=303)
+    return templates.TemplateResponse(request, "login.html", ctx)
+
+
+@router.post("/ui/login")
+@limiter.limit("5/minute")
+def ui_login_submit(
+    request: Request,
+    token: str = Form(...),
+    next: Optional[str] = Form(None),
+):
+    """Validate token, set HttpOnly session cookie, redirect to next page."""
+    expected = _auth_token(request)
+    if not expected:
+        return RedirectResponse(url="/ui", status_code=303)
+
+    target = _safe_next(next)
+    if not hmac.compare_digest(token.strip(), expected):
+        logger.warning(
+            "Failed UI login from %s",
+            request.client.host if request.client else "unknown",
+        )
+        return RedirectResponse(
+            url=f"/ui/login?next={target}&error=invalid", status_code=303
+        )
+
+    resp = RedirectResponse(url=target, status_code=303)
+    resp.set_cookie(
+        key=_SESSION_COOKIE,
+        value=expected,
+        max_age=_COOKIE_MAX_AGE,
+        httponly=True,
+        secure=request.url.scheme == "https",
+        samesite="strict",
+        path="/",
+    )
+    return resp
+
+
+@router.post("/ui/logout")
+def ui_logout(request: Request):
+    """Clear session cookie and redirect to login."""
+    resp = RedirectResponse(url="/ui/login", status_code=303)
+    resp.delete_cookie(_SESSION_COOKIE, path="/")
+    return resp

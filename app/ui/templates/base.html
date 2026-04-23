@@ -47,16 +47,6 @@
       {% endfor %}
     </nav>
     <div class="ml-auto flex items-center gap-3">
-      {% if auth_required %}
-      <button onclick="showTokenModal()"
-        class="nav-link nav-link-idle text-xs flex items-center gap-1" title="Konfiguracja tokena">
-        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-          <path stroke-linecap="round" stroke-linejoin="round"
-            d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"/>
-        </svg>
-        Token
-      </button>
-      {% endif %}
       <button id="btn-trigger" onclick="triggerCheck()"
         class="nav-link nav-link-idle text-xs flex items-center gap-1" title="Wyzwól natychmiastowe sprawdzenie">
         <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
@@ -64,6 +54,18 @@
         </svg>
         Sprawdź
       </button>
+      {% if auth_required %}
+      <form action="/ui/logout" method="post" class="m-0">
+        <button type="submit"
+          class="nav-link nav-link-idle text-xs flex items-center gap-1" title="Wyloguj">
+          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round"
+              d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/>
+          </svg>
+          Wyloguj
+        </button>
+      </form>
+      {% endif %}
     </div>
   </div>
 </header>
@@ -94,44 +96,7 @@
   </div>
 </footer>
 
-<!-- Token modal -->
-{% if auth_required %}
-<div id="token-modal" class="hidden fixed inset-0 bg-black/40 z-50 flex items-center justify-center">
-  <div class="card p-6 w-full max-w-sm">
-    <h3 class="text-sm font-semibold mb-3">Token autoryzacji API</h3>
-    <p class="text-xs text-gray-500 mb-3">
-      Wymagany do wykonywania akcji (wyzwól sprawdzenie, start/cancel importu).
-      Przechowywany w localStorage przeglądarki.
-    </p>
-    <input id="token-input" type="password" class="input mb-3" placeholder="Bearer token…">
-    <div class="flex gap-2">
-      <button onclick="saveToken()" class="btn-primary text-xs">Zapisz</button>
-      <button onclick="clearToken()" class="btn-secondary text-xs">Wyczyść</button>
-      <button onclick="hideTokenModal()" class="btn-secondary text-xs ml-auto">Zamknij</button>
-    </div>
-  </div>
-</div>
-{% endif %}
-
 <script>
-// ── Token management ──────────────────────────────────────────────────────────
-const TOKEN_KEY = 'mksef_api_token';
-function getToken() { return localStorage.getItem(TOKEN_KEY) || ''; }
-function saveToken() {
-  const v = document.getElementById('token-input').value.trim();
-  if (v) { localStorage.setItem(TOKEN_KEY, v); flash('Token zapisany.', 'ok'); }
-  hideTokenModal();
-}
-function clearToken() { localStorage.removeItem(TOKEN_KEY); flash('Token usunięty.', 'warn'); hideTokenModal(); }
-function showTokenModal() {
-  const el = document.getElementById('token-modal');
-  if (el) { el.classList.remove('hidden'); document.getElementById('token-input').value = getToken(); }
-}
-function hideTokenModal() {
-  const el = document.getElementById('token-modal');
-  if (el) el.classList.add('hidden');
-}
-
 // ── Flash messages ────────────────────────────────────────────────────────────
 function flash(msg, type = 'ok') {
   const el = document.getElementById('flash');
@@ -144,16 +109,18 @@ function flash(msg, type = 'ok') {
 }
 
 // ── API call helper ───────────────────────────────────────────────────────────
+// V5-12: cookie session sent automatically (same-origin). No Bearer needed.
 async function apiCall(method, url, body = null) {
-  const headers = { 'Content-Type': 'application/json' };
-  const token = getToken();
-  if (token) headers['Authorization'] = `Bearer ${token}`;
-  const opts = { method, headers };
+  const opts = {
+    method,
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'same-origin',
+  };
   if (body) opts.body = JSON.stringify(body);
   const resp = await fetch(url, opts);
   if (resp.status === 401 || resp.status === 403) {
-    showTokenModal();
-    throw new Error('Wymagana autoryzacja — wpisz token i spróbuj ponownie.');
+    window.location.href = '/ui/login?next=' + encodeURIComponent(window.location.pathname);
+    throw new Error('Sesja wygasła — przekierowanie do logowania.');
   }
   if (!resp.ok) {
     const err = await resp.json().catch(() => ({ detail: resp.statusText }));
@@ -180,15 +147,12 @@ async function triggerCheck() {
   }
 }
 // ── File download with auth ───────────────────────────────────────────────────
+// V5-12: cookie session sent automatically (same-origin). No Bearer needed.
 async function downloadFile(url, filename) {
-  const headers = {};
-  const token = getToken();
-  if (token) headers['Authorization'] = `Bearer ${token}`;
   try {
-    const r = await fetch(url, { headers });
+    const r = await fetch(url, { credentials: 'same-origin' });
     if (r.status === 401 || r.status === 403) {
-      showTokenModal();
-      flash('Wpisz token autoryzacji i pobierz ponownie.', 'warn');
+      window.location.href = '/ui/login?next=' + encodeURIComponent(window.location.pathname);
       return;
     }
     if (!r.ok) {
