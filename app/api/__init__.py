@@ -70,7 +70,10 @@ def create_app(
     app.state.push_manager = push_manager
     app.state.initial_load_manager = initial_load_manager
 
-    # Auth middleware (if token configured) — registered FIRST (innermost)
+    _SESSION_COOKIE = "mksef_session"
+
+    # Auth gate — only when token configured. Registered FIRST so it runs
+    # AFTER resolve_ui_session (Starlette: last-registered runs first).
     if auth_token:
         if len(auth_token) < 32:
             logger.warning(
@@ -78,15 +81,13 @@ def create_app(
             )
 
         # V5-01: narrow whitelist — docs + health only. UI requires auth.
-        # V5-12: HttpOnly cookie session for browser UI (was: localStorage Bearer).
-        # V5-13: cookie value is now an opaque DB session ID (was: token-equals);
-        # /ui/setup is public so first-launch wizard can run.
+        # V5-12: HttpOnly cookie session for browser UI.
+        # V5-13: cookie is opaque DB session ID; /ui/setup public for first-launch wizard.
         _EXEMPT_EXACT = {
             "/docs", "/redoc", "/openapi.json",
             "/api/v1/monitor/health",
             "/ui/login", "/ui/logout", "/ui/setup",
         }
-        _SESSION_COOKIE = "mksef_session"
 
         @app.middleware("http")
         async def verify_auth(request: Request, call_next):
@@ -96,18 +97,10 @@ def create_app(
             if ui_public and path.startswith("/ui"):
                 return await call_next(request)
 
-            db = getattr(request.app.state, "db", None)
-            sid = request.cookies.get(_SESSION_COOKIE)
-            if sid and db:
-                from app.ui_auth import validate_session
-
-                with db.get_session() as s:
-                    result = validate_session(s, sid)
-                    if result is not None:
-                        user, _ = result
-                        request.state.ui_user_id = user.id
-                        request.state.ui_username = user.username
-                        return await call_next(request)
+            # Cookie already validated by resolve_ui_session; ui_user_id
+            # set means the session is valid.
+            if getattr(request.state, "ui_user_id", None) is not None:
+                return await call_next(request)
 
             auth_header = request.headers.get("Authorization", "")
             if auth_header.startswith("Bearer "):
@@ -125,10 +118,11 @@ def create_app(
 
             if path.startswith("/ui"):
                 # First-launch redirect: no users yet → setup wizard.
-                if db:
+                db_local = getattr(request.app.state, "db", None)
+                if db_local:
                     from app.ui_auth import count_users
 
-                    with db.get_session() as s:
+                    with db_local.get_session() as s:
                         if count_users(s) == 0:
                             return RedirectResponse(
                                 url="/ui/setup", status_code=303
@@ -142,6 +136,30 @@ def create_app(
             )
     else:
         logger.warning("API running without authentication - set api.auth_token for production")
+
+    # Session resolver — ALWAYS runs, registered AFTER auth gate so it runs
+    # FIRST in request flow (Starlette: last-registered = outermost).
+    # Populates request.state.ui_user_id / ui_username whenever a valid
+    # cookie is present. Works regardless of auth_token / ui_public so
+    # navbar links and /ui/account continue to function under reverse-proxy
+    # setups and bypass configurations.
+    @app.middleware("http")
+    async def resolve_ui_session(request: Request, call_next):
+        db_local = getattr(request.app.state, "db", None)
+        sid = request.cookies.get(_SESSION_COOKIE)
+        if sid and db_local:
+            from app.ui_auth import validate_session
+
+            try:
+                with db_local.get_session() as s:
+                    result = validate_session(s, sid)
+                    if result is not None:
+                        user, _ = result
+                        request.state.ui_user_id = user.id
+                        request.state.ui_username = user.username
+            except Exception as exc:  # DB hiccup must not 500 the UI
+                logger.warning("Session resolver failed: %s", exc)
+        return await call_next(request)
 
     # Security headers middleware — registered LAST (outermost, always runs)
     @app.middleware("http")

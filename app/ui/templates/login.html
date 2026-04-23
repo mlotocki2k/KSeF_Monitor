@@ -1,29 +1,42 @@
 <!doctype html>
-<html lang="pl" class="h-full bg-gray-50">
+<html lang="pl" class="h-full">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
   <title>Logowanie — Monitor KSeF</title>
+  <link rel="icon" type="image/png" sizes="32x32" href="/ui/static/favicon.png?v={{ ui_version }}">
   <link rel="stylesheet" href="/ui/static/tailwind.min.css?v={{ ui_version }}">
   <style>
-    @layer utilities {
-      .input { @apply block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-brand focus:ring-1 focus:ring-brand; }
-      .label { @apply block text-xs font-medium text-gray-600 mb-1; }
-      .btn-primary { @apply inline-flex items-center justify-center w-full px-3 py-2 text-sm font-medium rounded-md bg-brand text-white hover:bg-brand-dark transition-colors; }
-      .card { @apply bg-white rounded-lg border border-gray-200 shadow-sm; }
+    :root {
+      --app-bg: #0B1A3E; --card-bg: #1A2B50; --card-border: #243454;
+      --text-primary: #FFFFFF; --text-muted: #8E99AF;
+      --accent: #007AFF; --accent-hover: #0A84FF;
+      --input-bg: #152344; --input-border: #2A3A62;
+      --status-red: #FF3B30; --status-green: #34C759;
     }
+    html, body { background: var(--app-bg); color: var(--text-primary); }
+    .input { display: block; width: 100%; border-radius: .375rem; border: 1px solid var(--input-border); background: var(--input-bg); color: var(--text-primary); padding: .5rem .75rem; font-size: .875rem; }
+    .input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+    .label { display: block; font-size: .75rem; font-weight: 500; color: var(--text-muted); margin-bottom: .25rem; }
+    .btn-primary { display: inline-flex; align-items: center; justify-content: center; width: 100%; padding: .5rem .75rem; font-size: .875rem; font-weight: 500; border-radius: .375rem; background: var(--accent); color: #fff; border: 1px solid var(--accent); cursor: pointer; transition: background .15s; }
+    .btn-primary:hover { background: var(--accent-hover); }
+    .card { background: var(--card-bg); border: 1px solid var(--card-border); border-radius: .5rem; box-shadow: 0 4px 20px rgba(0,0,0,.35); }
+    .bg-red-50 { background-color: rgba(255,59,48,.1) !important; }
+    .border-red-200 { border-color: rgba(255,59,48,.3) !important; }
+    .text-red-700 { color: #FF6B62 !important; }
+    .bg-green-50 { background-color: rgba(52,199,89,.1) !important; }
+    .border-green-200 { border-color: rgba(52,199,89,.3) !important; }
+    .text-green-700 { color: #5DD67D !important; }
   </style>
 </head>
 <body class="h-full flex items-center justify-center">
   <div class="card p-8 w-full max-w-sm mx-4">
-    <h1 class="flex items-center gap-2 font-bold text-brand text-base mb-1">
-      <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-        <path stroke-linecap="round" stroke-linejoin="round"
-          d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
-      </svg>
+    <h1 class="flex items-center gap-3 font-bold text-base mb-1" style="color: var(--text-primary);">
+      <img src="/ui/static/icon-64.png?v={{ ui_version }}" alt="" width="36" height="36" style="border-radius: 8px;">
       Monitor KSeF
     </h1>
-    <p class="text-xs text-gray-500 mb-5">Zaloguj się, aby kontynuować.</p>
+    <p class="text-xs mb-5" style="color: var(--text-muted);">Zaloguj się, aby kontynuować.</p>
 
     {% if error %}
     <div class="mb-4 rounded-md bg-red-50 border border-red-200 p-3 text-sm text-red-700">
@@ -50,7 +63,7 @@
       <button type="submit" class="btn-primary">Zaloguj</button>
     </form>
 
-    <p class="mt-4 text-[11px] text-gray-400 text-center">
+    <p class="mt-4 text-[11px] text-center" style="color: var(--text-muted);">
       Sesja w HttpOnly cookie, ważna 7 dni z odnawianiem.
     </p>
   </div>

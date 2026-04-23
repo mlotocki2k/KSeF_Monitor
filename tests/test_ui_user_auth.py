@@ -509,3 +509,76 @@ class TestUpgradeBootstrap:
             headers={"Authorization": f"Bearer {'a' * 32}"},
         )
         assert resp.status_code != 401
+
+
+class TestSessionResolver:
+    """Regression tests for V5-13 fix: cookie session state populates
+    request.state.ui_user_id/ui_username independently of auth gate, so
+    /ui/account and navbar links work under all config permutations."""
+
+    def _login_and_get_cookie(self, client, db, username="admin", password="x" * 20):
+        with db.get_session() as s:
+            create_user(s, username, password)
+        resp = client.post(
+            "/ui/login", data={"username": username, "password": password}
+        )
+        assert resp.status_code == 303
+        return client.cookies.get("mksef_session")
+
+    def test_account_page_works_with_ui_public_true(self, db):
+        """With ui_public=True, auth gate bypasses /ui but resolver still
+        validates cookie → /ui/account must render the form, not redirect."""
+        app = create_app(db=db, auth_token="a" * 32, ui_public=True)
+        client = TestClient(app, follow_redirects=False)
+        self._login_and_get_cookie(client, db)
+
+        resp = client.get("/ui/account")
+        assert resp.status_code == 200
+        assert "current_password" in resp.text
+        assert "new_password" in resp.text
+
+    def test_navbar_shows_username_with_ui_public_true(self, db):
+        """Navbar account link visibility is gated on ui_username; must be
+        set even when ui_public bypasses auth gate."""
+        app = create_app(db=db, auth_token="a" * 32, ui_public=True)
+        client = TestClient(app, follow_redirects=False)
+        self._login_and_get_cookie(client, db, username="admin")
+
+        resp = client.get("/ui")
+        assert resp.status_code == 200
+        assert "/ui/account" in resp.text
+        assert "Wyloguj" in resp.text
+
+    def test_account_page_works_without_auth_token(self, db):
+        """When auth_token is empty (dev mode), no auth gate registered, but
+        cookie resolver still runs so /ui/account serves the form."""
+        app = create_app(db=db, auth_token=None)
+        client = TestClient(app, follow_redirects=False)
+        self._login_and_get_cookie(client, db)
+
+        resp = client.get("/ui/account")
+        assert resp.status_code == 200
+        assert "current_password" in resp.text
+
+    def test_password_change_revokes_and_forces_relogin_ui_public(self, db):
+        """End-to-end: even under ui_public, password change revokes the
+        session and subsequent /ui/account requires fresh login."""
+        app = create_app(db=db, auth_token="a" * 32, ui_public=True)
+        client = TestClient(app, follow_redirects=False)
+        self._login_and_get_cookie(client, db, password="old-password-xyz1")
+
+        resp = client.post(
+            "/ui/account/password",
+            data={
+                "current_password": "old-password-xyz1",
+                "new_password": "new-password-xyz2",
+                "new_password_confirm": "new-password-xyz2",
+            },
+        )
+        assert resp.status_code == 303
+        assert "/ui/login" in resp.headers["location"]
+
+        # Old session gone — /ui/account should redirect back to login.
+        resp = client.get("/ui/account")
+        assert resp.status_code == 303
+        assert "/ui/login" in resp.headers["location"]

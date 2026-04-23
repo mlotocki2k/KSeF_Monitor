@@ -71,12 +71,52 @@ user accounts.
 - `tests/test_db_migration.py` head revision bumped from `d9e0f1g2h345` to `e0f1g2h34567`
 - 85 of the 85 V5-13 + V5-12 + adjacent tests pass
 
+### Fixes on top of V5-13 (same 0.5.1)
+
+**V5-14 — `/ui/account` broken when auth_token empty or `ui_public=true`**
+
+- Bug: session state (`request.state.ui_user_id` / `ui_username`) was only
+  populated inside the auth middleware. That middleware was either skipped
+  (`auth_token` empty, dev mode) or short-circuited (`ui_public=true`,
+  reverse-proxy mode) → navbar showed no account/logout links, and
+  `/ui/account` redirected to `/ui/login` in a loop.
+- Fix: split into two middleware layers.
+  - `resolve_ui_session` — always runs (registered last → outermost in
+    Starlette). Reads `mksef_session` cookie, calls `validate_session`,
+    populates `request.state` for downstream handlers.
+  - `verify_auth` — only registered when `auth_token` is set. Now a
+    pure gate: accept if `ui_user_id` already set by resolver, else Bearer,
+    else redirect/401. No longer owns cookie validation.
+- Templates: Jinja `{% if ui_username %}` now evaluates truthy under every
+  config permutation → navbar account + logout always render for logged-in
+  users, `/ui/account` form renders instead of redirecting.
+- Regression tests: 4 new in `tests/test_ui_user_auth.py::TestSessionResolver`
+  covering `ui_public=true` + account, navbar visibility with ui_public,
+  no-auth-token + account, password change revoke under ui_public.
+
+**V5-15 — Dark theme + iOS app visual alignment**
+
+- Palette aligned with iOS `Assets.xcassets` dark appearance values:
+  `--app-bg: #0B1A3E` (deep navy), `--card-bg: #1A2B50`, `--accent: #007AFF`
+  (Apple blue), status colors from iOS system (green `#34C759`, orange
+  `#FF9500`, red `#FF3B30`).
+- Dark-only; `<meta name="color-scheme" content="dark">`. Tailwind base
+  utilities overridden with `!important` in a single `<style>` block so
+  prebuilt `tailwind.min.css` doesn't need to regenerate.
+- iOS app icon reused: `app/ui/static/icon-64.png` (navbar), `icon-128.png`
+  (apple-touch-icon), `favicon.png` (32x32). Source:
+  `monitor_ksef_ios/.../AppIcon.appiconset/icon_dark_1024.png`, resized
+  with `sips`. Inline SVG logos in `base.html`, `login.html`, `setup.html`
+  replaced with `<img>` tags.
+- Footer version string reads `{{ ui_version }}` (was hard-coded `v0.5`).
+
 ### Known follow-ups (non-blocking)
 
 - Multi-user admin panel (add/delete other users from UI) — currently CLI-only
 - Optional 2FA / TOTP for `/ui/login`
 - Session list in account page (revoke individual devices)
 - Rotate cookie value on each request (defense in depth against session-fixation if cookie ever leaked over a misconfigured proxy)
+- Light-mode toggle (currently dark-only to match iOS default theme)
 
 ---
 

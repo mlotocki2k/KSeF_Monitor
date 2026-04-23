@@ -1,41 +1,108 @@
 <!doctype html>
-<html lang="pl" class="h-full bg-gray-50">
+<html lang="pl" class="h-full">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
   <title>{% block title %}Monitor KSeF{% endblock %}</title>
+  <link rel="icon" type="image/png" sizes="32x32" href="/ui/static/favicon.png?v={{ ui_version }}">
+  <link rel="apple-touch-icon" href="/ui/static/icon-128.png?v={{ ui_version }}">
   <link rel="stylesheet" href="/ui/static/tailwind.min.css?v={{ ui_version }}">
   <style>
-    @layer utilities {
-      .nav-link { @apply px-4 py-2 text-sm font-medium rounded-md transition-colors; }
-      .nav-link-active { @apply bg-brand text-white; }
-      .nav-link-idle { @apply text-gray-600 hover:bg-gray-100; }
-      .card { @apply bg-white rounded-lg border border-gray-200 shadow-sm; }
-      .badge-s1 { @apply inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800; }
-      .badge-s2 { @apply inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800; }
-      .badge-ok { @apply inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800; }
-      .badge-err { @apply inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800; }
-      .badge-warn { @apply inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-800; }
-      .btn-primary { @apply inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md bg-brand text-white hover:bg-brand-dark disabled:opacity-50 disabled:cursor-not-allowed transition-colors; }
-      .btn-secondary { @apply inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md bg-white text-gray-700 border border-gray-300 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors; }
-      .btn-danger { @apply inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md bg-red-600 text-white hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors; }
-      .th { @apply px-3 py-2 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide; }
-      .td { @apply px-3 py-2 text-sm text-gray-700; }
-      .input { @apply block w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm shadow-sm focus:border-brand focus:ring-1 focus:ring-brand; }
-      .label { @apply block text-xs font-medium text-gray-600 mb-1; }
+    :root {
+      --app-bg: #0B1A3E;
+      --card-bg: #1A2B50;
+      --card-border: #243454;
+      --nav-bg: #0B1A3E;
+      --text-primary: #FFFFFF;
+      --text-muted: #8E99AF;
+      --accent: #007AFF;
+      --accent-hover: #0A84FF;
+      --status-green: #34C759;
+      --status-orange: #FF9500;
+      --status-red: #FF3B30;
+      --input-bg: #152344;
+      --input-border: #2A3A62;
     }
+    html, body { background: var(--app-bg); color: var(--text-primary); }
+    ::selection { background: var(--accent); color: #fff; }
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 10px; height: 10px; }
+    ::-webkit-scrollbar-track { background: var(--app-bg); }
+    ::-webkit-scrollbar-thumb { background: #2A3A62; border-radius: 5px; }
+    ::-webkit-scrollbar-thumb:hover { background: #3A4A7A; }
+
+    /* Component classes override Tailwind @layer — use plain CSS since
+       Tailwind is served as a prebuilt minified CSS (no JIT available). */
+    .nav-link { padding: 0.5rem 1rem; font-size: 0.875rem; font-weight: 500; border-radius: 0.375rem; transition: background-color .15s, color .15s; }
+    .nav-link-active { background: var(--accent); color: #fff; }
+    .nav-link-idle { color: var(--text-muted); }
+    .nav-link-idle:hover { background: rgba(255,255,255,.06); color: var(--text-primary); }
+
+    .card { background: var(--card-bg); border: 1px solid var(--card-border); border-radius: .5rem; box-shadow: 0 1px 2px rgba(0,0,0,.25); }
+
+    .badge-s1 { display: inline-flex; align-items: center; padding: .125rem .5rem; border-radius: .25rem; font-size: .75rem; font-weight: 500; background: rgba(0,122,255,.15); color: #7FB8FF; }
+    .badge-s2 { display: inline-flex; align-items: center; padding: .125rem .5rem; border-radius: .25rem; font-size: .75rem; font-weight: 500; background: rgba(175,82,222,.15); color: #D0A6F5; }
+    .badge-ok { display: inline-flex; align-items: center; padding: .125rem .5rem; border-radius: .25rem; font-size: .75rem; font-weight: 500; background: rgba(52,199,89,.15); color: var(--status-green); }
+    .badge-err { display: inline-flex; align-items: center; padding: .125rem .5rem; border-radius: .25rem; font-size: .75rem; font-weight: 500; background: rgba(255,59,48,.15); color: var(--status-red); }
+    .badge-warn { display: inline-flex; align-items: center; padding: .125rem .5rem; border-radius: .25rem; font-size: .75rem; font-weight: 500; background: rgba(255,149,0,.15); color: var(--status-orange); }
+
+    .btn-primary { display: inline-flex; align-items: center; gap: .375rem; padding: .375rem .75rem; font-size: .875rem; font-weight: 500; border-radius: .375rem; background: var(--accent); color: #fff; border: 1px solid var(--accent); transition: background .15s; cursor: pointer; }
+    .btn-primary:hover:not(:disabled) { background: var(--accent-hover); }
+    .btn-primary:disabled { opacity: .5; cursor: not-allowed; }
+
+    .btn-secondary { display: inline-flex; align-items: center; gap: .375rem; padding: .375rem .75rem; font-size: .875rem; font-weight: 500; border-radius: .375rem; background: var(--card-bg); color: var(--text-primary); border: 1px solid var(--card-border); transition: background .15s; cursor: pointer; }
+    .btn-secondary:hover:not(:disabled) { background: #243454; }
+    .btn-secondary:disabled { opacity: .5; cursor: not-allowed; }
+
+    .btn-danger { display: inline-flex; align-items: center; gap: .375rem; padding: .375rem .75rem; font-size: .875rem; font-weight: 500; border-radius: .375rem; background: var(--status-red); color: #fff; border: 1px solid var(--status-red); cursor: pointer; }
+    .btn-danger:hover:not(:disabled) { background: #E0342A; }
+    .btn-danger:disabled { opacity: .5; cursor: not-allowed; }
+
+    .th { padding: .5rem .75rem; text-align: left; font-size: .75rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: .05em; }
+    .td { padding: .5rem .75rem; font-size: .875rem; color: var(--text-primary); }
+    tr { border-bottom: 1px solid rgba(36,52,84,.5); }
+    tr:last-child { border-bottom: none; }
+
+    .input { display: block; width: 100%; border-radius: .375rem; border: 1px solid var(--input-border); background: var(--input-bg); color: var(--text-primary); padding: .375rem .75rem; font-size: .875rem; box-shadow: none; }
+    .input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+    .label { display: block; font-size: .75rem; font-weight: 500; color: var(--text-muted); margin-bottom: .25rem; }
+
+    /* Soft global overrides to blend Tailwind utility classes with dark palette */
+    .bg-white { background-color: var(--card-bg) !important; }
+    .bg-gray-50 { background-color: var(--app-bg) !important; }
+    .bg-gray-100 { background-color: #1E2C50 !important; }
+    .text-gray-500, .text-gray-600 { color: var(--text-muted) !important; }
+    .text-gray-700, .text-gray-800, .text-gray-900 { color: var(--text-primary) !important; }
+    .border-gray-200, .border-gray-300 { border-color: var(--card-border) !important; }
+    .text-brand { color: var(--accent) !important; }
+    .bg-brand { background-color: var(--accent) !important; }
+    .hover\:bg-gray-100:hover { background-color: rgba(255,255,255,.06) !important; }
+    .hover\:bg-gray-50:hover { background-color: rgba(255,255,255,.04) !important; }
+
+    /* Status-tinted alert boxes — keep color hue, darken bg for legibility */
+    .bg-red-50 { background-color: rgba(255,59,48,.1) !important; }
+    .border-red-200 { border-color: rgba(255,59,48,.3) !important; }
+    .text-red-700, .text-red-800 { color: #FF6B62 !important; }
+    .bg-yellow-50 { background-color: rgba(255,149,0,.1) !important; }
+    .border-yellow-200 { border-color: rgba(255,149,0,.3) !important; }
+    .text-yellow-700, .text-yellow-800 { color: #FFB340 !important; }
+    .bg-green-50 { background-color: rgba(52,199,89,.1) !important; }
+    .border-green-200 { border-color: rgba(52,199,89,.3) !important; }
+    .text-green-700, .text-green-800 { color: #5DD67D !important; }
+    .bg-blue-50 { background-color: rgba(0,122,255,.1) !important; }
+    .border-blue-200 { border-color: rgba(0,122,255,.3) !important; }
+    .text-blue-700, .text-blue-800 { color: #4DA3FF !important; }
   </style>
 </head>
 <body class="h-full flex flex-col">
 
 <!-- Top navbar -->
-<header class="bg-white border-b border-gray-200 shadow-sm">
-  <div class="max-w-screen-xl mx-auto px-4 flex items-center h-12 gap-6">
-    <a href="/ui" class="flex items-center gap-2 font-bold text-brand text-sm shrink-0">
-      <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-        <path stroke-linecap="round" stroke-linejoin="round"
-          d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
-      </svg>
+<header style="background: var(--nav-bg); border-bottom: 1px solid var(--card-border);">
+  <div class="max-w-screen-xl mx-auto px-4 flex items-center h-14 gap-6">
+    <a href="/ui" class="flex items-center gap-2 font-bold text-sm shrink-0" style="color: var(--text-primary);">
+      <img src="/ui/static/icon-64.png?v={{ ui_version }}" alt="" width="28" height="28"
+           style="border-radius: 6px;">
       Monitor KSeF
     </a>
     <nav class="flex items-center gap-1">
@@ -98,10 +165,10 @@
 </main>
 
 <!-- Footer -->
-<footer class="border-t border-gray-200 bg-white">
-  <div class="max-w-screen-xl mx-auto px-4 py-2 text-xs text-gray-400 flex justify-between">
-    <span>Monitor KSeF v0.5</span>
-    {% if docs_enabled %}<a href="/docs" class="hover:text-gray-600">API docs</a>{% endif %}
+<footer style="background: var(--nav-bg); border-top: 1px solid var(--card-border);">
+  <div class="max-w-screen-xl mx-auto px-4 py-2 text-xs flex justify-between" style="color: var(--text-muted);">
+    <span>Monitor KSeF v{{ ui_version }}</span>
+    {% if docs_enabled %}<a href="/docs" style="color: var(--accent);">API docs</a>{% endif %}
   </div>
 </footer>
 
