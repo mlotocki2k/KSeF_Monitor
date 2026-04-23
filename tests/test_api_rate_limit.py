@@ -23,7 +23,7 @@ def _bearer():
 def _make_app(rl_config):
     """Helper to create a fresh app with given rate_limit_config."""
     monitor = MagicMock()
-    monitor.scheduler.force_next_run = MagicMock(return_value=None)
+    monitor.trigger_check = MagicMock(return_value=None)
     return create_app(
         auth_token="a" * 32,
         monitor_instance=monitor,

@@ -109,11 +109,9 @@ class TestTriggerEndpoint:
         data = resp.json()
         assert data["triggered"] is False
 
-    def test_trigger_with_scheduler(self):
+    def test_trigger_calls_monitor_trigger_check(self):
         mock_monitor = MagicMock()
-        mock_scheduler = MagicMock()
-        mock_monitor.scheduler = mock_scheduler
-        mock_scheduler.force_next_run = MagicMock()
+        mock_monitor.trigger_check = MagicMock()
 
         app = create_app(db=None, monitor_instance=mock_monitor, auth_token=None)
         client = TestClient(app)
@@ -121,13 +119,11 @@ class TestTriggerEndpoint:
         assert resp.status_code == 200
         data = resp.json()
         assert data["triggered"] is True
-        mock_scheduler.force_next_run.assert_called_once()
+        mock_monitor.trigger_check.assert_called_once()
 
-    def test_trigger_scheduler_exception(self):
+    def test_trigger_exception(self):
         mock_monitor = MagicMock()
-        mock_scheduler = MagicMock()
-        mock_monitor.scheduler = mock_scheduler
-        mock_scheduler.force_next_run.side_effect = RuntimeError("boom")
+        mock_monitor.trigger_check.side_effect = RuntimeError("boom")
 
         app = create_app(db=None, monitor_instance=mock_monitor, auth_token=None)
         client = TestClient(app)

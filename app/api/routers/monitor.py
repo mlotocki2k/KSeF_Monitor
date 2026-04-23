@@ -89,16 +89,10 @@ def trigger_check(request: Request):
         return TriggerResponse(message="Monitor not available", triggered=False)
 
     try:
-        # Signal the monitor to run a check on next cycle
-        if hasattr(monitor, 'scheduler') and monitor.scheduler:
-            monitor.scheduler.force_next_run()
-            return TriggerResponse(
-                message="Check scheduled for next cycle",
-                triggered=True,
-            )
+        monitor.trigger_check()
         return TriggerResponse(
-            message="Scheduler not available",
-            triggered=False,
+            message="Check scheduled for next cycle",
+            triggered=True,
         )
     except Exception as e:
         logger.error("Failed to trigger check: %s", str(e))
