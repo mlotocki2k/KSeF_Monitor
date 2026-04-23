@@ -110,6 +110,32 @@ user accounts.
   replaced with `<img>` tags.
 - Footer version string reads `{{ ui_version }}` (was hard-coded `v0.5`).
 
+**V5-16 — `POST /api/v1/monitor/trigger` returned "Trigger failed"**
+
+- Bug: router called `monitor.scheduler.force_next_run()` — a phantom API.
+  `Scheduler` exposes `should_run()` / `wait_until_next_run()`, not
+  `force_next_run`. Every UI "Sprawdź" click raised `AttributeError` →
+  caught and returned `{"triggered": false, "message": "Trigger failed"}`.
+- Fix: call `monitor.trigger_check()` (already exists in `InvoiceMonitor`,
+  flips `_manual_trigger = True` — same path used by the `SIGUSR1` CLI
+  signal). Removes the scheduler-existence check.
+- Tests: `tests/test_api_monitor.py::TestTriggerEndpoint` asserts
+  `monitor.trigger_check.assert_called_once()`; `tests/test_api_rate_limit.py`
+  `_make_app` mock updated likewise.
+
+**V5-17 — PDF footer stamped `KSeF Monitor v0.3` on every invoice**
+
+- Bug: both PDF renderers had the version hard-coded as `v0.3`, never
+  updated since the 0.3 release. Every invoice generated — by ReportLab
+  fallback or xhtml2pdf primary — carried the stale stamp.
+- Fix: single source of truth via `app.__version__`.
+  - `app/invoice_pdf_generator.py:1002` (ReportLab): f-string reads
+    `_APP_VERSION`.
+  - `app/invoice_pdf_template.py:304`: adds `app_version` to Jinja context.
+  - `app/templates/invoice_pdf.html.j2:817`: footer uses `{{ app_version }}`.
+- On test branch the footer now reads `v0.5.1`. After merge to main, it
+  will follow whatever `app/__init__.py` declares.
+
 ### Known follow-ups (non-blocking)
 
 - Multi-user admin panel (add/delete other users from UI) — currently CLI-only

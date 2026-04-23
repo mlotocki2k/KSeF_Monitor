@@ -16,6 +16,7 @@ Release `test` → `main` gating: **manualny user-test + iOS app v1.1.1 w App St
 - [x] V5-14 middleware split (session resolver niezależny od auth gate)
 - [x] V5-15 dark theme spójny z iOS
 - [x] V5-16 fix `POST /monitor/trigger`
+- [x] V5-17 fix PDF footer version (hardcoded v0.3 → `app.__version__`)
 - [ ] **User testing scenariuszy:**
   - [ ] Fresh install: wizard `/ui/setup` → utworzenie konta admin → zalogowanie
   - [ ] Upgrade z v0.5.0 z istniejącym `auth_token`: auto-bootstrap `admin` = `auth_token`, login, zmiana hasła w `/ui/account`
@@ -53,8 +54,20 @@ faktur od pobierania artefaktów (oszczędność API calls KSeF).
 
 ## Znane problemy (v0.5.1 test)
 
-- `POST /api/v1/monitor/trigger` pre-V5-16 zwracał `Trigger failed` (phantom API call). Naprawione w 508d930.
+- `POST /api/v1/monitor/trigger` pre-V5-16 zwracał `Trigger failed` (phantom API call). Naprawione w `508d930`.
+- PDF footer pre-V5-17 pokazywał `KSeF Monitor v0.3` (hardcoded). Naprawione w `85debc0`.
 - Docker pre-commit hook secret-scan może tłumaczyć długie bcrypt hashe w testach. Obchodzone przez `_secret-scan.conf` allowlist.
+
+## Stan branchy (versions audit)
+
+| Branch | `app/__init__.py` | `pyproject.toml` | PDF footer |
+|---|---|---|---|
+| `main` | `"2.0.0"` ⚠ | `"0.4.0"` ⚠ | `v0.3` ⚠ (hardcoded, przed V5-17) |
+| `test` | `"0.5.1"` ✓ | `"0.5.1"` ✓ | `v{{ app_version }}` ✓ (V5-17) |
+
+**Main jest niespójny** (trzy różne wersje w trzech miejscach). Decyzja:
+czekamy z naprawą do merge `test` → `main` — wtedy jednym ruchem
+wyrównane do 0.5.1. Patrz `memory/project_release_gating.md`.
 
 ---
 

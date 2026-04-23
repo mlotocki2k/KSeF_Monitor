@@ -289,7 +289,8 @@ _Źródło: regresja UX po V5-01 — token modal blokował dashboard. Pełna lis
 - [x] **V5-14** Regresja `/ui/account` pod `ui_public=true` / `auth_token=""` — split middleware: `resolve_ui_session` (ZAWSZE) + `verify_auth` (gate tylko gdy `auth_token`). Cookie state populowany niezależnie od ścieżki auth. 4 regresyjne testy.
 - [x] **V5-15** Dark theme spójny z iOS app — paleta 1:1 z `monitor_ksef_ios/.../Assets.xcassets/*.colorset` (dark appearance). `--app-bg #0B1A3E`, `--accent #007AFF`, iOS status colors. Ikona `AppIcon.appiconset/icon_dark_1024.png` reuse (128/64/32 PNG). Dark-only (`color-scheme: dark`); plain CSS (prebuilt tailwind.min.css bez JIT). `base.html`, `login.html`, `setup.html` przepisane.
 - [x] **V5-16** Fix `POST /api/v1/monitor/trigger` — router wołał nieistniejącą `monitor.scheduler.force_next_run()`. Podmiana na `monitor.trigger_check()` (istniejąca metoda w `InvoiceMonitor`, flipuje `_manual_trigger`). Testy `test_api_monitor.py`, `test_api_rate_limit.py` zaktualizowane.
-- [x] **testy:** `tests/test_ui_user_auth.py` (55 testów, w tym 4 z `TestSessionResolver`); `test_api_auth.py`, `test_api_monitor.py`, `test_api_rate_limit.py` zaktualizowane; head ref w `test_db_migration.py` bumped. **91+ testów passes.**
+- [x] **V5-17** Fix stopki PDF — oba generatory (`InvoicePDFGenerator` ReportLab + `invoice_pdf.html.j2` xhtml2pdf) miały hardcoded `v0.3`. Teraz czytają `app.__version__` (single source of truth). Footer na test: `v0.5.1`.
+- [x] **testy:** `tests/test_ui_user_auth.py` (55 testów, w tym 4 z `TestSessionResolver`); `test_api_auth.py`, `test_api_monitor.py`, `test_api_rate_limit.py` zaktualizowane; head ref w `test_db_migration.py` bumped. **114+ testów passes.**
 
 **Follow-ups (non-blocking):**
 - Multi-user admin panel w UI (obecnie CLI-only)
