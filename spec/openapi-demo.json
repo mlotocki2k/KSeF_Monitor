@@ -2,7 +2,7 @@
   "openapi": "3.0.4",
   "info": {
     "title": "KSeF API TR",
-    "description": "**Wersja API:** 2.4.0 (build 2.4.0-tr-20260415.1+c8b795e8e7af81f8e06e27c97d6fe7602d917702)<br>\n**Klucze publiczne** Ministerstwa Finansów (dla danego środowiska): [Pobierz klucze](#tag/Certyfikaty-klucza-publicznego)<br>\n**Historia zmian:** [Changelog](https://github.com/CIRFMF/ksef-docs/blob/main/api-changelog.md)<br>\n**Rozszerzona dokumentacja API:** [ksef-docs](https://github.com/CIRFMF/ksef-docs/tree/main)\n\n**Adres serwera API:**\n- Środowisko DEMO: `https://api-demo.ksef.mf.gov.pl/v2`\n",
+    "description": "**Wersja API:** 2.4.0 (build 2.4.0-tr-20260421.1+ab5d2a476a52cbc91484af264b0022c8f9571c23)<br>\n**Klucze publiczne** Ministerstwa Finansów (dla danego środowiska): [Pobierz klucze](#tag/Certyfikaty-klucza-publicznego)<br>\n**Historia zmian:** [Changelog](https://github.com/CIRFMF/ksef-docs/blob/main/api-changelog.md)<br>\n**Rozszerzona dokumentacja API:** [ksef-docs](https://github.com/CIRFMF/ksef-docs/tree/main)\n\n**Adres serwera API:**\n- Środowisko DEMO: `https://api-demo.ksef.mf.gov.pl/v2`\n",
     "version": "v2"
   },
   "servers": [
@@ -899,6 +899,9 @@
             "description": "Numer seryjny certyfikatu (w formacie szesnastkowym).",
             "required": true,
             "schema": {
+              "maxLength": 16,
+              "minLength": 16,
+              "pattern": "^[0-9A-F]{16}$",
               "type": "string"
             }
           }
@@ -8763,6 +8766,9 @@
             "description": "Informacje o aktualnym statusie.\n| Code | Description | Details |\n| --- | --- | --- |\n| 100 | Wniosek przyjęty do realizacji | - |\n| 200 | Wniosek obsłużony (certyfikat wygenerowany) | - |\n| 400 | Wniosek odrzucony | Klucz publiczny został już certyfikowany przez inny podmiot. |\n| 400 | Wniosek odrzucony | Osiągnięto dopuszczalny limit posiadanych certyfikatów. |\n| 500 | Nieznany błąd | - |\n| 550 | Operacja została anulowana przez system | Przetwarzanie zostało przerwane z przyczyn wewnętrznych systemu. Spróbuj ponownie |"
           },
           "certificateSerialNumber": {
+            "maxLength": 16,
+            "minLength": 16,
+            "pattern": "^[0-9A-F]{16}$",
             "type": "string",
             "description": "Numer seryjny wygenerowanego certyfikatu (w formacie szesnastkowym). \nZwracany w przypadku prawidłowego przeprocesowania wniosku certyfikacyjnego.",
             "nullable": true
@@ -8843,6 +8849,9 @@
         "type": "object",
         "properties": {
           "certificateSerialNumber": {
+            "maxLength": 16,
+            "minLength": 16,
+            "pattern": "^[0-9A-F]{16}$",
             "type": "string",
             "description": "Numer seryjny certyfikatu (w formacie szesnastkowym)."
           },
@@ -11393,7 +11402,7 @@
                 "$ref": "#/components/schemas/FormCode"
               }
             ],
-            "description": "Struktura dokumentu faktury.\n\nObsługiwane schematy:\n| SystemCode | SchemaVersion | Value | ValidFrom | ValidTo |\n| --- | --- | --- | --- | --- |\n| [FA (2)](https://github.com/CIRFMF/ksef-docs/blob/main/faktury/schemy/FA/schemat_FA(2)_v1-0E.xsd) | 1-0E | FA |  |  |\n| [FA (3)](https://github.com/CIRFMF/ksef-docs/blob/main/faktury/schemy/FA/schemat_FA(3)_v1-0E.xsd) | 1-0E | FA |  |  |\n| [PEF (3)](https://github.com/CIRFMF/ksef-docs/blob/main/faktury/schemy/PEF/Schemat_PEF(3)_v2-1.xsd) | 2-1 | PEF |  |  |\n| [PEF_KOR (3)](https://github.com/CIRFMF/ksef-docs/blob/main/faktury/schemy/PEF/Schemat_PEF_KOR(3)_v2-1.xsd) | 2-1 | PEF |  |  |\n| [FA_RR (1)](https://github.com/CIRFMF/ksef-docs/blob/main/faktury/schemy/RR/schemat_RR(1)_v1-0E.xsd) | 1-0E | RR |  | 23.03.2026 |\n| [FA_RR (1)](https://github.com/CIRFMF/ksef-docs/blob/main/faktury/schemy/RR/schemat_RR(1)_v1-1E.xsd) | 1-1E | RR |  | 30.03.2026 |\n| [FA_RR (1)](https://github.com/CIRFMF/ksef-docs/blob/main/faktury/schemy/RR/schemat_FA_RR(1)_v1-1E.xsd) | 1-1E | FA_RR |  |  |\n"
+            "description": "Struktura dokumentu faktury.\n\nObsługiwane schematy:\n| SystemCode | SchemaVersion | Value |\n| --- | --- | --- |\n| [FA (2)](https://github.com/CIRFMF/ksef-docs/blob/main/faktury/schemy/FA/schemat_FA(2)_v1-0E.xsd) | 1-0E | FA |\n| [FA (3)](https://github.com/CIRFMF/ksef-docs/blob/main/faktury/schemy/FA/schemat_FA(3)_v1-0E.xsd) | 1-0E | FA |\n| [PEF (3)](https://github.com/CIRFMF/ksef-docs/blob/main/faktury/schemy/PEF/Schemat_PEF(3)_v2-1.xsd) | 2-1 | PEF |\n| [PEF_KOR (3)](https://github.com/CIRFMF/ksef-docs/blob/main/faktury/schemy/PEF/Schemat_PEF_KOR(3)_v2-1.xsd) | 2-1 | PEF |\n| [FA_RR (1)](https://github.com/CIRFMF/ksef-docs/blob/main/faktury/schemy/RR/schemat_FA_RR(1)_v1-1E.xsd) | 1-1E | FA_RR |\n"
           },
           "isSelfInvoicing": {
             "type": "boolean",
@@ -11918,7 +11927,7 @@
                 "$ref": "#/components/schemas/InvoiceQueryFormType"
               }
             ],
-            "description": "Typ dokumentu.\n| Wartość | Opis |\n| --- | --- |\n| FA | Faktura VAT |\n| PEF | Faktura PEF |\n| RR ![Deprecated](https://img.shields.io/badge/Deprecated-orange) | Faktura RR |\n| FA_RR | Faktura RR |\n",
+            "description": "Typ dokumentu.\n| Wartość | Opis |\n| --- | --- |\n| FA | Faktura VAT |\n| PEF | Faktura PEF |\n| FA_RR | Faktura RR |\n",
             "nullable": true
           },
           "invoiceTypes": {
@@ -11940,11 +11949,10 @@
         "enum": [
           "FA",
           "PEF",
-          "RR",
           "FA_RR"
         ],
         "type": "string",
-        "description": "| Wartość | Opis |\n| --- | --- |\n| FA | Faktura VAT |\n| PEF | Faktura PEF |\n| RR ![Deprecated](https://img.shields.io/badge/Deprecated-orange) | Faktura RR |\n| FA_RR | Faktura RR |\n"
+        "description": "| Wartość | Opis |\n| --- | --- |\n| FA | Faktura VAT |\n| PEF | Faktura PEF |\n| FA_RR | Faktura RR |\n"
       },
       "InvoiceQuerySubjectType": {
         "enum": [
@@ -12091,7 +12099,7 @@
                 "$ref": "#/components/schemas/FormCode"
               }
             ],
-            "description": "Schemat faktur wysyłanych w ramach sesji.\n\nObsługiwane schematy:\n| SystemCode | SchemaVersion | Value | ValidFrom | ValidTo |\n| --- | --- | --- | --- | --- |\n| [FA (2)](https://github.com/CIRFMF/ksef-docs/blob/main/faktury/schemy/FA/schemat_FA(2)_v1-0E.xsd) | 1-0E | FA |  |  |\n| [FA (3)](https://github.com/CIRFMF/ksef-docs/blob/main/faktury/schemy/FA/schemat_FA(3)_v1-0E.xsd) | 1-0E | FA |  |  |\n| [FA_RR (1)](https://github.com/CIRFMF/ksef-docs/blob/main/faktury/schemy/RR/schemat_RR(1)_v1-0E.xsd) | 1-0E | RR |  | 23.03.2026 |\n| [FA_RR (1)](https://github.com/CIRFMF/ksef-docs/blob/main/faktury/schemy/RR/schemat_RR(1)_v1-1E.xsd) | 1-1E | RR |  | 30.03.2026 |\n| [FA_RR (1)](https://github.com/CIRFMF/ksef-docs/blob/main/faktury/schemy/RR/schemat_FA_RR(1)_v1-1E.xsd) | 1-1E | FA_RR |  |  |\n"
+            "description": "Schemat faktur wysyłanych w ramach sesji.\n\nObsługiwane schematy:\n| SystemCode | SchemaVersion | Value |\n| --- | --- | --- |\n| [FA (2)](https://github.com/CIRFMF/ksef-docs/blob/main/faktury/schemy/FA/schemat_FA(2)_v1-0E.xsd) | 1-0E | FA |\n| [FA (3)](https://github.com/CIRFMF/ksef-docs/blob/main/faktury/schemy/FA/schemat_FA(3)_v1-0E.xsd) | 1-0E | FA |\n| [FA_RR (1)](https://github.com/CIRFMF/ksef-docs/blob/main/faktury/schemy/RR/schemat_FA_RR(1)_v1-1E.xsd) | 1-1E | FA_RR |\n"
           },
           "batchFile": {
             "required": [
@@ -12167,7 +12175,7 @@
                 "$ref": "#/components/schemas/FormCode"
               }
             ],
-            "description": "Schemat faktur wysyłanych w ramach sesji.\n\nObsługiwane schematy:\n| SystemCode | SchemaVersion | Value | ValidFrom | ValidTo |\n| --- | --- | --- | --- | --- |\n| [FA (2)](https://github.com/CIRFMF/ksef-docs/blob/main/faktury/schemy/FA/schemat_FA(2)_v1-0E.xsd) | 1-0E | FA |  |  |\n| [FA (3)](https://github.com/CIRFMF/ksef-docs/blob/main/faktury/schemy/FA/schemat_FA(3)_v1-0E.xsd) | 1-0E | FA |  |  |\n| [PEF (3)](https://github.com/CIRFMF/ksef-docs/blob/main/faktury/schemy/PEF/Schemat_PEF(3)_v2-1.xsd) | 2-1 | PEF |  |  |\n| [PEF_KOR (3)](https://github.com/CIRFMF/ksef-docs/blob/main/faktury/schemy/PEF/Schemat_PEF_KOR(3)_v2-1.xsd) | 2-1 | PEF |  |  |\n| [FA_RR (1)](https://github.com/CIRFMF/ksef-docs/blob/main/faktury/schemy/RR/schemat_RR(1)_v1-0E.xsd) | 1-0E | RR |  | 23.03.2026 |\n| [FA_RR (1)](https://github.com/CIRFMF/ksef-docs/blob/main/faktury/schemy/RR/schemat_RR(1)_v1-1E.xsd) | 1-1E | RR |  | 30.03.2026 |\n| [FA_RR (1)](https://github.com/CIRFMF/ksef-docs/blob/main/faktury/schemy/RR/schemat_FA_RR(1)_v1-1E.xsd) | 1-1E | FA_RR |  |  |\n"
+            "description": "Schemat faktur wysyłanych w ramach sesji.\n\nObsługiwane schematy:\n| SystemCode | SchemaVersion | Value |\n| --- | --- | --- |\n| [FA (2)](https://github.com/CIRFMF/ksef-docs/blob/main/faktury/schemy/FA/schemat_FA(2)_v1-0E.xsd) | 1-0E | FA |\n| [FA (3)](https://github.com/CIRFMF/ksef-docs/blob/main/faktury/schemy/FA/schemat_FA(3)_v1-0E.xsd) | 1-0E | FA |\n| [PEF (3)](https://github.com/CIRFMF/ksef-docs/blob/main/faktury/schemy/PEF/Schemat_PEF(3)_v2-1.xsd) | 2-1 | PEF |\n| [PEF_KOR (3)](https://github.com/CIRFMF/ksef-docs/blob/main/faktury/schemy/PEF/Schemat_PEF_KOR(3)_v2-1.xsd) | 2-1 | PEF |\n| [FA_RR (1)](https://github.com/CIRFMF/ksef-docs/blob/main/faktury/schemy/RR/schemat_FA_RR(1)_v1-1E.xsd) | 1-1E | FA_RR |\n"
           },
           "encryption": {
             "required": [
@@ -13540,6 +13548,9 @@
         "type": "object",
         "properties": {
           "certificateSerialNumber": {
+            "maxLength": 16,
+            "minLength": 16,
+            "pattern": "^[0-9A-F]{16}$",
             "type": "string",
             "description": "Numer seryjny certyfikatu. Wyszukiwanie odbywa się na zasadzie dokładnego dopasowania (exact match).",
             "nullable": true
@@ -13944,6 +13955,9 @@
             "description": "Nazwa własna certyfikatu."
           },
           "certificateSerialNumber": {
+            "maxLength": 16,
+            "minLength": 16,
+            "pattern": "^[0-9A-F]{16}$",
             "type": "string",
             "description": "Numer seryjny certyfikatu."
           },
@@ -13968,6 +13982,9 @@
             "minItems": 1,
             "type": "array",
             "items": {
+              "maxLength": 16,
+              "minLength": 16,
+              "pattern": "^[0-9A-F]{16}$",
               "type": "string"
             },
             "description": "Numery seryjne certyfikatów do pobrania."
