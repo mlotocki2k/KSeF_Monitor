@@ -114,10 +114,22 @@ jobs:
               q: `repo:${context.repo.owner}/${context.repo.repo} is:issue in:title "${title}"`
             });
 
+            // Parse package names from issue body table rows: "| name | current | latest |"
+            const parsePkgs = (text) => {
+              const s = new Set();
+              for (const line of (text || "").split("\n")) {
+                const m = line.match(/^\|\s*([A-Za-z0-9_.-]+)\s*\|\s*[0-9]/);
+                if (m) s.add(m[1].toLowerCase());
+              }
+              return s;
+            };
+
             if (issues.items.length > 0) {
               // Pick the most recent issue
               const issue_number = issues.items[0].number;
               const issue_state = issues.items[0].state;
+              const labels = (issues.items[0].labels || []).map(l => typeof l === "string" ? l : l.name);
+              const isWontfix = labels.includes("wontfix");
 
               // Check if body is identical to current issue body — skip if nothing changed
               const currentBody = issues.items[0].body || "";
@@ -126,7 +138,28 @@ jobs:
                 return;
               }
 
-              // Reopen if closed
+              // Closed + wontfix → respect intentional pin. Only escalate if NEW packages
+              // appeared that weren't covered by the wontfix snapshot.
+              if (issue_state === "closed" && isWontfix) {
+                const covered = parsePkgs(currentBody);
+                const nowOutdated = parsePkgs(body);
+                const novel = [...nowOutdated].filter(p => !covered.has(p));
+                if (novel.length === 0) {
+                  console.log(`Issue #${issue_number} closed as wontfix; all current outdated pkgs (${[...nowOutdated].join(", ")}) already covered — skipping.`);
+                  return;
+                }
+                console.log(`Issue #${issue_number} wontfix but new pkgs appeared (${novel.join(", ")}) — creating new issue.`);
+                await github.rest.issues.create({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  title,
+                  body,
+                  labels: ['requirements']
+                });
+                return;
+              }
+
+              // Reopen if closed (and not wontfix)
               if (issue_state === "closed") {
                 await github.rest.issues.update({
                   owner: context.repo.owner,
