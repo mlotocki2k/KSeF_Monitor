@@ -2,15 +2,16 @@
 {% block title %}Faktury — Monitor KSeF{% endblock %}
 
 {% block content %}
+<h1 class="sr-only">Faktury</h1>
 <div class="space-y-4">
 
   <!-- Filter bar -->
   <div class="card p-4">
-    <form method="get" action="/ui/invoices" class="space-y-3">
+    <form method="get" action="/ui/invoices" class="space-y-3" aria-label="Filtry faktur">
       <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
         <div>
-          <label class="label">Typ</label>
-          <select name="subject_type" class="input">
+          <label for="filter-subject-type" class="label">Typ</label>
+          <select id="filter-subject-type" name="subject_type" class="input">
             <option value="">Wszystkie</option>
             <option value="Subject1" {% if filters.subject_type == "Subject1" %}selected{% endif %}>Sprzedażowe</option>
             <option value="Subject2" {% if filters.subject_type == "Subject2" %}selected{% endif %}>Zakupowe</option>
@@ -18,41 +19,41 @@
           </select>
         </div>
         <div>
-          <label class="label">NIP sprzedawcy</label>
-          <input type="text" name="seller_nip" value="{{ filters.seller_nip }}"
+          <label for="filter-seller-nip" class="label">NIP sprzedawcy</label>
+          <input id="filter-seller-nip" type="text" name="seller_nip" value="{{ filters.seller_nip }}"
             class="input" placeholder="10 cyfr" maxlength="10">
         </div>
         <div>
-          <label class="label">NIP nabywcy</label>
-          <input type="text" name="buyer_nip" value="{{ filters.buyer_nip }}"
+          <label for="filter-buyer-nip" class="label">NIP nabywcy</label>
+          <input id="filter-buyer-nip" type="text" name="buyer_nip" value="{{ filters.buyer_nip }}"
             class="input" placeholder="10 cyfr" maxlength="10">
         </div>
         <div>
-          <label class="label">Data wystawienia od</label>
-          <input type="date" name="issue_date_from" value="{{ filters.issue_date_from }}" class="input">
+          <label for="filter-date-from" class="label">Data wystawienia od</label>
+          <input id="filter-date-from" type="date" name="issue_date_from" value="{{ filters.issue_date_from }}" class="input">
         </div>
         <div>
-          <label class="label">Data wystawienia do</label>
-          <input type="date" name="issue_date_to" value="{{ filters.issue_date_to }}" class="input">
+          <label for="filter-date-to" class="label">Data wystawienia do</label>
+          <input id="filter-date-to" type="date" name="issue_date_to" value="{{ filters.issue_date_to }}" class="input">
         </div>
         <div>
-          <label class="label">Szukaj</label>
-          <input type="text" name="search" value="{{ filters.search }}"
+          <label for="filter-search" class="label">Szukaj</label>
+          <input id="filter-search" type="text" name="search" value="{{ filters.search }}"
             class="input" placeholder="Nr faktury, nazwa…" maxlength="100">
         </div>
       </div>
-      <div class="flex items-center gap-2">
+      <div class="flex flex-wrap items-center gap-2">
         <button type="submit" class="btn-primary">Filtruj</button>
         <a href="/ui/invoices" class="btn-secondary">Wyczyść</a>
-        <div class="ml-auto flex items-center gap-2">
-          <label class="label mb-0 whitespace-nowrap">Sortuj:</label>
-          <select name="sort_by" class="input w-auto">
+        <div class="ml-auto flex flex-wrap items-center gap-2">
+          <span class="label mb-0 whitespace-nowrap" id="sort-label">Sortuj:</span>
+          <select name="sort_by" class="input w-auto" aria-labelledby="sort-label" aria-label="Sortuj według">
             <option value="created_at" {% if filters.sort_by == "created_at" %}selected{% endif %}>Data dodania</option>
             <option value="issue_date" {% if filters.sort_by == "issue_date" %}selected{% endif %}>Data wystawienia</option>
             <option value="gross_amount" {% if filters.sort_by == "gross_amount" %}selected{% endif %}>Kwota</option>
             <option value="ksef_number" {% if filters.sort_by == "ksef_number" %}selected{% endif %}>Nr KSeF</option>
           </select>
-          <select name="sort_order" class="input w-auto">
+          <select name="sort_order" class="input w-auto" aria-label="Kierunek sortowania">
             <option value="desc" {% if filters.sort_order == "desc" %}selected{% endif %}>Malejąco</option>
             <option value="asc" {% if filters.sort_order == "asc" %}selected{% endif %}>Rosnąco</option>
           </select>
@@ -88,17 +89,19 @@
       <table class="w-full">
         <thead class="bg-gray-50 border-b border-gray-200">
           <tr>
-            <th class="th w-8">
+            <th class="th w-8" scope="col">
+              <span class="sr-only">Zaznaczanie</span>
               <input type="checkbox" id="chk-all" onchange="toggleAll(this)"
+                aria-label="Zaznacz wszystkie faktury"
                 class="rounded border-gray-300">
             </th>
-            <th class="th">Nr faktury</th>
-            <th class="th">Typ</th>
-            <th class="th">Sprzedawca</th>
-            <th class="th">Nabywca</th>
-            <th class="th">Data wystawienia</th>
-            <th class="th text-right">Kwota brutto</th>
-            <th class="th">Nr KSeF</th>
+            <th class="th" scope="col">Nr faktury</th>
+            <th class="th" scope="col">Typ</th>
+            <th class="th" scope="col">Sprzedawca</th>
+            <th class="th" scope="col">Nabywca</th>
+            <th class="th" scope="col">Data wystawienia</th>
+            <th class="th text-right" scope="col">Kwota brutto</th>
+            <th class="th" scope="col">Nr KSeF</th>
           </tr>
         </thead>
         <tbody class="divide-y divide-gray-100">
@@ -106,7 +109,8 @@
           <tr class="hover:bg-gray-50">
             <td class="td w-8" onclick="event.stopPropagation()">
               <input type="checkbox" class="inv-chk rounded border-gray-300"
-                data-ksef="{{ inv.ksef_number }}" onchange="updateBulk()">
+                data-ksef="{{ inv.ksef_number }}" onchange="updateBulk()"
+                aria-label="Zaznacz fakturę {{ inv.invoice_number or inv.ksef_number }}">
             </td>
             <td class="td font-medium text-brand cursor-pointer" onclick="location.href='/ui/invoices/{{ inv.ksef_number }}'">
               <a href="/ui/invoices/{{ inv.ksef_number }}" class="hover:underline">

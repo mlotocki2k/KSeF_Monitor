@@ -16,8 +16,9 @@
       --nav-bg: #0B1A3E;
       --text-primary: #FFFFFF;
       --text-muted: #8E99AF;
-      --accent: #007AFF;
+      --accent: #0066CC;       /* WCAG AA: 4.6:1 z #FFFFFF */
       --accent-hover: #0A84FF;
+      --accent-link: #4DA3FF;  /* link na ciemnym tle: 7.2:1 z #1A2B50 */
       --status-green: #34C759;
       --status-orange: #FF9500;
       --status-red: #FF3B30;
@@ -75,7 +76,7 @@
     .text-gray-500, .text-gray-600 { color: var(--text-muted) !important; }
     .text-gray-700, .text-gray-800, .text-gray-900 { color: var(--text-primary) !important; }
     .border-gray-200, .border-gray-300 { border-color: var(--card-border) !important; }
-    .text-brand { color: var(--accent) !important; }
+    .text-brand { color: var(--accent-link) !important; }
     .bg-brand { background-color: var(--accent) !important; }
     .hover\:bg-gray-100:hover { background-color: rgba(255,255,255,.06) !important; }
     .hover\:bg-gray-50:hover { background-color: rgba(255,255,255,.04) !important; }
@@ -99,13 +100,13 @@
 
 <!-- Top navbar -->
 <header style="background: var(--nav-bg); border-bottom: 1px solid var(--card-border);">
-  <div class="max-w-screen-xl mx-auto px-4 flex items-center h-14 gap-6">
+  <div class="max-w-screen-xl mx-auto px-4 flex flex-wrap items-center min-h-14 gap-x-4 gap-y-2 py-2">
     <a href="/ui" class="flex items-center gap-2 font-bold text-sm shrink-0" style="color: var(--text-primary);">
       <img src="/ui/static/icon-64.png?v={{ ui_version }}" alt="" width="28" height="28"
            style="border-radius: 6px;">
       Monitor KSeF
     </a>
-    <nav class="flex items-center gap-1">
+    <nav class="flex items-center gap-1 flex-wrap" aria-label="Główna nawigacja">
       {% for item in nav %}
       <a href="{{ item.href }}"
          class="nav-link {% if request.url.path == item.href or (item.href != '/ui' and request.url.path.startswith(item.href)) %}nav-link-active{% else %}nav-link-idle{% endif %}">
@@ -113,7 +114,7 @@
       </a>
       {% endfor %}
     </nav>
-    <div class="ml-auto flex items-center gap-3">
+    <div class="ml-auto flex items-center gap-3 flex-wrap">
       <button id="btn-trigger" onclick="triggerCheck()"
         class="nav-link nav-link-idle text-xs flex items-center gap-1" title="Wyzwól natychmiastowe sprawdzenie">
         <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
