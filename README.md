@@ -1,9 +1,9 @@
-# KSeF Monitor v0.5
+# KSeF Monitor v0.5.2
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![Docker](https://img.shields.io/badge/Docker-ready-blue?logo=docker)](https://ghcr.io/mlotocki2k/ksef_monitor)
-[![KSeF API](https://img.shields.io/badge/KSeF_API-v2.2.0-green)](https://github.com/CIRFMF/ksef-docs)
+[![KSeF API](https://img.shields.io/badge/KSeF_API-v2.4.0-green)](https://github.com/CIRFMF/ksef-docs)
 [![Prometheus](https://img.shields.io/badge/Prometheus-metrics-orange?logo=prometheus)](docs/PROJECT_STRUCTURE.md)
 [![GitHub Actions](https://img.shields.io/github/actions/workflow/status/mlotocki2k/KSeF_Monitor/docker-publish.yml?branch=test&label=build)](https://github.com/mlotocki2k/KSeF_Monitor/actions)
 
@@ -48,7 +48,7 @@ KSeF_Monitor/
 │   ├── __init__.py
 │   ├── config_manager.py        # Wczytanie i walidacja config.json
 │   ├── secrets_manager.py       # Sekretne wartości z env / Docker secrets / config
-│   ├── ksef_client.py           # Klient API KSeF v2.2.0 (autentykacja + paginacja)
+│   ├── ksef_client.py           # Klient API KSeF v2.4.0 (autentykacja + paginacja)
 │   ├── invoice_monitor.py       # Główna pętla monitorowania + kontekst szablonów
 │   ├── invoice_pdf_generator.py # XML parser + ReportLab PDF generator (fallback)
 │   ├── invoice_pdf_template.py  # HTML/CSS template PDF renderer (xhtml2pdf)
@@ -101,7 +101,7 @@ KSeF_Monitor/
 │   ├── IDE_TROUBLESHOOTING.md   # IDE setup help
 │   └── INDEX.md                 # Documentation index
 ├── spec/                        # API specifications
-│   ├── openapi.json             # KSeF API v2.2.0 OpenAPI spec
+│   ├── openapi.json             # KSeF API v2.4.0 OpenAPI spec
 │   └── schemat_FA(3)_v1-0E.xsd # Schemat FA(3) faktury
 ├── examples/                    # Example configuration files
 │   ├── config.example.json      # Configuration template
@@ -550,16 +550,35 @@ REST API (FastAPI) + browser UI (v0.5.2).
 | `cors_origins` | `[]` | Lista dozwolonych origin CORS. Wildcard `*` odrzucany gdy `auth_token` jest ustawiony (F-10). |
 | `ui_enabled` | `true` | Włącz browser UI pod `/ui` |
 | `ui_public` | `false` | Bypass auth dla `/ui` — tylko gdy zewnętrzny reverse-proxy załatwia auth |
+| `cookie_secure_mode` | `"auto"` | Cookie `Secure` flag: `auto` honoruje `X-Forwarded-Proto` (default), `always` wymusza Secure (prod za TLS-terminującym proxy), `never` wyłącza (dev). U-01. |
+| `session_strict_binding` | `false` | Opt-in: SHA-256(User-Agent) zapisany w `ui_sessions.ua_hash` przy logowaniu; mismatch → revoke + redirect. Legacy sesje bez `ua_hash` grandfathered. U-04. |
 | `rate_limit.enabled` | `true` | Włącz rate limiting (slowapi) |
 | `rate_limit.default` | `"60/minute"` | Domyślny limit requestów |
 | `rate_limit.trigger` | `"2/minute"` | Limit dla POST /trigger |
 
-**Browser UI auth (V5-13/V5-14):** osobne konta user/pass w DB (bcrypt), HttpOnly
-cookie session 7 dni. Pierwszy start: `/ui/setup` (kreator konta) lub
-auto-bootstrap `admin` z `auth_token` (upgrade-friendly z v0.5.0). Bearer
+**Browser UI auth (V5-13/V5-14, hardened w v0.5.2):** osobne konta user/pass
+w DB (bcrypt 12 rounds, SHA-256+b64 pre-hash dla haseł >72B → bcrypt 5.0-ready),
+HttpOnly + SameSite=strict cookie session, 7 dni rolling z absolute cap 30 dni
+(U-09). Pierwszy start: `/ui/setup` (race-safe via `BEGIN IMMEDIATE` — U-06)
+lub auto-bootstrap `admin` z `auth_token` (upgrade-friendly z v0.5.0). Bearer
 nadal działa dla curl/integracji. V5-14: session resolver niezależny od
 auth gate — `/ui/account` i navbar (username + Wyloguj) działają też gdy
 `auth_token=""` lub `ui_public=true`.
+
+**Brute-force protection (U-03):** per-username sliding-window licznik (5 fails
+w 15 min → 15 min lockout, tabela `ui_login_attempts`). Sprawdzany przed
+bcrypt — blokuje też timing-based username enumeration. Constant-time login
+przez dummy-bcrypt dla nieistniejących userów (U-07).
+
+**Password strength (U-11):** minimum 8 znaków, top-100 breach blocklist
+(rockyou, in-process — bez zewnętrznego corpus), reject jeśli zawiera username
+(≥3 chars, case-insensitive). Username case-insensitive (U-17): `admin` /
+`Admin` / `ADMIN` to ten sam wpis i ten sam licznik lockoutu.
+
+**CSP nonce (U-05):** `script-src` używa per-request nonce (`secrets.token_urlsafe(16)`)
+zamiast `'unsafe-inline'` — chroni przed XSS payload exfiltration nawet gdy
+HttpOnly cookie pozostaje niedostępny dla JS.
+
 CLI (Docker): `docker exec -it ksef-monitor python -m app.user_admin {list|add|reset-password|delete|cleanup-sessions}`.
 
 **Motyw UI (V5-15):** Dark-only, paleta 1:1 z aplikacją iOS Monitor KSeF.
