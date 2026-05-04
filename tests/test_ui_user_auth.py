@@ -60,6 +60,32 @@ class TestPasswordHashing:
     def test_corrupted_hash_returns_false_not_raises(self):
         assert verify_password("any", "not-a-valid-hash") is False
 
+    # U-02 — bcrypt 72-byte boundary: SHA256+b64 pre-hash for >72B inputs
+    def test_long_password_round_trip(self):
+        long_pw = "A" * 100
+        h = hash_password(long_pw)
+        assert verify_password(long_pw, h)
+
+    def test_very_long_password_round_trip(self):
+        long_pw = "Z" * 1000  # well above bcrypt's 72-byte boundary
+        h = hash_password(long_pw)
+        assert verify_password(long_pw, h)
+
+    def test_long_passwords_differing_after_72_bytes_do_not_collide(self):
+        # Plain bcrypt would silently truncate both to the same 72 bytes.
+        pw_a = ("A" * 72) + "_alpha_suffix"
+        pw_b = ("A" * 72) + "_omega_suffix"
+        h_a = hash_password(pw_a)
+        assert verify_password(pw_a, h_a)
+        assert not verify_password(pw_b, h_a)
+
+    def test_unicode_long_password(self):
+        # Multi-byte chars: 50 chars × 4 bytes = 200 bytes (above 72B boundary)
+        long_pw = "🔐" * 50
+        h = hash_password(long_pw)
+        assert verify_password(long_pw, h)
+        assert not verify_password("🔐" * 49, h)
+
 
 class TestValidation:
     def test_username_too_short(self):

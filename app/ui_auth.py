@@ -8,6 +8,8 @@ Sessions: opaque uuid4 hex stored in HttpOnly cookie + ui_sessions row.
 Password change can revoke all sessions cleanly without rotating cookies.
 """
 
+import base64
+import hashlib
 import logging
 import secrets
 from datetime import datetime, timedelta, timezone
@@ -29,21 +31,38 @@ USERNAME_MIN_LEN = 3
 USERNAME_MAX_LEN = 64
 PASSWORD_MIN_LEN = 8
 
+_BCRYPT_INPUT_LIMIT = 72
+
 
 # ── Password hashing ────────────────────────────────────────────────────────
 
 
+def _bcrypt_safe(plaintext: str) -> bytes:
+    """Pre-hash long passwords with SHA256+base64 to bypass bcrypt's 72-byte limit.
+
+    bcrypt 4.x silently truncated >72-byte inputs (collision risk); bcrypt 5.0
+    raises ValueError. We SHA-256 + base64-encode (44 ASCII bytes, well under
+    72) so collision space is the full 256-bit hash and behavior is uniform
+    across bcrypt versions. Inputs ≤72 bytes pass through unchanged so that
+    pre-existing hashes from short passwords still verify.
+    """
+    pw = plaintext.encode("utf-8")
+    if len(pw) > _BCRYPT_INPUT_LIMIT:
+        pw = base64.b64encode(hashlib.sha256(pw).digest())
+    return pw
+
+
 def hash_password(plaintext: str) -> str:
-    """Hash plaintext password using bcrypt (12 rounds)."""
+    """Hash plaintext password using bcrypt (12 rounds, SHA-256 pre-wrap >72B)."""
     return bcrypt.hashpw(
-        plaintext.encode("utf-8"), bcrypt.gensalt(rounds=BCRYPT_ROUNDS)
+        _bcrypt_safe(plaintext), bcrypt.gensalt(rounds=BCRYPT_ROUNDS)
     ).decode("utf-8")
 
 
 def verify_password(plaintext: str, hashed: str) -> bool:
     """Constant-time bcrypt verification. Returns False on any error."""
     try:
-        return bcrypt.checkpw(plaintext.encode("utf-8"), hashed.encode("utf-8"))
+        return bcrypt.checkpw(_bcrypt_safe(plaintext), hashed.encode("utf-8"))
     except (ValueError, TypeError):
         return False
 
