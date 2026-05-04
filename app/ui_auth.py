@@ -16,7 +16,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional, Tuple
 
 import bcrypt
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from app.database import UiSession, UiUser
@@ -84,7 +84,12 @@ def verify_password(plaintext: str, hashed: str) -> bool:
 
 
 def validate_username(username: str) -> Optional[str]:
-    """Return error string or None. Whitelist: alphanumerics, dot, dash, underscore."""
+    """Return error string or None. Whitelist: alphanumerics, dot, dash, underscore.
+
+    Username is treated case-insensitively at lookup time (U-17), so reject
+    inputs that would only differ from an existing user by case at validation
+    time as well (handled by the case-insensitive uniqueness check elsewhere).
+    """
     if not username:
         return "Nazwa użytkownika jest wymagana."
     if len(username) < USERNAME_MIN_LEN:
@@ -109,12 +114,20 @@ def validate_password(password: str) -> Optional[str]:
 
 
 def count_users(session: Session) -> int:
-    return session.execute(select(UiUser.id)).scalars().all().__len__()
+    """Number of UI users. Uses COUNT(*) — does not materialize all rows (U-13)."""
+    return int(session.execute(select(func.count(UiUser.id))).scalar_one() or 0)
+
+
+def _normalize_username(username: str) -> str:
+    """Canonical lookup form — case-insensitive (U-17)."""
+    return username.strip().lower()
 
 
 def get_user_by_username(session: Session, username: str) -> Optional[UiUser]:
+    """Case-insensitive lookup (U-17): 'admin' and 'Admin' resolve to same row."""
+    canonical = _normalize_username(username)
     return session.execute(
-        select(UiUser).where(UiUser.username == username)
+        select(UiUser).where(func.lower(UiUser.username) == canonical)
     ).scalar_one_or_none()
 
 
@@ -281,11 +294,14 @@ def _aware(dt: Optional[datetime]) -> Optional[datetime]:
 def is_login_locked(session: Session, username: str) -> Optional[datetime]:
     """Return locked_until (UTC) if username is currently locked, else None.
 
+    Lookup keyed by lower-cased username so casing variants share the lock
+    (cooperates with U-17 case-insensitive username lookup).
+
     Auto-clears stale locks where locked_until is in the past.
     """
     from app.database import UiLoginAttempt
 
-    row = session.get(UiLoginAttempt, username)
+    row = session.get(UiLoginAttempt, _normalize_username(username))
     if row is None:
         return None
     locked = _aware(row.locked_until)
@@ -304,14 +320,16 @@ def record_login_failure(
 
     Sliding window: counter resets if last failure happened more than
     `LOGIN_FAIL_WINDOW` ago. Returns `locked_until` if this failure was the
-    one that triggered a fresh lockout, otherwise None.
+    one that triggered a fresh lockout, otherwise None. Counter keyed by
+    lower-cased username (U-17 cooperation).
     """
     from app.database import UiLoginAttempt
 
+    canonical = _normalize_username(username)
     now = datetime.now(timezone.utc)
-    row = session.get(UiLoginAttempt, username)
+    row = session.get(UiLoginAttempt, canonical)
     if row is None:
-        row = UiLoginAttempt(username=username, failed_count=1, last_failed_at=now)
+        row = UiLoginAttempt(username=canonical, failed_count=1, last_failed_at=now)
         session.add(row)
     else:
         last_failed = _aware(row.last_failed_at)
@@ -326,8 +344,8 @@ def record_login_failure(
         locked_until = now + LOGIN_LOCKOUT_DURATION
         row.locked_until = locked_until
         logger.warning(
-            "UI login locked for %r until %s (after %d failures)",
-            username, locked_until.isoformat(), row.failed_count,
+            "UI login locked (username_len=%d) until %s (after %d failures)",
+            len(canonical), locked_until.isoformat(), row.failed_count,
         )
     session.commit()
     return locked_until
@@ -337,10 +355,11 @@ def record_login_success(session: Session, username: str) -> None:
     """Reset fail counter / clear lock on successful login."""
     from app.database import UiLoginAttempt
 
+    canonical = _normalize_username(username)
     now = datetime.now(timezone.utc)
-    row = session.get(UiLoginAttempt, username)
+    row = session.get(UiLoginAttempt, canonical)
     if row is None:
-        row = UiLoginAttempt(username=username, last_success_at=now)
+        row = UiLoginAttempt(username=canonical, last_success_at=now)
         session.add(row)
     else:
         row.failed_count = 0

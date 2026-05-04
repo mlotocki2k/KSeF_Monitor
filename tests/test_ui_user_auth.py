@@ -94,6 +94,38 @@ class TestPasswordHashing:
         assert not verify_password("🔐" * 49, h)
 
 
+# U-17 — case-insensitive username lookup.
+class TestUsernameCaseInsensitive:
+    def test_lookup_finds_user_with_different_case(self, db):
+        with db.get_session() as s:
+            create_user(s, "Admin", "password123")
+        with db.get_session() as s:
+            assert get_user_by_username(s, "admin") is not None
+            assert get_user_by_username(s, "ADMIN") is not None
+            assert get_user_by_username(s, "Admin") is not None
+
+    def test_login_works_with_different_case(self, db, client):
+        with db.get_session() as s:
+            create_user(s, "Alice", "password123")
+        resp = client.post(
+            "/ui/login",
+            data={"username": "ALICE", "password": "password123"},
+        )
+        assert resp.status_code == 303
+        assert "mksef_session" in resp.cookies
+
+    def test_lockout_shared_across_casing_variants(self, db, client):
+        with db.get_session() as s:
+            create_user(s, "alice", "password123")
+        # Hammer with different casings — counter must aggregate.
+        for u in ["alice", "ALICE", "Alice", "ALICE", "alice"]:
+            client.post("/ui/login", data={"username": u, "password": "wrong"})
+        # All five variants should now be locked.
+        with db.get_session() as s:
+            assert is_login_locked(s, "alice") is not None
+            assert is_login_locked(s, "ALICE") is not None
+
+
 class TestValidation:
     def test_username_too_short(self):
         assert validate_username("ab") is not None

@@ -156,6 +156,8 @@ def create_app(
         db_local = getattr(request.app.state, "db", None)
         sid = request.cookies.get(_SESSION_COOKIE)
         if sid and db_local:
+            from sqlalchemy.exc import DBAPIError, OperationalError
+
             from app.ui_auth import validate_session
 
             try:
@@ -165,7 +167,10 @@ def create_app(
                         user, _ = result
                         request.state.ui_user_id = user.id
                         request.state.ui_username = user.username
-            except Exception as exc:  # DB hiccup must not 500 the UI
+            except (OperationalError, DBAPIError) as exc:
+                # DB hiccup (locked, disk full, schema drift) must not 500 the UI.
+                # Narrower than bare Exception (U-15) so genuine programming
+                # errors propagate.
                 logger.warning("Session resolver failed: %s", exc)
         return await call_next(request)
 
