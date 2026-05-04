@@ -372,18 +372,45 @@ _COOKIE_MAX_AGE = 60 * 60 * 24 * 7  # 7 days
 
 def _safe_next(value: Optional[str]) -> str:
     """Whitelist redirect target to internal /ui paths only."""
-    if not value or not value.startswith("/ui") or value.startswith("//"):
+    if not value:
         return "/ui"
-    return value
+    if value.startswith("//"):
+        return "/ui"
+    if value == "/ui" or value.startswith("/ui/"):
+        return value
+    return "/ui"
 
 
-def _set_session_cookie(resp, sid: str, scheme: str) -> None:
+def _is_secure_request(request: Request) -> bool:
+    """Determine whether the cookie should carry the Secure attribute.
+
+    Honors `app.state.cookie_secure_mode`:
+      - "always": Secure unconditionally (prod behind TLS-terminating proxy)
+      - "never": Secure off (dev / plain-HTTP)
+      - "auto" (default): trust X-Forwarded-Proto, fall back to request.url.scheme
+
+    Pure request.url.scheme is wrong when uvicorn runs behind a reverse proxy
+    that terminates TLS — scheme stays "http" and the cookie loses Secure
+    despite the user-facing connection being HTTPS (U-01).
+    """
+    mode = getattr(request.app.state, "cookie_secure_mode", "auto") or "auto"
+    if mode == "always":
+        return True
+    if mode == "never":
+        return False
+    fwd_proto = request.headers.get("x-forwarded-proto", "").split(",")[0].strip().lower()
+    if fwd_proto in ("https", "http"):
+        return fwd_proto == "https"
+    return request.url.scheme == "https"
+
+
+def _set_session_cookie(resp, sid: str, request: Request) -> None:
     resp.set_cookie(
         key=_SESSION_COOKIE,
         value=sid,
         max_age=_COOKIE_MAX_AGE,
         httponly=True,
-        secure=scheme == "https",
+        secure=_is_secure_request(request),
         samesite="strict",
         path="/",
     )
@@ -449,7 +476,7 @@ def ui_setup_submit(
         sid = create_session(s, user)
 
     resp = RedirectResponse(url="/ui", status_code=303)
-    _set_session_cookie(resp, sid, request.url.scheme)
+    _set_session_cookie(resp, sid, request)
     return resp
 
 
@@ -516,7 +543,7 @@ def ui_login_submit(
         sid = create_session(s, user)
 
     resp = RedirectResponse(url=target, status_code=303)
-    _set_session_cookie(resp, sid, request.url.scheme)
+    _set_session_cookie(resp, sid, request)
     return resp
 
 

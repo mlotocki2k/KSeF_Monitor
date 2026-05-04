@@ -379,6 +379,59 @@ class TestLoginFlow:
         assert "samesite=strict" in cookie_header
 
 
+# U-01 — cookie Secure flag honors X-Forwarded-Proto + cookie_secure_mode override.
+class TestCookieSecureFlag:
+    def _login_and_get_set_cookie(self, db, app, headers=None):
+        client = TestClient(app, follow_redirects=False)
+        with db.get_session() as s:
+            create_user(s, "alice", "password123")
+        resp = client.post(
+            "/ui/login",
+            data={"username": "alice", "password": "password123"},
+            headers=headers or {},
+        )
+        return resp.headers.get("set-cookie", "").lower()
+
+    def test_auto_no_proxy_header_no_secure(self, db):
+        # TestClient defaults to http://; without X-Forwarded-Proto, no Secure.
+        app = create_app(db=db, auth_token="a" * 32, cookie_secure_mode="auto")
+        cookie = self._login_and_get_set_cookie(db, app)
+        assert "secure" not in cookie
+
+    def test_auto_xforwarded_proto_https_sets_secure(self, db):
+        app = create_app(db=db, auth_token="a" * 32, cookie_secure_mode="auto")
+        cookie = self._login_and_get_set_cookie(
+            db, app, headers={"X-Forwarded-Proto": "https"}
+        )
+        assert "secure" in cookie
+
+    def test_auto_xforwarded_proto_http_no_secure(self, db):
+        app = create_app(db=db, auth_token="a" * 32, cookie_secure_mode="auto")
+        cookie = self._login_and_get_set_cookie(
+            db, app, headers={"X-Forwarded-Proto": "http"}
+        )
+        assert "secure" not in cookie
+
+    def test_always_mode_forces_secure_even_on_http(self, db):
+        app = create_app(db=db, auth_token="a" * 32, cookie_secure_mode="always")
+        cookie = self._login_and_get_set_cookie(db, app)
+        assert "secure" in cookie
+
+    def test_never_mode_strips_secure_even_with_https_header(self, db):
+        app = create_app(db=db, auth_token="a" * 32, cookie_secure_mode="never")
+        cookie = self._login_and_get_set_cookie(
+            db, app, headers={"X-Forwarded-Proto": "https"}
+        )
+        assert "secure" not in cookie
+
+    def test_invalid_mode_falls_back_to_auto(self, db):
+        app = create_app(db=db, auth_token="a" * 32, cookie_secure_mode="garbage")
+        cookie = self._login_and_get_set_cookie(
+            db, app, headers={"X-Forwarded-Proto": "https"}
+        )
+        assert "secure" in cookie  # auto + https header → Secure
+
+
 class TestSessionAuth:
     def _login(self, db, client, username="alice", password="password123"):
         with db.get_session() as s:

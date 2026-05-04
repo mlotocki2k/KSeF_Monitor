@@ -261,6 +261,7 @@ def main():
                     initial_load_manager=initial_load_manager,
                     ui_enabled=api_config.get("ui_enabled", True),
                     ui_public=api_config.get("ui_public", False),
+                    cookie_secure_mode=api_config.get("cookie_secure_mode", "auto"),
                 )
                 api_server = APIServer(
                     api_app,

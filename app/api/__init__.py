@@ -40,6 +40,7 @@ def create_app(
     initial_load_manager=None,
     ui_enabled: bool = True,
     ui_public: bool = False,     # V5-01 — opt-in bypass for legacy/reverse-proxy
+    cookie_secure_mode: str = "auto",  # U-01 — "auto" | "always" | "never"
 ) -> FastAPI:
     """Create and configure FastAPI application.
 
@@ -69,6 +70,13 @@ def create_app(
     app.state.prometheus_metrics = prometheus_metrics
     app.state.push_manager = push_manager
     app.state.initial_load_manager = initial_load_manager
+    if cookie_secure_mode not in ("auto", "always", "never"):
+        logger.warning(
+            "Invalid cookie_secure_mode %r — falling back to 'auto'",
+            cookie_secure_mode,
+        )
+        cookie_secure_mode = "auto"
+    app.state.cookie_secure_mode = cookie_secure_mode
 
     _SESSION_COOKIE = "mksef_session"
 
