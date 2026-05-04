@@ -95,7 +95,7 @@
 
 {% block extra_js %}
 {% if push %}
-<script>
+<script nonce="{{ request.state.csp_nonce }}">
 async function revealPairing() {
   // V5-12: cookie session sent automatically (same-origin).
   const resp = await fetch("/api/v1/push/pairing", { credentials: "same-origin" });

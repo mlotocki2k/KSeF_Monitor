@@ -149,7 +149,7 @@
 {% endblock %}
 
 {% block extra_js %}
-<script>
+<script nonce="{{ request.state.csp_nonce }}">
 // Set default end date to today
 document.addEventListener('DOMContentLoaded', () => {
   const endEl = document.getElementById('end-date');

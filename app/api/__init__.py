@@ -6,6 +6,7 @@ FastAPI application factory with security defaults.
 
 import hmac
 import logging
+import secrets
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -183,6 +184,11 @@ def create_app(
     # Security headers middleware — registered LAST (outermost, always runs)
     @app.middleware("http")
     async def add_security_headers(request: Request, call_next):
+        # U-05: per-request CSP nonce — generated BEFORE call_next so
+        # templates can read it via request.state.csp_nonce when rendering
+        # inline <script nonce="…"> tags.
+        nonce = secrets.token_urlsafe(16)
+        request.state.csp_nonce = nonce
         response = await call_next(request)
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "DENY"
@@ -194,14 +200,15 @@ def create_app(
         response.headers["Permissions-Policy"] = (
             "geolocation=(), camera=(), microphone=()"
         )
-        # CSP — Tailwind is now self-hosted; data: allowed for QR codes.
-        # 'unsafe-inline' needed for push.html reveal script (Task 5).
-        # Tighten to nonces/hashes in a follow-up when inline <script> moves
-        # to external /ui/static/push.js.
+        # CSP — script-src uses per-request nonce instead of 'unsafe-inline'
+        # (U-05). style-src keeps 'unsafe-inline' because templates carry many
+        # inline `style="…"` attributes (Tailwind utility deltas, dark theme
+        # vars); a separate refactor is required to move them to a stylesheet.
+        # data: allowed in img-src for QR codes / inline icons.
         response.headers["Content-Security-Policy"] = (
             "default-src 'self'; "
             "style-src 'self' 'unsafe-inline'; "
-            "script-src 'self' 'unsafe-inline'; "
+            f"script-src 'self' 'nonce-{nonce}'; "
             "img-src 'self' data:; "
             "connect-src 'self'; "
             "frame-ancestors 'none'; "

@@ -173,7 +173,7 @@
   </div>
 </footer>
 
-<script>
+<script nonce="{{ request.state.csp_nonce }}">
 // ── Flash messages ────────────────────────────────────────────────────────────
 function flash(msg, type = 'ok') {
   const el = document.getElementById('flash');

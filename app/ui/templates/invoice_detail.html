@@ -136,7 +136,7 @@
 {% endblock %}
 
 {% block extra_js %}
-<script>
+<script nonce="{{ request.state.csp_nonce }}">
 function toggleRawMeta() {
   const el = document.getElementById('raw-meta');
   const btn = document.getElementById('btn-toggle-meta');

@@ -577,6 +577,66 @@ class TestLoginLockout:
             assert is_login_locked(s, "alice") is None
 
 
+# U-05 — CSP nonce, drop unsafe-inline from script-src.
+class TestCspNonce:
+    def test_csp_uses_per_request_nonce_not_unsafe_inline(self, client):
+        resp = client.get("/ui/login")
+        csp = resp.headers.get("content-security-policy", "")
+        assert csp, "CSP header must be present on /ui/login"
+        # script-src directive: must include nonce-..., must NOT include unsafe-inline
+        # Find the script-src segment.
+        script_src = next(
+            (part.strip() for part in csp.split(";") if part.strip().startswith("script-src")),
+            "",
+        )
+        assert script_src, f"script-src directive missing in CSP: {csp!r}"
+        assert "'unsafe-inline'" not in script_src, (
+            f"script-src must not contain 'unsafe-inline'; got {script_src!r}"
+        )
+        assert "'nonce-" in script_src, (
+            f"script-src must contain a per-request nonce; got {script_src!r}"
+        )
+
+    def test_each_request_gets_a_fresh_nonce(self, client):
+        r1 = client.get("/ui/login").headers["content-security-policy"]
+        r2 = client.get("/ui/login").headers["content-security-policy"]
+        # Extract nonce values
+        def _extract_nonce(csp: str) -> str:
+            for part in csp.split(";"):
+                if "nonce-" in part:
+                    # format: script-src 'self' 'nonce-XYZ'
+                    for token in part.split():
+                        if token.startswith("'nonce-"):
+                            return token
+            return ""
+        n1 = _extract_nonce(r1)
+        n2 = _extract_nonce(r2)
+        assert n1 and n2 and n1 != n2
+
+    def test_inline_script_carries_nonce_in_template(self, db, app_auth):
+        # Setup wizard renders without auth — easy fixture for HTML inspection.
+        local_client = TestClient(app_auth, follow_redirects=False)
+        resp = local_client.get("/ui/setup")
+        assert resp.status_code == 200
+        # setup.html has no inline script, but base.html (used by dashboard
+        # etc.) does. Render account page after a real login.
+        with db.get_session() as s:
+            create_user(s, "alice", "SolidPass_88!")
+        local_client.post(
+            "/ui/login",
+            data={"username": "alice", "password": "SolidPass_88!"},
+        )
+        resp = local_client.get("/ui")
+        assert resp.status_code == 200
+        # Each <script ...> tag in the rendered HTML must carry nonce="…".
+        # Bare "<script>" (no attrs) would block under our CSP.
+        import re
+        bare_scripts = re.findall(r"<script(?![^>]*\bnonce=)[^>]*>", resp.text)
+        assert not bare_scripts, (
+            f"unsafe inline scripts (no nonce) found: {bare_scripts!r}"
+        )
+
+
 # U-04 — opt-in UA fingerprint binding.
 class TestSessionUaBinding:
     def test_create_session_records_ua_hash(self, db):

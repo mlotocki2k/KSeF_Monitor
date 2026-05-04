@@ -176,7 +176,7 @@
 {% endblock %}
 
 {% block extra_js %}
-<script>
+<script nonce="{{ request.state.csp_nonce }}">
 function toggleAll(chk) {
   document.querySelectorAll('.inv-chk').forEach(c => c.checked = chk.checked);
   updateBulk();
