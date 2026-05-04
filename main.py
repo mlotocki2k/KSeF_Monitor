@@ -262,6 +262,7 @@ def main():
                     ui_enabled=api_config.get("ui_enabled", True),
                     ui_public=api_config.get("ui_public", False),
                     cookie_secure_mode=api_config.get("cookie_secure_mode", "auto"),
+                    session_strict_binding=api_config.get("session_strict_binding", False),
                 )
                 api_server = APIServer(
                     api_app,

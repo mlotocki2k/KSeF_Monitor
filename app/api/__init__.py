@@ -41,6 +41,7 @@ def create_app(
     ui_enabled: bool = True,
     ui_public: bool = False,     # V5-01 — opt-in bypass for legacy/reverse-proxy
     cookie_secure_mode: str = "auto",  # U-01 — "auto" | "always" | "never"
+    session_strict_binding: bool = False,  # U-04 — opt-in UA fingerprint
 ) -> FastAPI:
     """Create and configure FastAPI application.
 
@@ -77,6 +78,7 @@ def create_app(
         )
         cookie_secure_mode = "auto"
     app.state.cookie_secure_mode = cookie_secure_mode
+    app.state.session_strict_binding = bool(session_strict_binding)
 
     _SESSION_COOKIE = "mksef_session"
 
@@ -161,8 +163,12 @@ def create_app(
             from app.ui_auth import validate_session
 
             try:
+                strict_ua = bool(getattr(request.app.state, "session_strict_binding", False))
+                ua_header = request.headers.get("user-agent", "") or None
                 with db_local.get_session() as s:
-                    result = validate_session(s, sid)
+                    result = validate_session(
+                        s, sid, ua=ua_header, strict_ua=strict_ua
+                    )
                     if result is not None:
                         user, _ = result
                         request.state.ui_user_id = user.id

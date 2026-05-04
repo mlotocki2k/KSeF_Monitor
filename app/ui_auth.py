@@ -185,7 +185,7 @@ def create_user(session: Session, username: str, password: str) -> UiUser:
 
 
 def create_first_admin_atomic(
-    db, username: str, password: str
+    db, username: str, password: str, ua: Optional[str] = None
 ) -> Optional[Tuple[int, str]]:
     """Race-safe creation of the very first UI admin.
 
@@ -225,10 +225,14 @@ def create_first_admin_atomic(
 
             conn.execute(
                 text(
-                    "INSERT INTO ui_sessions (id, user_id, expires_at, created_at, last_accessed_at) "
-                    "VALUES (:sid, :uid, :ex, :now, :now)"
+                    "INSERT INTO ui_sessions (id, user_id, expires_at, "
+                    "created_at, last_accessed_at, ua_hash) "
+                    "VALUES (:sid, :uid, :ex, :now, :now, :ua_hash)"
                 ),
-                {"sid": sid, "uid": user_id, "ex": expires, "now": now},
+                {
+                    "sid": sid, "uid": user_id, "ex": expires, "now": now,
+                    "ua_hash": hash_user_agent(ua),
+                },
             )
             conn.exec_driver_sql("COMMIT")
             logger.info(
@@ -251,8 +255,23 @@ def set_password(session: Session, user: UiUser, new_password: str) -> None:
 # ── Session lifecycle ───────────────────────────────────────────────────────
 
 
-def create_session(session: Session, user: UiUser) -> str:
-    """Create a new session, persist it, return the opaque cookie value."""
+def hash_user_agent(ua: Optional[str]) -> Optional[str]:
+    """SHA-256 hex of User-Agent header. Returns None for empty/missing UA."""
+    if not ua:
+        return None
+    return hashlib.sha256(ua.encode("utf-8")).hexdigest()
+
+
+def create_session(
+    session: Session, user: UiUser, ua: Optional[str] = None
+) -> str:
+    """Create a new session, persist it, return the opaque cookie value.
+
+    Stores SHA-256(ua) when `ua` is provided. The strict-binding mode in
+    `validate_session` consults this column; enabling/disabling strict mode
+    is a runtime app.state flag — the column is always populated when a UA
+    is available so future flips don't require re-login.
+    """
     sid = secrets.token_hex(32)  # 64-char hex, 256 bits of entropy
     now = datetime.now(timezone.utc)
     user.last_login_at = now
@@ -263,6 +282,7 @@ def create_session(session: Session, user: UiUser) -> str:
             expires_at=now + SESSION_TTL,
             created_at=now,
             last_accessed_at=now,
+            ua_hash=hash_user_agent(ua),
         )
     )
     session.commit()
@@ -277,13 +297,20 @@ def create_session(session: Session, user: UiUser) -> str:
 
 
 def validate_session(
-    session: Session, sid: Optional[str]
+    session: Session,
+    sid: Optional[str],
+    ua: Optional[str] = None,
+    strict_ua: bool = False,
 ) -> Optional[Tuple[UiUser, UiSession]]:
     """Look up session by cookie value. Returns (user, session) on success.
 
     Sliding expiry: each successful validation extends expires_at by SESSION_TTL.
     Absolute lifetime cap (U-09): even with sliding renewal, a session is
     discarded `SESSION_ABSOLUTE_LIFETIME` after `created_at`.
+    Optional UA fingerprint binding (U-04): when `strict_ua=True` and the row
+    has a stored `ua_hash`, the request's UA hash must match — mismatch
+    revokes the session and returns None. Pre-existing sessions without
+    `ua_hash` are not refused (graceful upgrade).
     """
     if not sid or len(sid) != 64:
         return None
@@ -308,6 +335,16 @@ def validate_session(
         session.execute(delete(UiSession).where(UiSession.id == sid))
         session.commit()
         return None
+    if strict_ua and row.ua_hash:
+        request_ua_hash = hash_user_agent(ua)
+        if request_ua_hash != row.ua_hash:
+            logger.warning(
+                "UI session UA fingerprint mismatch — revoking sid=%s…",
+                sid[:8],
+            )
+            session.execute(delete(UiSession).where(UiSession.id == sid))
+            session.commit()
+            return None
     user = session.get(UiUser, row.user_id)
     if user is None:
         session.execute(delete(UiSession).where(UiSession.id == sid))

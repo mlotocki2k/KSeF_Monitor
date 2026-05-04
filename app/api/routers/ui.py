@@ -468,7 +468,8 @@ def ui_setup_submit(
         )
 
     # Atomic check-and-insert via BEGIN IMMEDIATE — closes U-06 race window.
-    result = create_first_admin_atomic(db, username, password)
+    ua = request.headers.get("user-agent", "") or None
+    result = create_first_admin_atomic(db, username, password, ua=ua)
     if result is None:
         return RedirectResponse(url="/ui/login", status_code=303)
     _, sid = result
@@ -566,7 +567,7 @@ def ui_login_submit(
             )
 
         record_login_success(s, username)
-        sid = create_session(s, user)
+        sid = create_session(s, user, ua=request.headers.get("user-agent", "") or None)
 
     resp = RedirectResponse(url=target, status_code=303)
     _set_session_cookie(resp, sid, request)

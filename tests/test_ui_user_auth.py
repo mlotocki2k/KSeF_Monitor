@@ -21,6 +21,7 @@ from app.ui_auth import (
     create_user,
     get_user_by_username,
     hash_password,
+    hash_user_agent,
     is_login_locked,
     record_login_failure,
     record_login_success,
@@ -574,6 +575,74 @@ class TestLoginLockout:
         assert "mksef_session" in resp.cookies
         with db.get_session() as s:
             assert is_login_locked(s, "alice") is None
+
+
+# U-04 — opt-in UA fingerprint binding.
+class TestSessionUaBinding:
+    def test_create_session_records_ua_hash(self, db):
+        with db.get_session() as s:
+            u = create_user(s, "alice", "SolidPass_88!")
+            sid = create_session(s, u, ua="Mozilla/5.0 SomeBrowser")
+            row = s.get(UiSession, sid)
+            assert row.ua_hash == hash_user_agent("Mozilla/5.0 SomeBrowser")
+
+    def test_strict_off_allows_ua_change(self, db):
+        with db.get_session() as s:
+            u = create_user(s, "alice", "SolidPass_88!")
+            sid = create_session(s, u, ua="UA-A")
+            assert validate_session(s, sid, ua="UA-B", strict_ua=False) is not None
+
+    def test_strict_on_revokes_on_mismatch(self, db):
+        with db.get_session() as s:
+            u = create_user(s, "alice", "SolidPass_88!")
+            sid = create_session(s, u, ua="UA-A")
+            assert validate_session(s, sid, ua="UA-B", strict_ua=True) is None
+            # Row deleted
+            assert s.get(UiSession, sid) is None
+
+    def test_strict_on_accepts_matching_ua(self, db):
+        with db.get_session() as s:
+            u = create_user(s, "alice", "SolidPass_88!")
+            sid = create_session(s, u, ua="UA-A")
+            assert validate_session(s, sid, ua="UA-A", strict_ua=True) is not None
+
+    def test_strict_on_legacy_session_no_ua_hash_grandfathered(self, db):
+        # Pre-existing session without ua_hash (e.g. created before this fix
+        # rolled out) must not be revoked just because strict mode flipped.
+        with db.get_session() as s:
+            u = create_user(s, "alice", "SolidPass_88!")
+            sid = create_session(s, u, ua=None)
+            row = s.get(UiSession, sid)
+            assert row.ua_hash is None
+            assert validate_session(s, sid, ua="UA-X", strict_ua=True) is not None
+
+    def test_e2e_strict_binding_blocks_stolen_cookie(self, db):
+        # Login from one browser, then send the cookie with a different UA
+        # to a strict-mode app — should bounce to /ui/login.
+        app = create_app(
+            db=db,
+            auth_token="a" * 32,
+            session_strict_binding=True,
+        )
+        with db.get_session() as s:
+            create_user(s, "alice", "SolidPass_88!")
+        login_client = TestClient(app, follow_redirects=False)
+        login_client.headers["user-agent"] = "BrowserA/1.0"
+        resp = login_client.post(
+            "/ui/login",
+            data={"username": "alice", "password": "SolidPass_88!"},
+        )
+        sid = resp.cookies["mksef_session"]
+
+        # Same cookie, different UA → revoked.
+        attacker_client = TestClient(app, follow_redirects=False)
+        attacker_client.cookies.set("mksef_session", sid)
+        attacker_client.headers["user-agent"] = "AttackerBrowser/1.0"
+        resp2 = attacker_client.get("/ui")
+        # Without a valid session, the gate redirects to /ui/login.
+        assert resp2.status_code in (303, 401)
+        if resp2.status_code == 303:
+            assert "/ui/login" in resp2.headers["location"]
 
 
 # U-01 — cookie Secure flag honors X-Forwarded-Proto + cookie_secure_mode override.

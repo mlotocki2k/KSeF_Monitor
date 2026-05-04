@@ -446,6 +446,10 @@ class UiSession(Base):
     last_accessed_at: Mapped[datetime] = mapped_column(
         DateTime, default=lambda: datetime.now(timezone.utc)
     )
+    # SHA-256 of User-Agent at session creation (U-04). Nullable: only
+    # populated when api.session_strict_binding is enabled. Stored as hash,
+    # not raw UA, so a leaked DB doesn't expose the user's browser fingerprint.
+    ua_hash: Mapped[Optional[str]] = mapped_column(String(64))
 
     __table_args__ = (
         Index("ix_ui_sessions_user", "user_id"),
