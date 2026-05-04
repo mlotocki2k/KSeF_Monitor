@@ -25,6 +25,10 @@ logger = logging.getLogger(__name__)
 
 # 7-day rolling sessions; refreshed on each authenticated request.
 SESSION_TTL = timedelta(days=7)
+# Absolute upper bound regardless of sliding renewal (U-09): even an
+# always-active user must re-authenticate every 30 days, capping the value
+# of a stolen cookie.
+SESSION_ABSOLUTE_LIFETIME = timedelta(days=30)
 BCRYPT_ROUNDS = 12
 
 USERNAME_MIN_LEN = 3
@@ -223,6 +227,13 @@ def create_session(session: Session, user: UiUser) -> str:
         )
     )
     session.commit()
+    # U-12 audit trail: surface enough to reconstruct "who logged in" without
+    # leaking the cookie itself; first 8 hex chars give a stable correlation
+    # token across one session's lifetime.
+    logger.info(
+        "UI login session created: user=%s (id=%d) sid=%s…",
+        user.username, user.id, sid[:8],
+    )
     return sid
 
 
@@ -232,6 +243,8 @@ def validate_session(
     """Look up session by cookie value. Returns (user, session) on success.
 
     Sliding expiry: each successful validation extends expires_at by SESSION_TTL.
+    Absolute lifetime cap (U-09): even with sliding renewal, a session is
+    discarded `SESSION_ABSOLUTE_LIFETIME` after `created_at`.
     """
     if not sid or len(sid) != 64:
         return None
@@ -241,10 +254,18 @@ def validate_session(
     if row is None:
         return None
     now = datetime.now(timezone.utc)
-    expires = row.expires_at
-    if expires.tzinfo is None:
-        expires = expires.replace(tzinfo=timezone.utc)
-    if expires < now:
+    expires = _aware(row.expires_at)
+    created = _aware(row.created_at)
+    if expires is None or expires < now:
+        session.execute(delete(UiSession).where(UiSession.id == sid))
+        session.commit()
+        return None
+    if created is not None and now > created + SESSION_ABSOLUTE_LIFETIME:
+        # Hard cap reached — force re-login regardless of recent activity.
+        logger.info(
+            "UI session sid=%s… exceeded absolute lifetime — revoking",
+            sid[:8],
+        )
         session.execute(delete(UiSession).where(UiSession.id == sid))
         session.commit()
         return None
@@ -262,6 +283,7 @@ def validate_session(
 def revoke_session(session: Session, sid: str) -> None:
     session.execute(delete(UiSession).where(UiSession.id == sid))
     session.commit()
+    logger.info("UI session revoked: sid=%s…", sid[:8])
 
 
 def cleanup_expired_sessions(session: Session) -> int:

@@ -12,6 +12,7 @@ from app.ui_auth import (
     LOGIN_FAIL_WINDOW,
     LOGIN_LOCKOUT_DURATION,
     LOGIN_LOCKOUT_THRESHOLD,
+    SESSION_ABSOLUTE_LIFETIME,
     SESSION_TTL,
     cleanup_expired_sessions,
     count_users,
@@ -228,6 +229,34 @@ class TestSessionLifecycle:
             validate_session(s, sid)
             after = s.get(UiSession, sid).expires_at
             assert after >= before
+
+    # U-09 — absolute lifetime cap
+    def test_session_revoked_past_absolute_lifetime(self, db):
+        from datetime import datetime, timedelta, timezone
+
+        with db.get_session() as s:
+            u = create_user(s, "alice", "password123")
+            sid = create_session(s, u)
+            row = s.get(UiSession, sid)
+            # Simulate a session that was created longer ago than the
+            # absolute cap, but has been kept alive by sliding renewal.
+            row.created_at = datetime.now(timezone.utc) - SESSION_ABSOLUTE_LIFETIME - timedelta(minutes=1)
+            row.expires_at = datetime.now(timezone.utc) + timedelta(days=1)
+            s.commit()
+            assert validate_session(s, sid) is None
+            # Row deleted as side effect.
+            assert s.get(UiSession, sid) is None
+
+    def test_session_inside_absolute_lifetime_still_valid(self, db):
+        from datetime import datetime, timedelta, timezone
+
+        with db.get_session() as s:
+            u = create_user(s, "alice", "password123")
+            sid = create_session(s, u)
+            row = s.get(UiSession, sid)
+            row.created_at = datetime.now(timezone.utc) - SESSION_ABSOLUTE_LIFETIME + timedelta(hours=1)
+            s.commit()
+            assert validate_session(s, sid) is not None
 
     def test_cleanup_expired_returns_count(self, db):
         from datetime import datetime, timedelta, timezone
