@@ -9,6 +9,9 @@ from fastapi.testclient import TestClient
 from app.api import create_app
 from app.database import Base, Database, UiSession, UiUser
 from app.ui_auth import (
+    LOGIN_FAIL_WINDOW,
+    LOGIN_LOCKOUT_DURATION,
+    LOGIN_LOCKOUT_THRESHOLD,
     SESSION_TTL,
     cleanup_expired_sessions,
     count_users,
@@ -17,6 +20,9 @@ from app.ui_auth import (
     create_user,
     get_user_by_username,
     hash_password,
+    is_login_locked,
+    record_login_failure,
+    record_login_success,
     set_password,
     validate_password,
     validate_session,
@@ -411,6 +417,84 @@ class TestLoginFlow:
         cookie_header = resp.headers.get("set-cookie", "").lower()
         assert "httponly" in cookie_header
         assert "samesite=strict" in cookie_header
+
+
+# U-03 — per-username brute-force lockout.
+class TestLoginLockout:
+    def test_no_lock_initially(self, db):
+        with db.get_session() as s:
+            assert is_login_locked(s, "alice") is None
+
+    def test_lock_engages_at_threshold(self, db):
+        with db.get_session() as s:
+            for _ in range(LOGIN_LOCKOUT_THRESHOLD - 1):
+                assert record_login_failure(s, "alice") is None
+                assert is_login_locked(s, "alice") is None
+            locked = record_login_failure(s, "alice")
+            assert locked is not None
+            still_locked = is_login_locked(s, "alice")
+            assert still_locked is not None
+
+    def test_success_resets_counter(self, db):
+        with db.get_session() as s:
+            for _ in range(LOGIN_LOCKOUT_THRESHOLD - 1):
+                record_login_failure(s, "alice")
+            record_login_success(s, "alice")
+            assert is_login_locked(s, "alice") is None
+            # one more failure must NOT immediately re-lock
+            assert record_login_failure(s, "alice") is None
+
+    def test_separate_usernames_dont_share_counter(self, db):
+        with db.get_session() as s:
+            for _ in range(LOGIN_LOCKOUT_THRESHOLD):
+                record_login_failure(s, "alice")
+            assert is_login_locked(s, "alice") is not None
+            assert is_login_locked(s, "bob") is None
+
+    def test_lock_blocks_login_endpoint(self, db, client):
+        with db.get_session() as s:
+            create_user(s, "alice", "password123")
+            for _ in range(LOGIN_LOCKOUT_THRESHOLD):
+                record_login_failure(s, "alice")
+        # Even with correct password, locked user gets 'locked' error.
+        resp = client.post(
+            "/ui/login",
+            data={"username": "alice", "password": "password123"},
+        )
+        assert resp.status_code == 303
+        assert "error=locked" in resp.headers["location"]
+        assert "mksef_session" not in resp.cookies
+
+    def test_unknown_user_login_increments_counter(self, db, client):
+        # Hits the dummy-hash branch but still records the attempt so a
+        # botnet can't probe usernames forever without tripping lockout.
+        with db.get_session() as s:
+            create_user(s, "real_admin", "password123")  # so count_users > 0
+        for _ in range(LOGIN_LOCKOUT_THRESHOLD):
+            client.post(
+                "/ui/login",
+                data={"username": "ghost", "password": "wrong"},
+            )
+        with db.get_session() as s:
+            assert is_login_locked(s, "ghost") is not None
+
+    def test_successful_login_resets_after_some_failures(self, db, client):
+        with db.get_session() as s:
+            create_user(s, "alice", "password123")
+        # 3 failed attempts, then successful login
+        for _ in range(3):
+            client.post(
+                "/ui/login",
+                data={"username": "alice", "password": "wrong"},
+            )
+        resp = client.post(
+            "/ui/login",
+            data={"username": "alice", "password": "password123"},
+        )
+        assert resp.status_code == 303
+        assert "mksef_session" in resp.cookies
+        with db.get_session() as s:
+            assert is_login_locked(s, "alice") is None
 
 
 # U-01 — cookie Secure flag honors X-Forwarded-Proto + cookie_secure_mode override.

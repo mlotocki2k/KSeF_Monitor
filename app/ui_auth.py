@@ -33,6 +33,19 @@ PASSWORD_MIN_LEN = 8
 
 _BCRYPT_INPUT_LIMIT = 72
 
+# U-03 — per-username brute-force lockout
+LOGIN_LOCKOUT_THRESHOLD = 5                       # fails before lock
+LOGIN_LOCKOUT_DURATION = timedelta(minutes=15)
+LOGIN_FAIL_WINDOW = timedelta(minutes=15)         # sliding window for counter
+
+# Pre-computed bcrypt hash that NEVER matches a real password but takes the
+# same ~250ms to verify — used for constant-time login when username does not
+# exist (defense against timing-based username enumeration; U-07 partial,
+# also closes a side-channel that bypasses U-03 lockout via fast-path).
+_DUMMY_HASH = bcrypt.hashpw(
+    b"____never_matches____", bcrypt.gensalt(rounds=BCRYPT_ROUNDS)
+).decode("utf-8")
+
 
 # ── Password hashing ────────────────────────────────────────────────────────
 
@@ -244,3 +257,93 @@ def cleanup_expired_sessions(session: Session) -> int:
     result = session.execute(delete(UiSession).where(UiSession.expires_at < now))
     session.commit()
     return result.rowcount or 0
+
+
+# ── Brute-force lockout (U-03) ──────────────────────────────────────────────
+
+
+def dummy_password_hash() -> str:
+    """Return the dummy bcrypt hash used for constant-time non-existent-user
+    verification. Exposed for tests.
+    """
+    return _DUMMY_HASH
+
+
+def _aware(dt: Optional[datetime]) -> Optional[datetime]:
+    """Coerce DB-loaded naive datetimes to UTC (SQLite drops tzinfo)."""
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt
+
+
+def is_login_locked(session: Session, username: str) -> Optional[datetime]:
+    """Return locked_until (UTC) if username is currently locked, else None.
+
+    Auto-clears stale locks where locked_until is in the past.
+    """
+    from app.database import UiLoginAttempt
+
+    row = session.get(UiLoginAttempt, username)
+    if row is None:
+        return None
+    locked = _aware(row.locked_until)
+    if locked is None:
+        return None
+    if locked > datetime.now(timezone.utc):
+        return locked
+    # stale lock — let it expire silently next failure cycle
+    return None
+
+
+def record_login_failure(
+    session: Session, username: str
+) -> Optional[datetime]:
+    """Increment fail counter and, if threshold crossed, set lockout.
+
+    Sliding window: counter resets if last failure happened more than
+    `LOGIN_FAIL_WINDOW` ago. Returns `locked_until` if this failure was the
+    one that triggered a fresh lockout, otherwise None.
+    """
+    from app.database import UiLoginAttempt
+
+    now = datetime.now(timezone.utc)
+    row = session.get(UiLoginAttempt, username)
+    if row is None:
+        row = UiLoginAttempt(username=username, failed_count=1, last_failed_at=now)
+        session.add(row)
+    else:
+        last_failed = _aware(row.last_failed_at)
+        if last_failed is not None and last_failed < now - LOGIN_FAIL_WINDOW:
+            row.failed_count = 1
+        else:
+            row.failed_count = (row.failed_count or 0) + 1
+        row.last_failed_at = now
+
+    locked_until: Optional[datetime] = None
+    if row.failed_count >= LOGIN_LOCKOUT_THRESHOLD:
+        locked_until = now + LOGIN_LOCKOUT_DURATION
+        row.locked_until = locked_until
+        logger.warning(
+            "UI login locked for %r until %s (after %d failures)",
+            username, locked_until.isoformat(), row.failed_count,
+        )
+    session.commit()
+    return locked_until
+
+
+def record_login_success(session: Session, username: str) -> None:
+    """Reset fail counter / clear lock on successful login."""
+    from app.database import UiLoginAttempt
+
+    now = datetime.now(timezone.utc)
+    row = session.get(UiLoginAttempt, username)
+    if row is None:
+        row = UiLoginAttempt(username=username, last_success_at=now)
+        session.add(row)
+    else:
+        row.failed_count = 0
+        row.locked_until = None
+        row.last_success_at = now
+    session.commit()

@@ -516,7 +516,11 @@ def ui_login_submit(
     from app.ui_auth import (
         count_users,
         create_session,
+        dummy_password_hash,
         get_user_by_username,
+        is_login_locked,
+        record_login_failure,
+        record_login_success,
         verify_password,
     )
 
@@ -525,19 +529,43 @@ def ui_login_submit(
     if db is None:
         return RedirectResponse(url="/ui/login?error=db", status_code=303)
 
+    username = username.strip()
+
     with db.get_session() as s:
         if count_users(s) == 0:
             return RedirectResponse(url="/ui/setup", status_code=303)
-        user = get_user_by_username(s, username.strip())
-        if user is None or not verify_password(password, user.password_hash):
+
+        # U-03 — check lockout BEFORE bcrypt to deny attacker the timing oracle
+        # and to keep DoS-via-bcrypt off the table for a hot-locked account.
+        if is_login_locked(s, username):
+            client_host = request.client.host if request.client else "unknown"
             logger.warning(
-                "Failed UI login for %r from %s",
-                username,
-                request.client.host if request.client else "unknown",
+                "UI login blocked (locked) for username_len=%d from %s",
+                len(username), client_host,
+            )
+            return RedirectResponse(
+                url=f"/ui/login?next={target}&error=locked", status_code=303
+            )
+
+        user = get_user_by_username(s, username)
+        # U-07 partial — always run bcrypt to keep timing constant whether the
+        # username exists or not. Combined with U-03 lockout this prevents
+        # both "exists vs not" probes and unbounded brute-force.
+        password_ok = verify_password(
+            password, user.password_hash if user else dummy_password_hash()
+        )
+        if user is None or not password_ok:
+            record_login_failure(s, username)
+            client_host = request.client.host if request.client else "unknown"
+            logger.warning(
+                "Failed UI login (username_len=%d) from %s",
+                len(username), client_host,
             )
             return RedirectResponse(
                 url=f"/ui/login?next={target}&error=invalid", status_code=303
             )
+
+        record_login_success(s, username)
         sid = create_session(s, user)
 
     resp = RedirectResponse(url=target, status_code=303)

@@ -403,6 +403,32 @@ class UiUser(Base):
         return f"<UiUser id={self.id} username={self.username!r}>"
 
 
+class UiLoginAttempt(Base):
+    """Per-username failed-login counter + temporary lockout (V5-13 → U-03).
+
+    Distinct from per-IP rate limit (slowapi `5/minute`) — keyed by username
+    so a botnet rotating IPs cannot bypass the lockout. Lockout is always
+    time-bounded (15 min) to keep DoS-via-lockout impact bounded; sliding
+    window auto-resets the counter when no fails arrived in the last window.
+    """
+
+    __tablename__ = "ui_login_attempts"
+
+    username: Mapped[str] = mapped_column(String(64), primary_key=True)
+    failed_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    locked_until: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    last_failed_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    last_success_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+
+    def __repr__(self) -> str:
+        return (
+            f"<UiLoginAttempt user={self.username!r} fails={self.failed_count}"
+            f" locked_until={self.locked_until}>"
+        )
+
+
 class UiSession(Base):
     """Browser session — opaque random ID stored in HttpOnly cookie. Decoupled
     from password_hash so password change can revoke other sessions cleanly."""

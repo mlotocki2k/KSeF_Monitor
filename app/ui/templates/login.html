@@ -40,7 +40,9 @@
 
     {% if error %}
     <div class="mb-4 rounded-md bg-red-50 border border-red-200 p-3 text-sm text-red-700">
-      {% if error == "invalid" %}Nieprawidłowa nazwa użytkownika lub hasło.{% else %}{{ error }}{% endif %}
+      {% if error == "invalid" %}Nieprawidłowa nazwa użytkownika lub hasło.
+      {% elif error == "locked" %}Zbyt wiele nieudanych prób — konto czasowo zablokowane. Spróbuj ponownie za 15 minut.
+      {% else %}{{ error }}{% endif %}
     </div>
     {% endif %}
 
