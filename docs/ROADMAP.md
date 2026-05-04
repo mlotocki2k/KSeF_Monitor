@@ -301,6 +301,49 @@ _Źródło: regresja UX po V5-01 — token modal blokował dashboard. Pełna lis
 
 ---
 
+## v0.5.2 (UI auth security audit remediation) ✅
+_Źródło: focused audyt V5-12/V5-13/V5-14 → `audit/20260504_security_audit_v0_5_1_ui_auth.md`. Pełna lista zmian: `CHANGELOG.md` [0.5.2]._
+
+Audyt dał 0 CRITICAL, 0 HIGH, 6 MEDIUM, 6 LOW, 5 INFO. Wszystkie 14 punktów zaadresowane.
+
+### Sesja
+- [x] **U-01** `api.cookie_secure_mode` (`auto`/`always`/`never`) + honor `X-Forwarded-Proto`. Default `auto` — w prod za reverse-proxy cookie dostaje `Secure` mimo `request.url.scheme="http"`.
+- [x] **U-04** Opt-in `api.session_strict_binding` — SHA-256(UA) w `ui_sessions.ua_hash` (alembic phase7), mismatch → revoke. Legacy rows bez `ua_hash` grandfathered.
+- [x] **U-09** Absolute lifetime cap 30 dni (`SESSION_ABSOLUTE_LIFETIME`) — sliding renew nie omija.
+- [x] **U-12** Audit log: session create/revoke/eviction, lockout. `username_len` zamiast raw username (U-08 partial).
+
+### Auth strength
+- [x] **U-02** SHA-256+b64 pre-hash dla haseł >72B → bcrypt 5.0-ready (5.0 rzuca `ValueError`, byłby DoS na obecnych userach z długimi hasłami).
+- [x] **U-03** Per-username brute-force lockout: tabela `ui_login_attempts` (alembic phase6), 5 fails / 15 min sliding → 15 min lock. Check przed bcrypt.
+- [x] **U-07** Constant-time login: bcrypt zawsze (dummy hash dla nieistniejącego usera) → bez timing oracle dla username enumeration.
+- [x] **U-11** Password strength: blocklist top-100 (rockyou, in-process, NIST SP 800-63B) + reject jeśli zawiera username (≥3 chars, case-insensitive).
+
+### Setup wizard
+- [x] **U-06** `create_first_admin_atomic()` z `BEGIN IMMEDIATE` (SQLite RESERVED lock) — concurrent setup POSTs nie tworzą drugiego konta admin.
+
+### Web hardening
+- [x] **U-05** CSP `script-src` używa per-request nonce (16-byte `secrets.token_urlsafe`) zamiast `'unsafe-inline'`. Wszystkie inline `<script>` w templates niosą `nonce="{{ request.state.csp_nonce }}"`. `style-src 'unsafe-inline'` zostaje (carryover).
+- [x] **U-10** `_safe_next()` strict prefix — odrzuca `/ui-attacker/…`.
+
+### Code quality
+- [x] **U-13** `count_users()` używa `COUNT(*)` zamiast materializacji wszystkich row IDs.
+- [x] **U-15** `resolve_ui_session` catch tylko `(OperationalError, DBAPIError)` — programming errors propagują się normalnie do 500 handler.
+- [x] **U-17** Username case-insensitive (`func.lower`): lookup, lockout key, login flow. `admin`/`Admin`/`ADMIN` → ten sam wpis, ten sam licznik.
+
+### Migrations
+- [x] `f1a2b3c45678` — phase6 `ui_login_attempts`
+- [x] `g2b3c4d56789` — phase7 `ui_sessions.ua_hash`
+
+### Testy
+- [x] `tests/test_ui_user_auth.py` 91 testów (był 57). Nowe klasy: `TestUsernameCaseInsensitive` (3), `TestLoginLockout` (7), `TestCookieSecureFlag` (6), `TestSessionUaBinding` (6), `TestCspNonce` (3); rozszerzenia w `TestPasswordHashing`, `TestSetupWizard`, `TestSessionLifecycle`, `TestValidation`.
+- [x] `tests/test_db_migration.py` head ref bumped do `g2b3c4d56789`.
+
+### Bonus (równolegle z audit-remediation)
+- [x] `chore: sync spec/openapi.json with KSeF production (2026-04-23 build)` — closes #51 (RR enum cleanup, 16-hex validation, build `20260422.4 → 20260423.2`).
+- [x] `ci(deps): respect wontfix label` — workflow `check-requirements-updates.yml` nie reopenuje issues z labelem `wontfix` dopóki tylko stare paczki są outdated; nowe paczki tworzą fresh issue (closes recurring noise from #28).
+
+---
+
 ## v0.6 (Lightweight Polling)
 **Cel:** rozdzielenie detekcji nowych faktur od pobierania artefaktów — oszczędność API calls, szybsze push notifications
 
@@ -324,8 +367,33 @@ _Źródło: regresja UX po V5-01 — token modal blokował dashboard. Pełna lis
 - [x] Analiza limitów per endpoint (z OpenAPI spec `x-rate-limits`) — [KSEF_API_LIMITATIONS.md](KSEF_API_LIMITATIONS.md)
 - [x] Design lekkiego pollingu — [LIGHTWEIGHT_POLLING_DESIGN.md](LIGHTWEIGHT_POLLING_DESIGN.md)
 
+### 4) Pobieranie UPO (Urzędowe Poświadczenie Odbioru)
+**Cel:** wykorzystanie nowego tokenu z uprawnieniem `Introspection` do pobierania UPO faktur sprzedażowych — wartość prawna potwierdzenia wystawienia.
+
+**Status:** ścieżka API zweryfikowana skryptem `examples/test_upo_download.py` (env=test, 2026-04-29) — auth + listing sesji + UPO faktury + UPO sesji, SHA256 OK, schema `http://upo.schematy.mf.gov.pl/KSeF/v4-3`.
+
+- [ ] Rozszerzenie `app/ksef_client.py`:
+  - `list_sessions(sessionType, dateFrom, dateTo, statuses)` → `GET /v2/sessions` (rate: 5/s, 10/min, 60/h)
+  - `get_session_invoices(referenceNumber)` → `GET /v2/sessions/{ref}/invoices` (zwraca też `upoDownloadUrl` SAS direct)
+  - `get_invoice_upo(sessionRef, ksefNumber)` → `GET /v2/sessions/{ref}/invoices/ksef/{ksefNumber}/upo` (rate: 10/s, 120/min, 1200/h)
+  - Weryfikacja `x-ms-meta-hash` (SHA256 base64) per artefakt
+- [ ] Integracja z `invoice_monitor.py`:
+  - Dla faktur Subject1 (sprzedażowe) — po wykryciu znajdź sesję i pobierz UPO XML
+  - Strategia mapowania ksefNumber → sessionRef: cache sesji (lista + invoices), TTL np. 24h
+  - Backoff przy 21178 (UPO not found) — UPO może pojawić się z opóźnieniem po wystawieniu
+- [ ] Storage:
+  - Aktywacja kolumn `has_upo`/`upo_path` w `invoices` (już w schema, dotąd nieużywane)
+  - Zapis pliku obok XML/PDF: `{output_dir}/upo/{ksefNumber}.xml`
+  - `artifact_type='upo'` w `invoice_artifacts` (typ już dopuszczony w schema)
+- [ ] Web UI:
+  - Przycisk "Pobierz UPO" na `invoice_detail.html` (gdy `has_upo=True`)
+  - Endpoint `GET /api/invoices/{ksefNumber}/upo` zwracający XML
+- [ ] Konfiguracja: flaga `monitoring.fetch_upo` (default: false — opt-in, dodatkowy rate budget)
+- [ ] Token wymaga uprawnienia `Introspection` (lub `InvoiceWrite` — ograniczone do sesji własnych) — udokumentować w [KSEF_TOKEN.md](KSEF_TOKEN.md)
+- [ ] Testy: mock `/sessions` + `/sessions/{ref}/invoices/ksef/{ksefNumber}/upo`, weryfikacja SHA256 mismatch handling, 21178
+
 **Zależności:** v0.5
-**DoD:** monitor wykrywa nowe faktury i wysyła push w jednym tanim API call; artefakty pobierane niezależnie; konfigurowalny interwał pollingu; testy aktualne.
+**DoD:** monitor wykrywa nowe faktury i wysyła push w jednym tanim API call; artefakty pobierane niezależnie; konfigurowalny interwał pollingu; UPO faktur sprzedażowych pobierane i zapisywane gdy `fetch_upo=true`; testy aktualne.
 
 ---
 

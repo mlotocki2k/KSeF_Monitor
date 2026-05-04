@@ -7,7 +7,7 @@ Wszystkie instrukcje CLI poniżej zakładają kontekst kontenera (`docker exec -
 
 ---
 
-## Pre-prod (branch `test`, 0.5.1)
+## Pre-prod (branch `test`, 0.5.2)
 
 Release `test` → `main` gating: **manualny user-test + iOS app v1.1.1 w App Store** (patrz `memory/project_release_gating.md`).
 
@@ -27,11 +27,11 @@ Release `test` → `main` gating: **manualny user-test + iOS app v1.1.1 w App St
   - [ ] Password change → revoke wszystkich sesji → wymuszone ponowne logowanie
   - [ ] Visual QA dark theme: navbar, dashboard, lista faktur, push, setup, login
 - [ ] Merge `test` → `main` (po zielonym user-test + iOS v1.1.1 prod)
-- [ ] Bump Docker image tag `v0.5.1` po merge
+- [ ] Bump Docker image tag `v0.5.2` po merge
 
 ---
 
-## Follow-ups po 0.5.1 (non-blocking)
+## Follow-ups po 0.5.2 (non-blocking)
 
 ### UI auth enhancements
 - [ ] Multi-user admin panel w UI (add/delete other users) — obecnie CLI-only (`python -m app.user_admin`)
@@ -52,7 +52,7 @@ faktur od pobierania artefaktów (oszczędność API calls KSeF).
 
 ---
 
-## Znane problemy (v0.5.1 test)
+## Znane problemy (v0.5.2 test)
 
 - `POST /api/v1/monitor/trigger` pre-V5-16 zwracał `Trigger failed` (phantom API call). Naprawione w `508d930`.
 - PDF footer pre-V5-17 pokazywał `KSeF Monitor v0.3` (hardcoded). Naprawione w `85debc0`.
@@ -63,11 +63,11 @@ faktur od pobierania artefaktów (oszczędność API calls KSeF).
 | Branch | `app/__init__.py` | `pyproject.toml` | PDF footer |
 |---|---|---|---|
 | `main` | `"2.0.0"` ⚠ | `"0.4.0"` ⚠ | `v0.3` ⚠ (hardcoded, przed V5-17) |
-| `test` | `"0.5.1"` ✓ | `"0.5.1"` ✓ | `v{{ app_version }}` ✓ (V5-17) |
+| `test` | `"0.5.2"` ✓ | `"0.5.2"` ✓ | `v{{ app_version }}` ✓ (V5-17) |
 
 **Main jest niespójny** (trzy różne wersje w trzech miejscach). Decyzja:
 czekamy z naprawą do merge `test` → `main` — wtedy jednym ruchem
-wyrównane do 0.5.1. Patrz `memory/project_release_gating.md`.
+wyrównane do 0.5.2. Patrz `memory/project_release_gating.md`.
 
 ---
 
@@ -79,7 +79,7 @@ Sprawdzić każdy wariant konfiguracji w docker-compose:
 - [ ] **Prod direct**: `auth_token` set, bez reverse-proxy → wizard + login + account OK
 - [ ] **Prod + reverse-proxy (`ui_public=true`)**: UI bypass, ale cookie resolver wciąż populuje `ui_username` → navbar kompletny, `/ui/account` działa
 - [ ] **Docker Swarm + secrets**: `API_AUTH_TOKEN` z secret file → bootstrap admin przy pustej DB
-- [ ] **Upgrade 0.5.0 → 0.5.1**: `alembic upgrade head` doda `ui_users` + `ui_sessions`; main.py bootstrap → `admin` z istniejącym `auth_token`
+- [ ] **Upgrade 0.5.0 → 0.5.2**: `alembic upgrade head` doda `ui_users` + `ui_sessions`; main.py bootstrap → `admin` z istniejącym `auth_token`
 
 ---
 

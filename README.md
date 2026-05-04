@@ -538,7 +538,7 @@ Zarządzanie: `python db_admin.py status|invoices|stats|errors|...` — szczegó
 
 ### Sekcja `api`
 
-REST API (FastAPI) + browser UI (v0.5.1).
+REST API (FastAPI) + browser UI (v0.5.2).
 
 | Pole | Default | Opis |
 |---|---|---|

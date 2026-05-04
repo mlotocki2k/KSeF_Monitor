@@ -1,6 +1,6 @@
 # KSeF Monitor - Documentation Index
 
-**Version:** v0.5.1
+**Version:** v0.5.2
 **Based on:** KSeF API v2.4.0
 **License:** MIT
 
@@ -41,18 +41,19 @@ chmod +x setup.sh && ./setup.sh
 
 | Document | Description | Read When |
 |----------|-------------|-----------|
-| **[REST_API.md](REST_API.md)** | REST API endpoints, dual-path auth (Bearer + cookie session), schemas (v0.5.1) | Building integrations, Web UI |
+| **[REST_API.md](REST_API.md)** | REST API endpoints, dual-path auth (Bearer + cookie session), schemas (v0.5.2) | Building integrations, Web UI |
 
 ### 🔐 Security
 
 | Document | Description | Read When |
 |----------|-------------|-----------|
-| **[SECURITY.md](SECURITY.md)** | Complete security guide (updated for v0.5.1: V5-13 UI user accounts) | Before production deployment |
-| **[TODO.md](TODO.md)** | Pre-prod checklist, user-test scenarios, follow-ups (branch `test`) | Tracking what's left for 0.5.1 ship |
+| **[SECURITY.md](SECURITY.md)** | Complete security guide (updated for v0.5.2: V5-13 UI user accounts) | Before production deployment |
+| **[TODO.md](TODO.md)** | Pre-prod checklist, user-test scenarios, follow-ups (branch `test`) | Tracking what's left for 0.5.2 ship |
 | **[ROADMAP.md](ROADMAP.md)** | All milestones + per-V5 task detail | Planning ahead / reviewing history |
 | **[CHANGELOG.md](../CHANGELOG.md)** | Full release history with security changelog | Reviewing what changed per release |
 | **[audit/20260421_security_audit_docker_v0_5_test_branch.md](../audit/20260421_security_audit_docker_v0_5_test_branch.md)** | v0.5 security audit report (original findings) | Reviewing audit scope and findings |
 | **[audit/20260422_security_reaudit_v0_5_post_remediation.md](../audit/20260422_security_reaudit_v0_5_post_remediation.md)** | v0.5 post-remediation re-audit | Verifying all findings were closed |
+| **[audit/20260504_security_audit_v0_5_1_ui_auth.md](../audit/20260504_security_audit_v0_5_1_ui_auth.md)** | v0.5.1 UI auth focused audit (V5-12/V5-13/V5-14) — 14 findings, all closed in v0.5.2 | Reviewing UI auth attack surface |
 | **[REAUDIT_REMEDIATION_REPORT.md](REAUDIT_REMEDIATION_REPORT.md)** | v0.4 re-audit remediation report (R-01…R-03) | Reviewing v0.4 remediation lineage |
 | **[.env.example](.env.example)** | Environment variables template | Setting up secrets |
 

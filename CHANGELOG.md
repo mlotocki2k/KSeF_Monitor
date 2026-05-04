@@ -2,6 +2,106 @@
 
 All notable changes to KSeF Monitor are documented here.
 
+## [0.5.2] — 2026-05-04 (UI auth security audit remediation)
+
+Closes 14 findings from `audit/20260504_security_audit_v0_5_1_ui_auth.md`
+(focused review of V5-12/V5-13/V5-14 UI auth surface added in 0.5.1 that
+hadn't gone through the v0.5.0 audit cycle). 0 CRITICAL, 0 HIGH originally;
+6 MEDIUM, 6 LOW, 5 INFO. All addressed.
+
+### Session security
+
+- **U-01** Cookie `Secure` flag now honors `X-Forwarded-Proto` and
+  exposes `api.cookie_secure_mode` (`auto` | `always` | `never`). Behind
+  a TLS-terminating reverse proxy `request.url.scheme` stays `http`; the
+  pre-fix path stripped `Secure` despite the user-facing connection
+  being HTTPS.
+- **U-04** Opt-in session UA fingerprint binding via
+  `api.session_strict_binding`. SHA-256(User-Agent) stored in new
+  nullable `ui_sessions.ua_hash` column; mismatch revokes the session
+  and bounces to `/ui/login`. Pre-existing rows without `ua_hash` are
+  grandfathered (graceful enable on running deployments).
+- **U-09** Absolute session lifetime cap of 30 days (`SESSION_ABSOLUTE_LIFETIME`)
+  enforced regardless of sliding renewal. Caps the value of a stolen
+  cookie even on always-active accounts.
+- **U-12** Audit log surface: session create, revoke, absolute-cap eviction,
+  failed-login lockout — username_len rather than raw username (U-08
+  partial mitigation).
+
+### Authentication strength
+
+- **U-02** SHA-256 + base64 pre-hash for passwords >72 bytes — closes
+  bcrypt's silent-truncation collision risk and makes the codebase
+  bcrypt-5.0-ready (5.0 raises `ValueError` on >72B otherwise → DoS on
+  upgrade for users with long passwords). bcrypt 4.x continues to work.
+- **U-03** Per-username brute-force lockout (new `ui_login_attempts`
+  table): 5 fails in a 15-minute sliding window → 15-minute lockout.
+  `is_login_locked` checked before bcrypt to avoid burning CPU on
+  hot-locked accounts and to deny the timing oracle.
+- **U-07** Constant-time login: bcrypt always runs (against a
+  pre-computed dummy hash when the username does not exist), defeating
+  the timing-based username enumeration probe.
+- **U-11** Password strength: top-100 breach blocklist (rockyou top-100,
+  NIST SP 800-63B guidance, in-process — no corpus dependency) + reject
+  passwords containing the username (≥3 chars, case-insensitive).
+
+### Setup wizard hardening
+
+- **U-06** New `create_first_admin_atomic(db, username, password)`
+  helper uses `BEGIN IMMEDIATE` to acquire the SQLite RESERVED lock
+  eagerly, closing the TOCTOU window between `count_users()` and
+  `create_user()` that previously allowed two simultaneous setup POSTs
+  to both succeed and create twin admin accounts.
+
+### Web hardening
+
+- **U-05** CSP `script-src` now uses a per-request nonce (16-byte
+  `secrets.token_urlsafe`) instead of `'unsafe-inline'`. All inline
+  `<script>` tags in `app/ui/templates/*.html` carry
+  `nonce="{{ request.state.csp_nonce }}"`. `style-src 'unsafe-inline'`
+  remains as a documented carryover (Tailwind utility deltas).
+- **U-10** `_safe_next()` strict prefix check: rejects `/ui-attacker/…`
+  paths (must be exactly `/ui` or start with `/ui/`).
+
+### Code quality
+
+- **U-13** `count_users()` uses `COUNT(*)` instead of materializing all
+  row IDs.
+- **U-15** `resolve_ui_session` catches only `(OperationalError,
+  DBAPIError)` instead of bare `Exception` — DB hiccups still degrade
+  gracefully but genuine programming errors propagate to the 500
+  handler instead of being silently swallowed.
+- **U-17** Username lookup, lockout keying, and login flow all
+  case-insensitive (`func.lower`) — `admin` / `Admin` / `ADMIN` resolve
+  to the same row, share the same brute-force counter, and cannot
+  exist as separate accounts.
+
+### Migrations
+
+- `f1a2b3c45678` — phase6: `ui_login_attempts`
+- `g2b3c4d56789` — phase7: `ui_sessions.ua_hash` (nullable)
+
+### Test count
+
+- `tests/test_ui_user_auth.py`: 91 cases (was 57).
+- New classes: `TestUsernameCaseInsensitive` (3), `TestLoginLockout` (7),
+  `TestCookieSecureFlag` (6), `TestSessionUaBinding` (6),
+  `TestCspNonce` (3); plus extensions to `TestPasswordHashing`,
+  `TestSetupWizard`, `TestSessionLifecycle`, `TestValidation`.
+- `tests/test_db_migration.py`: head ref bumped to `g2b3c4d56789`.
+
+### Bonus
+
+- `chore: sync spec/openapi.json with KSeF production (2026-04-23 build)` —
+  RR enum cleanup, 16-hex validation tightening, build bump
+  `20260422.4 → 20260423.2`.
+- `ci(deps): respect wontfix label` — `check-requirements-updates.yml`
+  no longer auto-reopens issues marked wontfix when the same intentionally
+  pinned packages stay outdated; novel packages still create a fresh
+  alert (closes recurring noise from issue #28).
+
+---
+
 ## [0.5.1] — 2026-04-23 (UI auth UX)
 
 ### Browser UI auth — V5-12 + V5-13

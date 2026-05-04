@@ -1,6 +1,6 @@
 # Security Guide - Protecting Sensitive Credentials
 
-This guide explains multiple methods to secure your API tokens and credentials for the KSeF Monitor v0.5.1.
+This guide explains multiple methods to secure your API tokens and credentials for the KSeF Monitor v0.5.2.
 
 **Protected Credentials:**
 - KSeF API token
