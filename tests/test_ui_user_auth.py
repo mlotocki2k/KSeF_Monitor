@@ -99,7 +99,7 @@ class TestPasswordHashing:
 class TestUsernameCaseInsensitive:
     def test_lookup_finds_user_with_different_case(self, db):
         with db.get_session() as s:
-            create_user(s, "Admin", "password123")
+            create_user(s, "Admin", "SolidPass_88!")
         with db.get_session() as s:
             assert get_user_by_username(s, "admin") is not None
             assert get_user_by_username(s, "ADMIN") is not None
@@ -107,17 +107,17 @@ class TestUsernameCaseInsensitive:
 
     def test_login_works_with_different_case(self, db, client):
         with db.get_session() as s:
-            create_user(s, "Alice", "password123")
+            create_user(s, "Alice", "SolidPass_88!")
         resp = client.post(
             "/ui/login",
-            data={"username": "ALICE", "password": "password123"},
+            data={"username": "ALICE", "password": "SolidPass_88!"},
         )
         assert resp.status_code == 303
         assert "mksef_session" in resp.cookies
 
     def test_lockout_shared_across_casing_variants(self, db, client):
         with db.get_session() as s:
-            create_user(s, "alice", "password123")
+            create_user(s, "alice", "SolidPass_88!")
         # Hammer with different casings — counter must aggregate.
         for u in ["alice", "ALICE", "Alice", "ALICE", "alice"]:
             client.post("/ui/login", data={"username": u, "password": "wrong"})
@@ -147,7 +147,25 @@ class TestValidation:
         assert validate_password("short") is not None
 
     def test_password_min_length_passes(self):
-        assert validate_password("12345678") is None
+        # Distinct from the breached blocklist; validates pure length floor.
+        assert validate_password("Solid_Pass_88!") is None
+
+    # U-11 — strength: blocklist + username substring guard
+    def test_password_in_blocklist_rejected(self):
+        for pw in ["12345678", "password", "qwerty123", "PASSWORD123", "iloveyou"]:
+            err = validate_password(pw)
+            assert err is not None, f"{pw!r} should be flagged"
+
+    def test_password_containing_username_rejected(self):
+        assert validate_password("alicePass!", username="alice") is not None
+        assert validate_password("Hello_ALICE_2026", username="alice") is not None
+
+    def test_password_unrelated_to_username_passes(self):
+        assert validate_password("Solid_Pass_88!", username="alice") is None
+
+    def test_short_username_does_not_trigger_substring_check(self):
+        # 2-char usernames would false-positive too much; only check ≥3 chars.
+        assert validate_password("Solid_Pass_88!", username="bo") is None
 
 
 class TestUserCrud:
@@ -157,38 +175,38 @@ class TestUserCrud:
 
     def test_create_user_increments_count(self, db):
         with db.get_session() as s:
-            create_user(s, "alice", "password123")
+            create_user(s, "alice", "SolidPass_88!")
             assert count_users(s) == 1
 
     def test_get_user_by_username(self, db):
         with db.get_session() as s:
-            create_user(s, "alice", "password123")
+            create_user(s, "alice", "SolidPass_88!")
             u = get_user_by_username(s, "alice")
             assert u is not None
             assert u.username == "alice"
 
     def test_set_password_revokes_sessions(self, db):
         with db.get_session() as s:
-            u = create_user(s, "alice", "old-password-123")
+            u = create_user(s, "alice", "OldSolid_66!")
             sid = create_session(s, u)
             assert validate_session(s, sid) is not None
             set_password(s, u, "new-password-456")
             assert validate_session(s, sid) is None
             assert verify_password("new-password-456", u.password_hash)
-            assert not verify_password("old-password-123", u.password_hash)
+            assert not verify_password("OldSolid_66!", u.password_hash)
 
 
 class TestSessionLifecycle:
     def test_create_session_returns_64_char_hex(self, db):
         with db.get_session() as s:
-            u = create_user(s, "alice", "password123")
+            u = create_user(s, "alice", "SolidPass_88!")
             sid = create_session(s, u)
             assert len(sid) == 64
             assert all(c in "0123456789abcdef" for c in sid)
 
     def test_validate_session_returns_user(self, db):
         with db.get_session() as s:
-            u = create_user(s, "alice", "password123")
+            u = create_user(s, "alice", "SolidPass_88!")
             sid = create_session(s, u)
             result = validate_session(s, sid)
             assert result is not None
@@ -211,7 +229,7 @@ class TestSessionLifecycle:
         from datetime import datetime, timedelta, timezone
 
         with db.get_session() as s:
-            u = create_user(s, "alice", "password123")
+            u = create_user(s, "alice", "SolidPass_88!")
             sid = create_session(s, u)
             row = s.get(UiSession, sid)
             row.expires_at = datetime.now(timezone.utc) - timedelta(seconds=1)
@@ -223,7 +241,7 @@ class TestSessionLifecycle:
         from datetime import datetime, timezone
 
         with db.get_session() as s:
-            u = create_user(s, "alice", "password123")
+            u = create_user(s, "alice", "SolidPass_88!")
             sid = create_session(s, u)
             before = s.get(UiSession, sid).expires_at
             validate_session(s, sid)
@@ -235,7 +253,7 @@ class TestSessionLifecycle:
         from datetime import datetime, timedelta, timezone
 
         with db.get_session() as s:
-            u = create_user(s, "alice", "password123")
+            u = create_user(s, "alice", "SolidPass_88!")
             sid = create_session(s, u)
             row = s.get(UiSession, sid)
             # Simulate a session that was created longer ago than the
@@ -251,7 +269,7 @@ class TestSessionLifecycle:
         from datetime import datetime, timedelta, timezone
 
         with db.get_session() as s:
-            u = create_user(s, "alice", "password123")
+            u = create_user(s, "alice", "SolidPass_88!")
             sid = create_session(s, u)
             row = s.get(UiSession, sid)
             row.created_at = datetime.now(timezone.utc) - SESSION_ABSOLUTE_LIFETIME + timedelta(hours=1)
@@ -262,7 +280,7 @@ class TestSessionLifecycle:
         from datetime import datetime, timedelta, timezone
 
         with db.get_session() as s:
-            u = create_user(s, "alice", "password123")
+            u = create_user(s, "alice", "SolidPass_88!")
             sid_a = create_session(s, u)
             sid_b = create_session(s, u)
             past = datetime.now(timezone.utc) - timedelta(days=1)
@@ -283,7 +301,7 @@ class TestSetupWizard:
 
     def test_setup_redirects_to_login_when_users_exist(self, db, client):
         with db.get_session() as s:
-            create_user(s, "alice", "password123")
+            create_user(s, "alice", "SolidPass_88!")
         resp = client.get("/ui/setup")
         assert resp.status_code == 303
         assert resp.headers["location"] == "/ui/login"
@@ -298,8 +316,8 @@ class TestSetupWizard:
             "/ui/setup",
             data={
                 "username": "alice",
-                "password": "password123",
-                "password_confirm": "password123",
+                "password": "SolidPass_88!",
+                "password_confirm": "SolidPass_88!",
             },
         )
         assert resp.status_code == 303
@@ -308,7 +326,7 @@ class TestSetupWizard:
         with db.get_session() as s:
             assert count_users(s) == 1
             u = get_user_by_username(s, "alice")
-            assert u and verify_password("password123", u.password_hash)
+            assert u and verify_password("SolidPass_88!", u.password_hash)
 
     def test_setup_rejects_short_password(self, client):
         resp = client.post(
@@ -327,8 +345,8 @@ class TestSetupWizard:
             "/ui/setup",
             data={
                 "username": "alice",
-                "password": "password123",
-                "password_confirm": "different456",
+                "password": "SolidPass_88!",
+                "password_confirm": "Different_99!",
             },
         )
         assert resp.status_code == 303
@@ -337,7 +355,7 @@ class TestSetupWizard:
     # U-06 — atomic helper guarantees a single first admin even if the handler
     # path is bypassed or invoked twice.
     def test_atomic_first_admin_creates_user_and_session(self, db):
-        result = create_first_admin_atomic(db, "alice", "password123")
+        result = create_first_admin_atomic(db, "alice", "SolidPass_88!")
         assert result is not None
         user_id, sid = result
         assert isinstance(user_id, int) and user_id > 0
@@ -347,7 +365,7 @@ class TestSetupWizard:
             assert get_user_by_username(s, "alice") is not None
 
     def test_atomic_first_admin_returns_none_when_user_exists(self, db):
-        first = create_first_admin_atomic(db, "alice", "password123")
+        first = create_first_admin_atomic(db, "alice", "SolidPass_88!")
         assert first is not None
         # Any subsequent call must NOT create a second user.
         second = create_first_admin_atomic(db, "mallory", "password789")
@@ -358,7 +376,7 @@ class TestSetupWizard:
             assert get_user_by_username(s, "mallory") is None
 
     def test_atomic_first_admin_session_validates(self, db):
-        result = create_first_admin_atomic(db, "alice", "password123")
+        result = create_first_admin_atomic(db, "alice", "SolidPass_88!")
         assert result is not None
         _, sid = result
         with db.get_session() as s:
@@ -372,8 +390,8 @@ class TestSetupWizard:
             "/ui/setup",
             data={
                 "username": "alice",
-                "password": "password123",
-                "password_confirm": "password123",
+                "password": "SolidPass_88!",
+                "password_confirm": "SolidPass_88!",
             },
         )
         client.cookies.clear()
@@ -381,8 +399,8 @@ class TestSetupWizard:
             "/ui/setup",
             data={
                 "username": "bob",
-                "password": "password456",
-                "password_confirm": "password456",
+                "password": "SolidPass_99!",
+                "password_confirm": "SolidPass_99!",
             },
         )
         assert resp.status_code == 303
@@ -394,17 +412,17 @@ class TestSetupWizard:
 class TestLoginFlow:
     def test_login_form_renders_when_users_exist(self, db, client):
         with db.get_session() as s:
-            create_user(s, "alice", "password123")
+            create_user(s, "alice", "SolidPass_88!")
         resp = client.get("/ui/login")
         assert resp.status_code == 200
         assert "username" in resp.text.lower()
 
     def test_login_success_sets_cookie(self, db, client):
         with db.get_session() as s:
-            create_user(s, "alice", "password123")
+            create_user(s, "alice", "SolidPass_88!")
         resp = client.post(
             "/ui/login",
-            data={"username": "alice", "password": "password123", "next": "/ui"},
+            data={"username": "alice", "password": "SolidPass_88!", "next": "/ui"},
         )
         assert resp.status_code == 303
         assert resp.headers["location"] == "/ui"
@@ -414,7 +432,7 @@ class TestLoginFlow:
 
     def test_login_wrong_password_no_cookie(self, db, client):
         with db.get_session() as s:
-            create_user(s, "alice", "password123")
+            create_user(s, "alice", "SolidPass_88!")
         resp = client.post(
             "/ui/login",
             data={"username": "alice", "password": "wrong", "next": "/ui"},
@@ -425,7 +443,7 @@ class TestLoginFlow:
 
     def test_login_unknown_user_no_cookie(self, db, client):
         with db.get_session() as s:
-            create_user(s, "alice", "password123")
+            create_user(s, "alice", "SolidPass_88!")
         resp = client.post(
             "/ui/login",
             data={"username": "ghost", "password": "anything", "next": "/ui"},
@@ -442,12 +460,12 @@ class TestLoginFlow:
 
     def test_login_open_redirect_blocked(self, db, client):
         with db.get_session() as s:
-            create_user(s, "alice", "password123")
+            create_user(s, "alice", "SolidPass_88!")
         resp = client.post(
             "/ui/login",
             data={
                 "username": "alice",
-                "password": "password123",
+                "password": "SolidPass_88!",
                 "next": "https://evil.example/x",
             },
         )
@@ -456,12 +474,12 @@ class TestLoginFlow:
 
     def test_login_protocol_relative_blocked(self, db, client):
         with db.get_session() as s:
-            create_user(s, "alice", "password123")
+            create_user(s, "alice", "SolidPass_88!")
         resp = client.post(
             "/ui/login",
             data={
                 "username": "alice",
-                "password": "password123",
+                "password": "SolidPass_88!",
                 "next": "//evil.example",
             },
         )
@@ -470,10 +488,10 @@ class TestLoginFlow:
 
     def test_cookie_is_httponly_and_strict(self, db, client):
         with db.get_session() as s:
-            create_user(s, "alice", "password123")
+            create_user(s, "alice", "SolidPass_88!")
         resp = client.post(
             "/ui/login",
-            data={"username": "alice", "password": "password123"},
+            data={"username": "alice", "password": "SolidPass_88!"},
         )
         cookie_header = resp.headers.get("set-cookie", "").lower()
         assert "httponly" in cookie_header
@@ -514,13 +532,13 @@ class TestLoginLockout:
 
     def test_lock_blocks_login_endpoint(self, db, client):
         with db.get_session() as s:
-            create_user(s, "alice", "password123")
+            create_user(s, "alice", "SolidPass_88!")
             for _ in range(LOGIN_LOCKOUT_THRESHOLD):
                 record_login_failure(s, "alice")
         # Even with correct password, locked user gets 'locked' error.
         resp = client.post(
             "/ui/login",
-            data={"username": "alice", "password": "password123"},
+            data={"username": "alice", "password": "SolidPass_88!"},
         )
         assert resp.status_code == 303
         assert "error=locked" in resp.headers["location"]
@@ -530,7 +548,7 @@ class TestLoginLockout:
         # Hits the dummy-hash branch but still records the attempt so a
         # botnet can't probe usernames forever without tripping lockout.
         with db.get_session() as s:
-            create_user(s, "real_admin", "password123")  # so count_users > 0
+            create_user(s, "real_admin", "SolidPass_88!")  # so count_users > 0
         for _ in range(LOGIN_LOCKOUT_THRESHOLD):
             client.post(
                 "/ui/login",
@@ -541,7 +559,7 @@ class TestLoginLockout:
 
     def test_successful_login_resets_after_some_failures(self, db, client):
         with db.get_session() as s:
-            create_user(s, "alice", "password123")
+            create_user(s, "alice", "SolidPass_88!")
         # 3 failed attempts, then successful login
         for _ in range(3):
             client.post(
@@ -550,7 +568,7 @@ class TestLoginLockout:
             )
         resp = client.post(
             "/ui/login",
-            data={"username": "alice", "password": "password123"},
+            data={"username": "alice", "password": "SolidPass_88!"},
         )
         assert resp.status_code == 303
         assert "mksef_session" in resp.cookies
@@ -563,10 +581,10 @@ class TestCookieSecureFlag:
     def _login_and_get_set_cookie(self, db, app, headers=None):
         client = TestClient(app, follow_redirects=False)
         with db.get_session() as s:
-            create_user(s, "alice", "password123")
+            create_user(s, "alice", "SolidPass_88!")
         resp = client.post(
             "/ui/login",
-            data={"username": "alice", "password": "password123"},
+            data={"username": "alice", "password": "SolidPass_88!"},
             headers=headers or {},
         )
         return resp.headers.get("set-cookie", "").lower()
@@ -612,7 +630,7 @@ class TestCookieSecureFlag:
 
 
 class TestSessionAuth:
-    def _login(self, db, client, username="alice", password="password123"):
+    def _login(self, db, client, username="alice", password="SolidPass_88!"):
         with db.get_session() as s:
             create_user(s, username, password)
         resp = client.post(
@@ -623,8 +641,8 @@ class TestSessionAuth:
     def test_cookie_grants_ui_access(self, db, app_auth):
         client = TestClient(app_auth, follow_redirects=False, raise_server_exceptions=False)
         with db.get_session() as s:
-            create_user(s, "alice", "password123")
-        client.post("/ui/login", data={"username": "alice", "password": "password123"})
+            create_user(s, "alice", "SolidPass_88!")
+        client.post("/ui/login", data={"username": "alice", "password": "SolidPass_88!"})
         resp = client.get("/ui")
         assert resp.status_code != 303
         assert resp.status_code != 401
@@ -632,8 +650,8 @@ class TestSessionAuth:
     def test_cookie_grants_api_access(self, db, app_auth):
         client = TestClient(app_auth, follow_redirects=False)
         with db.get_session() as s:
-            create_user(s, "alice", "password123")
-        client.post("/ui/login", data={"username": "alice", "password": "password123"})
+            create_user(s, "alice", "SolidPass_88!")
+        client.post("/ui/login", data={"username": "alice", "password": "SolidPass_88!"})
         resp = client.get("/api/v1/monitor/ksef-status")
         assert resp.status_code != 401
 
@@ -646,7 +664,7 @@ class TestSessionAuth:
 
     def test_invalid_cookie_redirects_to_login(self, db, client):
         with db.get_session() as s:
-            create_user(s, "alice", "password123")
+            create_user(s, "alice", "SolidPass_88!")
         client.cookies.set("mksef_session", "deadbeef" * 8)
         resp = client.get("/ui")
         assert resp.status_code == 303
@@ -657,9 +675,9 @@ class TestLogout:
     def test_logout_revokes_db_session(self, db, app_auth):
         client = TestClient(app_auth, follow_redirects=False)
         with db.get_session() as s:
-            create_user(s, "alice", "password123")
+            create_user(s, "alice", "SolidPass_88!")
         login = client.post(
-            "/ui/login", data={"username": "alice", "password": "password123"}
+            "/ui/login", data={"username": "alice", "password": "SolidPass_88!"}
         )
         sid = login.cookies["mksef_session"]
         with db.get_session() as s:
@@ -672,8 +690,8 @@ class TestLogout:
 
     def test_logout_clears_cookie(self, db, client):
         with db.get_session() as s:
-            create_user(s, "alice", "password123")
-        client.post("/ui/login", data={"username": "alice", "password": "password123"})
+            create_user(s, "alice", "SolidPass_88!")
+        client.post("/ui/login", data={"username": "alice", "password": "SolidPass_88!"})
         resp = client.post("/ui/logout")
         cookie_hdr = resp.headers.get("set-cookie", "").lower()
         assert "mksef_session" in cookie_hdr
@@ -683,9 +701,9 @@ class TestLogout:
 class TestAccountPasswordChange:
     def _login(self, db, client):
         with db.get_session() as s:
-            create_user(s, "alice", "old-password-123")
+            create_user(s, "alice", "OldSolid_66!")
         client.post(
-            "/ui/login", data={"username": "alice", "password": "old-password-123"}
+            "/ui/login", data={"username": "alice", "password": "OldSolid_66!"}
         )
 
     def test_change_password_requires_current(self, db, client):
@@ -706,7 +724,7 @@ class TestAccountPasswordChange:
         resp = client.post(
             "/ui/account/password",
             data={
-                "current_password": "old-password-123",
+                "current_password": "OldSolid_66!",
                 "new_password": "new-password-456",
                 "new_password_confirm": "different",
             },
@@ -719,7 +737,7 @@ class TestAccountPasswordChange:
         resp = client.post(
             "/ui/account/password",
             data={
-                "current_password": "old-password-123",
+                "current_password": "OldSolid_66!",
                 "new_password": "new-password-456",
                 "new_password_confirm": "new-password-456",
             },
@@ -730,11 +748,11 @@ class TestAccountPasswordChange:
         with db.get_session() as s:
             u = get_user_by_username(s, "alice")
             assert verify_password("new-password-456", u.password_hash)
-            assert not verify_password("old-password-123", u.password_hash)
+            assert not verify_password("OldSolid_66!", u.password_hash)
 
     def test_account_unauthenticated_redirects(self, client, db):
         with db.get_session() as s:
-            create_user(s, "alice", "password123")
+            create_user(s, "alice", "SolidPass_88!")
         resp = client.get("/ui/account")
         assert resp.status_code == 303
         assert "/ui/login" in resp.headers["location"]

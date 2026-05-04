@@ -457,7 +457,7 @@ def ui_setup_submit(
     username = username.strip()
     err = (
         validate_username(username)
-        or validate_password(password)
+        or validate_password(password, username=username)
         or (None if password == password_confirm else "Hasła nie są takie same.")
     )
     if err:
@@ -619,14 +619,6 @@ def ui_account_change_password(
     if user_id is None or db is None:
         return RedirectResponse(url="/ui/login", status_code=303)
 
-    err = validate_password(new_password) or (
-        None if new_password == new_password_confirm else "Hasła nie są takie same."
-    )
-    if err:
-        return RedirectResponse(
-            url=f"/ui/account?error={quote(err)}", status_code=303
-        )
-
     with db.get_session() as s:
         fresh = s.get(UiUser, user_id)
         if fresh is None or not verify_password(current_password, fresh.password_hash):
@@ -634,6 +626,15 @@ def ui_account_change_password(
                 url=f"/ui/account?error={quote('Aktualne hasło nieprawidłowe.')}",
                 status_code=303,
             )
+
+        err = validate_password(new_password, username=fresh.username) or (
+            None if new_password == new_password_confirm else "Hasła nie są takie same."
+        )
+        if err:
+            return RedirectResponse(
+                url=f"/ui/account?error={quote(err)}", status_code=303
+            )
+
         set_password(s, fresh, new_password)
     resp = RedirectResponse(url="/ui/login?ok=password", status_code=303)
     resp.delete_cookie(_SESSION_COOKIE, path="/")

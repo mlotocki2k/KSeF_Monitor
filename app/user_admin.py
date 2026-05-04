@@ -40,13 +40,13 @@ def _open_db() -> Database:
     return Database(db_path)
 
 
-def _prompt_password(prompt: str = "Hasło: ") -> str:
+def _prompt_password(prompt: str = "Hasło: ", username: str = None) -> str:
     p1 = getpass.getpass(prompt)
     p2 = getpass.getpass("Powtórz hasło: ")
     if p1 != p2:
         print("Hasła nie zgadzają się.", file=sys.stderr)
         sys.exit(1)
-    err = validate_password(p1)
+    err = validate_password(p1, username=username)
     if err:
         print(err, file=sys.stderr)
         sys.exit(1)
@@ -81,7 +81,7 @@ def cmd_add(args):
         if get_user_by_username(s, args.username):
             print(f"Użytkownik {args.username!r} już istnieje.", file=sys.stderr)
             sys.exit(1)
-        password = _prompt_password()
+        password = _prompt_password(username=args.username)
         u = create_user(s, args.username, password)
     print(f"Utworzono użytkownika {u.username!r} (id={u.id}).")
 
@@ -93,7 +93,7 @@ def cmd_reset_password(args):
         if not u:
             print(f"Brak użytkownika {args.username!r}.", file=sys.stderr)
             sys.exit(1)
-        password = _prompt_password("Nowe hasło: ")
+        password = _prompt_password("Nowe hasło: ", username=u.username)
         set_password(s, u, password)
     print(f"Hasło zmienione dla {args.username!r}. Wszystkie sesje unieważnione.")
 
