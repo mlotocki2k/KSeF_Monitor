@@ -445,9 +445,7 @@ def ui_setup_submit(
 ):
     """Create the initial user atomically (race-safe). Auto-login on success."""
     from app.ui_auth import (
-        count_users,
-        create_session,
-        create_user,
+        create_first_admin_atomic,
         validate_password,
         validate_username,
     )
@@ -469,11 +467,11 @@ def ui_setup_submit(
             url=f"/ui/setup?error={quote(err)}", status_code=303
         )
 
-    with db.get_session() as s:
-        if count_users(s) > 0:
-            return RedirectResponse(url="/ui/login", status_code=303)
-        user = create_user(s, username, password)
-        sid = create_session(s, user)
+    # Atomic check-and-insert via BEGIN IMMEDIATE — closes U-06 race window.
+    result = create_first_admin_atomic(db, username, password)
+    if result is None:
+        return RedirectResponse(url="/ui/login", status_code=303)
+    _, sid = result
 
     resp = RedirectResponse(url="/ui", status_code=303)
     _set_session_cookie(resp, sid, request)

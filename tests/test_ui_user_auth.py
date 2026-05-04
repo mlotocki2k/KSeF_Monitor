@@ -12,6 +12,7 @@ from app.ui_auth import (
     SESSION_TTL,
     cleanup_expired_sessions,
     count_users,
+    create_first_admin_atomic,
     create_session,
     create_user,
     get_user_by_username,
@@ -265,6 +266,39 @@ class TestSetupWizard:
         )
         assert resp.status_code == 303
         assert "/ui/setup?error=" in resp.headers["location"]
+
+    # U-06 — atomic helper guarantees a single first admin even if the handler
+    # path is bypassed or invoked twice.
+    def test_atomic_first_admin_creates_user_and_session(self, db):
+        result = create_first_admin_atomic(db, "alice", "password123")
+        assert result is not None
+        user_id, sid = result
+        assert isinstance(user_id, int) and user_id > 0
+        assert len(sid) == 64
+        with db.get_session() as s:
+            assert count_users(s) == 1
+            assert get_user_by_username(s, "alice") is not None
+
+    def test_atomic_first_admin_returns_none_when_user_exists(self, db):
+        first = create_first_admin_atomic(db, "alice", "password123")
+        assert first is not None
+        # Any subsequent call must NOT create a second user.
+        second = create_first_admin_atomic(db, "mallory", "password789")
+        assert second is None
+        with db.get_session() as s:
+            assert count_users(s) == 1
+            assert get_user_by_username(s, "alice") is not None
+            assert get_user_by_username(s, "mallory") is None
+
+    def test_atomic_first_admin_session_validates(self, db):
+        result = create_first_admin_atomic(db, "alice", "password123")
+        assert result is not None
+        _, sid = result
+        with db.get_session() as s:
+            validated = validate_session(s, sid)
+            assert validated is not None
+            user, _ = validated
+            assert user.username == "alice"
 
     def test_setup_locked_after_first_user(self, client, db):
         client.post(

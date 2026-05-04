@@ -115,6 +115,62 @@ def create_user(session: Session, username: str, password: str) -> UiUser:
     return user
 
 
+def create_first_admin_atomic(
+    db, username: str, password: str
+) -> Optional[Tuple[int, str]]:
+    """Race-safe creation of the very first UI admin.
+
+    Returns (user_id, session_id) on success or None if a concurrent request
+    has already created the first user. The default ORM `count_users()` +
+    `create_user()` flow leaves a TOCTOU window open under autocommit-off
+    deferred-BEGIN: two simultaneous setup POSTs can both observe count=0,
+    both insert, and end with two admin accounts (U-06).
+
+    SQLite-specific resolution: `BEGIN IMMEDIATE` acquires the RESERVED lock
+    eagerly, serializing concurrent writers; the second one sees count > 0
+    inside the same transaction and rolls back.
+    """
+    from sqlalchemy import text
+
+    pw_hash = hash_password(password)
+    sid = secrets.token_hex(32)
+    now = datetime.now(timezone.utc)
+    expires = now + SESSION_TTL
+
+    with db.engine.connect() as conn:
+        conn.exec_driver_sql("BEGIN IMMEDIATE")
+        try:
+            n = conn.execute(text("SELECT COUNT(*) FROM ui_users")).scalar() or 0
+            if n > 0:
+                conn.exec_driver_sql("ROLLBACK")
+                return None
+
+            result = conn.execute(
+                text(
+                    "INSERT INTO ui_users (username, password_hash, created_at, last_login_at) "
+                    "VALUES (:u, :h, :now, :now)"
+                ),
+                {"u": username, "h": pw_hash, "now": now},
+            )
+            user_id = result.lastrowid
+
+            conn.execute(
+                text(
+                    "INSERT INTO ui_sessions (id, user_id, expires_at, created_at, last_accessed_at) "
+                    "VALUES (:sid, :uid, :ex, :now, :now)"
+                ),
+                {"sid": sid, "uid": user_id, "ex": expires, "now": now},
+            )
+            conn.exec_driver_sql("COMMIT")
+            logger.info(
+                "UI first-admin created (atomic): %s (id=%d)", username, user_id
+            )
+            return user_id, sid
+        except Exception:
+            conn.exec_driver_sql("ROLLBACK")
+            raise
+
+
 def set_password(session: Session, user: UiUser, new_password: str) -> None:
     """Update user's password and revoke all their sessions."""
     user.password_hash = hash_password(new_password)
