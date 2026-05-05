@@ -74,3 +74,74 @@ class TestDBMigration:
                 )
         finally:
             engine.dispose()
+
+    def test_upgrade_from_stale_alembic_version_is_idempotent(self, fresh_db_path):
+        """Regression for the 2026-05-05 prod incident.
+
+        Reproduce the prod-test state: Base.metadata.create_all materialized
+        every table for the *current* model BUT alembic_version is pinned at
+        d9e0f1g2h345 (phase4) — and the existing ui_sessions row is missing
+        the ua_hash column that phase7 introduces. `alembic upgrade head`
+        must reach g2b3c4d56789 without fighting CREATE TABLE collisions
+        and must add the missing column.
+        """
+        from sqlalchemy import create_engine, text, inspect as sa_inspect
+        from app.database import Base
+
+        # Step 1: build full current model
+        engine = create_engine(f"sqlite:///{fresh_db_path}")
+        try:
+            Base.metadata.create_all(engine)
+
+            # Step 2: rebuild ui_sessions WITHOUT ua_hash to simulate the
+            # state of a deployment that ran on v0.5.1 model + create_all.
+            with engine.begin() as conn:
+                conn.execute(text("DROP TABLE ui_sessions"))
+                conn.execute(text(
+                    "CREATE TABLE ui_sessions ("
+                    "  id VARCHAR(64) PRIMARY KEY,"
+                    "  user_id INTEGER NOT NULL,"
+                    "  expires_at DATETIME NOT NULL,"
+                    "  created_at DATETIME NOT NULL,"
+                    "  last_accessed_at DATETIME NOT NULL,"
+                    "  FOREIGN KEY(user_id) REFERENCES ui_users(id) ON DELETE CASCADE"
+                    ")"
+                ))
+                conn.execute(text(
+                    "CREATE INDEX ix_ui_sessions_user ON ui_sessions(user_id)"
+                ))
+                conn.execute(text(
+                    "CREATE INDEX ix_ui_sessions_expires ON ui_sessions(expires_at)"
+                ))
+
+                # Step 3: pin alembic_version to a stale revision
+                conn.execute(text("CREATE TABLE IF NOT EXISTS alembic_version "
+                                   "(version_num VARCHAR(32) PRIMARY KEY)"))
+                conn.execute(text("DELETE FROM alembic_version"))
+                conn.execute(text(
+                    "INSERT INTO alembic_version VALUES ('d9e0f1g2h345')"
+                ))
+        finally:
+            engine.dispose()
+
+        # Step 4: run the production code path — must converge to head
+        from app.database import Database
+        db = Database(fresh_db_path)
+        db.create_tables()
+
+        # Step 5: verify migrations completed
+        engine = create_engine(f"sqlite:///{fresh_db_path}")
+        try:
+            with engine.connect() as conn:
+                ver = conn.execute(
+                    text("SELECT version_num FROM alembic_version")
+                ).scalar()
+                assert ver == "g2b3c4d56789", (
+                    f"upgrade did not reach head; got {ver!r}"
+                )
+            cols = [c["name"] for c in sa_inspect(engine).get_columns("ui_sessions")]
+            assert "ua_hash" in cols, (
+                f"phase7 ALTER missing — ui_sessions cols: {cols}"
+            )
+        finally:
+            engine.dispose()
