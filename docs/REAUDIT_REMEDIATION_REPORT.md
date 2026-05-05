@@ -7,7 +7,7 @@
 > For the full v0.5 security hardening cycle (13 tasks, 12 audit findings + 9 v0.4 carryovers), see:
 > - **Original audit:** `audit/20260421_security_audit_docker_v0_5_test_branch.md`
 > - **Post-remediation re-audit:** `audit/20260422_security_reaudit_v0_5_post_remediation.md`
-> - **Implementation plan:** `docs/superpowers/plans/2026-04-21-v0_5-security-audit-remediation.md`
+> - **Implementation plan:** `audit/2026-04-21-v0_5-security-audit-remediation.md`
 > - **Full changelog entry:** `CHANGELOG.md` — section `[0.5.0]`
 
 ---

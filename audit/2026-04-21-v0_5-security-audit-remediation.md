@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Close all P1 BLOCKER and P2 findings from the v0.5 security audit ([audit/20260421_security_audit_docker_v0_5_test_branch.md](../../../audit/20260421_security_audit_docker_v0_5_test_branch.md)) before merging `test → main`.
+**Goal:** Close all P1 BLOCKER and P2 findings from the v0.5 security audit ([20260421_security_audit_docker_v0_5_test_branch.md](20260421_security_audit_docker_v0_5_test_branch.md)) before merging `test → main`.
 
 **Architecture:** Fixes are layered:
 1. **Auth model rework** (V5-01, V5-02, V5-03): tighten auth middleware whitelist; add Pydantic/regex validation at every `ksef_number` entry point; use `urllib.parse.quote` for HTTP header values.
