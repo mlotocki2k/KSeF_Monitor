@@ -636,6 +636,46 @@ class TestCspNonce:
             f"unsafe inline scripts (no nonce) found: {bare_scripts!r}"
         )
 
+    def test_no_inline_event_handlers_in_rendered_pages(self, db, app_auth):
+        """Regression for the 2026-05-05 'buttons do nothing' incident.
+
+        With CSP `script-src 'self' 'nonce-…'` (and no 'unsafe-inline'),
+        inline event handlers like onclick=/onchange= are blocked by the
+        browser. Catch any future template that re-introduces them.
+        """
+        import re
+        local_client = TestClient(app_auth, follow_redirects=False)
+        with db.get_session() as s:
+            create_user(s, "alice", "SolidPass_88!")
+        local_client.post(
+            "/ui/login",
+            data={"username": "alice", "password": "SolidPass_88!"},
+        )
+
+        # Templates served via GET that compile real HTML through the auth gate.
+        for path in ("/ui", "/ui/invoices", "/ui/initial-load"):
+            resp = local_client.get(path)
+            assert resp.status_code == 200, f"{path} returned {resp.status_code}"
+            offenders = re.findall(
+                r"\son(?:click|change|submit|input|load|focus|blur|key\w+)\s*=",
+                resp.text, flags=re.IGNORECASE,
+            )
+            assert not offenders, (
+                f"{path} contains inline event handler(s) "
+                f"(blocked by CSP nonce mode): {offenders!r}"
+            )
+
+    def test_login_page_has_no_inline_event_handlers(self, client):
+        import re
+        resp = client.get("/ui/login")
+        assert resp.status_code in (200, 303)
+        if resp.status_code == 200:
+            offenders = re.findall(
+                r"\son(?:click|change|submit|input|load|focus|blur|key\w+)\s*=",
+                resp.text, flags=re.IGNORECASE,
+            )
+            assert not offenders, f"/ui/login has inline handlers: {offenders!r}"
+
 
 # U-04 — opt-in UA fingerprint binding.
 class TestSessionUaBinding:

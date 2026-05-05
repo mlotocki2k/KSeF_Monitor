@@ -123,7 +123,7 @@
   <div class="card">
     <div class="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
       <h2 class="text-sm font-semibold text-gray-800">Metadane (JSON)</h2>
-      <button onclick="toggleRawMeta()" class="btn-secondary text-xs" id="btn-toggle-meta">Pokaż</button>
+      <button type="button" class="btn-secondary text-xs" id="btn-toggle-meta">Pokaż</button>
     </div>
     <div id="raw-meta" class="hidden px-4 py-3">
       <pre class="text-xs text-gray-700 bg-gray-50 rounded-md p-3 overflow-x-auto whitespace-pre-wrap break-all">{{ raw_metadata | tojson(indent=2) }}</pre>
@@ -146,5 +146,6 @@ function toggleRawMeta() {
     btn.textContent = 'Ukryj';
   }
 }
+document.getElementById('btn-toggle-meta')?.addEventListener('click', toggleRawMeta);
 </script>
 {% endblock %}

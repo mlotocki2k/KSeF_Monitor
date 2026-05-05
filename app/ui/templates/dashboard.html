@@ -12,7 +12,7 @@
       <span class="badge-warn text-xs animate-pulse">Sprawdzam…</span>
     </div>
     <span id="ksef-status-detail" class="text-xs text-gray-400"></span>
-    <button onclick="refreshKsefStatus()" class="ml-auto btn-secondary text-xs py-0.5 px-2">Odśwież</button>
+    <button id="btn-refresh-ksef" class="ml-auto btn-secondary text-xs py-0.5 px-2">Odśwież</button>
   </div>
 
   <!-- Stat cards -->
@@ -208,6 +208,7 @@ async function refreshKsefStatus() {
     detail.textContent = e.message;
   }
 }
+document.getElementById('btn-refresh-ksef')?.addEventListener('click', refreshKsefStatus);
 refreshKsefStatus();
 </script>
 {% endblock %}

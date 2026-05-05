@@ -61,7 +61,7 @@
           {{ push.pairing_code_masked or "—" }}
         </p>
       </div>
-      <button type="button" id="reveal-btn" class="btn-secondary text-xs" onclick="revealPairing()">
+      <button type="button" id="reveal-btn" class="btn-secondary text-xs">
         Pokaż kod parowania
       </button>
     </div>
@@ -83,7 +83,7 @@
     <div class="text-xs text-gray-500 flex-1">
       Regeneracja kodu rozłączy sparowane urządzenia iOS i wygeneruje nowy QR kod.
     </div>
-    <button onclick="regenerate()" class="btn-danger text-xs" id="btn-regen">
+    <button type="button" class="btn-danger text-xs" id="btn-regen">
       Nowy kod
     </button>
   </div>
@@ -158,11 +158,15 @@ async function loadDevices() {
           </p>
           <p class="text-xs text-gray-300 font-mono truncate">${dev.device_id.slice(0, 16)}…</p>
         </div>
-        <button onclick="removeDevice('${dev.device_id}', this)" class="btn-danger text-xs shrink-0">
+        <button type="button" class="btn-danger text-xs shrink-0 js-remove-device"
+          data-device-id="${dev.device_id}">
           Odłącz
         </button>
       </div>
     `).join('');
+    list.querySelectorAll('.js-remove-device').forEach(b => {
+      b.addEventListener('click', () => removeDevice(b.dataset.deviceId, b));
+    });
   } catch (e) {
     list.innerHTML = `<div class="px-4 py-3 text-xs text-red-600">Błąd ładowania: ${e.message}</div>`;
   }
@@ -183,6 +187,8 @@ async function removeDevice(deviceId, btn) {
   }
 }
 
+document.getElementById('reveal-btn')?.addEventListener('click', revealPairing);
+document.getElementById('btn-regen')?.addEventListener('click', regenerate);
 loadDevices();
 </script>
 {% endif %}

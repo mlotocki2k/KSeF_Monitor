@@ -72,7 +72,7 @@
         {% endif %}
       </h2>
       <div class="flex items-center gap-2 ml-auto">
-        <button id="btn-bulk-pdf" onclick="bulkPdf()" class="btn-secondary text-xs hidden">
+        <button id="btn-bulk-pdf" type="button" class="btn-secondary text-xs hidden">
           <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
             <path stroke-linecap="round" stroke-linejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
           </svg>
@@ -91,7 +91,7 @@
           <tr>
             <th class="th w-8" scope="col">
               <span class="sr-only">Zaznaczanie</span>
-              <input type="checkbox" id="chk-all" onchange="toggleAll(this)"
+              <input type="checkbox" id="chk-all"
                 aria-label="Zaznacz wszystkie faktury"
                 class="rounded border-gray-300">
             </th>
@@ -106,18 +106,18 @@
         </thead>
         <tbody class="divide-y divide-gray-100">
           {% for inv in invoices %}
-          <tr class="hover:bg-gray-50">
-            <td class="td w-8" onclick="event.stopPropagation()">
+          <tr class="hover:bg-gray-50 js-row" data-href="/ui/invoices/{{ inv.ksef_number }}">
+            <td class="td w-8 js-no-row">
               <input type="checkbox" class="inv-chk rounded border-gray-300"
-                data-ksef="{{ inv.ksef_number }}" onchange="updateBulk()"
+                data-ksef="{{ inv.ksef_number }}"
                 aria-label="Zaznacz fakturę {{ inv.invoice_number or inv.ksef_number }}">
             </td>
-            <td class="td font-medium text-brand cursor-pointer" onclick="location.href='/ui/invoices/{{ inv.ksef_number }}'">
+            <td class="td font-medium text-brand cursor-pointer">
               <a href="/ui/invoices/{{ inv.ksef_number }}" class="hover:underline">
                 {{ inv.invoice_number or "—" }}
               </a>
             </td>
-            <td class="td cursor-pointer" onclick="location.href='/ui/invoices/{{ inv.ksef_number }}'">
+            <td class="td cursor-pointer">
               {% if inv.subject_type == "Subject1" %}
                 <span class="badge-s1">Sprz</span>
               {% elif inv.subject_type == "Subject2" %}
@@ -128,17 +128,17 @@
                 <span class="badge-warn">{{ inv.subject_type or "—" }}</span>
               {% endif %}
             </td>
-            <td class="td max-w-[160px] truncate cursor-pointer" onclick="location.href='/ui/invoices/{{ inv.ksef_number }}'" title="{{ inv.seller_name or '' }}">
+            <td class="td max-w-[160px] truncate cursor-pointer" title="{{ inv.seller_name or '' }}">
               <div class="truncate">{{ inv.seller_name or "—" }}</div>
               <div class="text-xs text-gray-400 font-mono">{{ inv.seller_nip or "" }}</div>
             </td>
-            <td class="td max-w-[160px] truncate cursor-pointer" onclick="location.href='/ui/invoices/{{ inv.ksef_number }}'" title="{{ inv.buyer_name or '' }}">
+            <td class="td max-w-[160px] truncate cursor-pointer" title="{{ inv.buyer_name or '' }}">
               <div class="truncate">{{ inv.buyer_name or "—" }}</div>
               <div class="text-xs text-gray-400 font-mono">{{ inv.buyer_nip or "" }}</div>
             </td>
-            <td class="td text-gray-500 cursor-pointer" onclick="location.href='/ui/invoices/{{ inv.ksef_number }}'">{{ inv.issue_date | fmt_date }}</td>
-            <td class="td text-right font-medium cursor-pointer" onclick="location.href='/ui/invoices/{{ inv.ksef_number }}'">{{ inv.gross_amount | fmt_amount(inv.currency or "PLN") }}</td>
-            <td class="td text-xs font-mono text-gray-400 cursor-pointer" onclick="location.href='/ui/invoices/{{ inv.ksef_number }}'">{{ inv.ksef_number | ksef_short }}</td>
+            <td class="td text-gray-500 cursor-pointer">{{ inv.issue_date | fmt_date }}</td>
+            <td class="td text-right font-medium cursor-pointer">{{ inv.gross_amount | fmt_amount(inv.currency or "PLN") }}</td>
+            <td class="td text-xs font-mono text-gray-400 cursor-pointer">{{ inv.ksef_number | ksef_short }}</td>
           </tr>
           {% endfor %}
         </tbody>
@@ -235,5 +235,21 @@ async function bulkPdf() {
     <path stroke-linecap="round" stroke-linejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
   </svg> Pobierz PDF (<span id="sel-count">${checked.length}</span>)`;
 }
+
+// Wire CSP-compliant event handlers (replaces removed inline event attrs).
+document.getElementById('chk-all')?.addEventListener('change', (e) => toggleAll(e.target));
+document.getElementById('btn-bulk-pdf')?.addEventListener('click', bulkPdf);
+document.querySelectorAll('.inv-chk').forEach(c => c.addEventListener('change', updateBulk));
+
+// Row-click navigation: clicking anywhere on a row except the checkbox cell
+// or anchor descendant routes to the invoice detail page (preserves Ctrl/Cmd
+// + click for new-tab via the explicit <a> in the first column).
+document.querySelectorAll('tr.js-row').forEach(row => {
+  row.addEventListener('click', (e) => {
+    if (e.target.closest('.js-no-row, a, input, button, label')) return;
+    const href = row.dataset.href;
+    if (href) location.href = href;
+  });
+});
 </script>
 {% endblock %}
