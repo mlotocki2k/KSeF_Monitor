@@ -170,15 +170,21 @@ def get_invoice_xml(request: Request, ksef_number: KsefNumberPath):
         result = monitor.ksef.get_invoice_xml(ksef_number)
         if not result:
             return JSONResponse(status_code=404, content={"detail": "XML not found on KSeF"})
-        safe_filename = quote(f"{ksef_number}.xml")
-        return Response(
-            content=result["xml_content"],
-            media_type="application/xml",
-            headers={"Content-Disposition": f'attachment; filename="{safe_filename}"'},
-        )
+        xml_content = result["xml_content"]
     except Exception as e:
         logger.error("Failed to fetch XML for %s: %s", ksef_number, e)
         return JSONResponse(status_code=502, content={"detail": "KSeF API error"})
+
+    # Persist XML on-demand so the next call is a cache hit (saves a
+    # /v2/invoices/ksef/{ksefNumber} call against the 64/h KSeF limit).
+    _persist_artifact_async(db, monitor, ksef_number, "xml", xml_content)
+
+    safe_filename = quote(f"{ksef_number}.xml")
+    return Response(
+        content=xml_content,
+        media_type="application/xml",
+        headers={"Content-Disposition": f'attachment; filename="{safe_filename}"'},
+    )
 
 
 @router.get("/invoices/{ksef_number}/pdf")
@@ -233,6 +239,12 @@ def get_invoice_pdf(request: Request, ksef_number: KsefNumberPath):
         logger.error("Failed to fetch XML for %s: %s", ksef_number, e)
         return JSONResponse(status_code=502, content={"detail": "KSeF API error"})
 
+    # Persist the freshly-fetched XML if this invoice doesn't already have
+    # one cached. /pdf is the more common entry point, so this is what
+    # actually populates the XML cache for most users.
+    _persist_artifact_async(db, monitor, ksef_number, "xml", xml_content,
+                            skip_if_present=True)
+
     # Generate PDF
     try:
         from app.invoice_pdf_generator import generate_invoice_pdf
@@ -249,12 +261,63 @@ def get_invoice_pdf(request: Request, ksef_number: KsefNumberPath):
                 content={"detail": "PDF generation not supported for this invoice schema"},
             )
         pdf_bytes = buf.read() if hasattr(buf, 'read') else buf
-        safe_filename = quote(f"{ksef_number}.pdf")
-        return Response(
-            content=pdf_bytes,
-            media_type="application/pdf",
-            headers={"Content-Disposition": f'attachment; filename="{safe_filename}"'},
-        )
     except Exception as e:
         logger.error("PDF generation failed for %s: %s", ksef_number, e)
         return JSONResponse(status_code=500, content={"detail": "PDF generation failed"})
+
+    # Cache PDF too — subsequent /pdf calls served from disk.
+    _persist_artifact_async(db, monitor, ksef_number, "pdf", pdf_bytes)
+
+    safe_filename = quote(f"{ksef_number}.pdf")
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{safe_filename}"'},
+    )
+
+
+def _persist_artifact_async(db, monitor, ksef_number: str, artifact_type: str,
+                             content, skip_if_present: bool = False) -> None:
+    """Best-effort write of XML/PDF artifact to disk + invoice_artifacts.
+
+    Best-effort — never raises into the request path. If the invoice has
+    no DB row, no raw_metadata, or the monitor isn't configured for
+    artifact storage, we just skip.
+    """
+    if not db or not monitor or not hasattr(monitor, 'save_artifact_for_invoice'):
+        return
+    import json as _json
+    from app.database import Invoice, InvoiceArtifact
+
+    session = db.get_session()
+    try:
+        invoice = session.query(Invoice).filter_by(ksef_number=ksef_number).first()
+        if not invoice or not invoice.raw_metadata:
+            return
+        if skip_if_present:
+            existing = (
+                session.query(InvoiceArtifact)
+                .filter_by(invoice_id=invoice.id, artifact_type=artifact_type, status="downloaded")
+                .first()
+            )
+            if existing and existing.file_path and os.path.exists(existing.file_path):
+                return
+        try:
+            meta = _json.loads(invoice.raw_metadata)
+        except (ValueError, TypeError):
+            return
+        monitor.save_artifact_for_invoice(
+            invoice_meta=meta,
+            subject_type=invoice.subject_type,
+            artifact_type=artifact_type,
+            content=content,
+            invoice_id=invoice.id,
+            db_session=session,
+        )
+        session.commit()
+    except Exception as e:
+        session.rollback()
+        logger.warning("artifact cache write failed for %s/%s: %s",
+                       ksef_number, artifact_type, e)
+    finally:
+        session.close()
