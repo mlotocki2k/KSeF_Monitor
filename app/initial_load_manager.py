@@ -228,12 +228,13 @@ class InitialLoadManager:
         try:
             total_imported = 0
             total_skipped = 0
+            all_failures: list = []  # (subject_type, start, end, error)
 
             for subject_type in subject_types:
                 if self._cancel_event.is_set():
                     break
 
-                imported, skipped = self._process_subject_type(
+                imported, skipped, failures = self._process_subject_type(
                     job_id=job_id,
                     subject_type=subject_type,
                     start_date=start_date,
@@ -242,13 +243,22 @@ class InitialLoadManager:
                 )
                 total_imported += imported
                 total_skipped += skipped
+                for f_start, f_end, f_err in failures:
+                    all_failures.append((subject_type, f_start, f_end, f_err))
 
             # Final status
+            failed_count = len(all_failures)
             if self._cancel_event.is_set():
                 final_status = "cancelled"
                 logger.info(
-                    "Job %s cancelled. imported=%d skipped=%d",
-                    job_id, total_imported, total_skipped,
+                    "Job %s cancelled. imported=%d skipped=%d failed_windows=%d",
+                    job_id, total_imported, total_skipped, failed_count,
+                )
+            elif failed_count:
+                final_status = "completed_with_errors"
+                logger.warning(
+                    "Job %s completed with %d failed window(s). imported=%d skipped=%d",
+                    job_id, failed_count, total_imported, total_skipped,
                 )
             else:
                 final_status = "completed"
@@ -257,9 +267,24 @@ class InitialLoadManager:
                     job_id, total_imported, total_skipped,
                 )
 
+            # Surface failures to the GUI via error_message — single Text column,
+            # so cap to first 5 entries and truncate each error to 200 chars.
+            error_summary = None
+            if all_failures:
+                lines = [
+                    f"{failed_count} okno/okien z błędem (pokazano pierwsze {min(5, failed_count)}):"
+                ]
+                for st, s, e, err in all_failures[:5]:
+                    lines.append(f"• {st} [{s} → {e}]: {str(err)[:200]}")
+                error_summary = "\n".join(lines)
+
             session = self.db.get_session()
             try:
-                self.db.update_initial_load_progress(session, job_id, status=final_status)
+                self.db.update_initial_load_progress(
+                    session, job_id,
+                    status=final_status,
+                    error_message=error_summary,
+                )
                 session.commit()
             except Exception:
                 session.rollback()
@@ -290,15 +315,18 @@ class InitialLoadManager:
         start_date: datetime,
         end_date: datetime,
         date_type: str,
-    ) -> tuple[int, int]:
+    ) -> tuple[int, int, list]:
         """
         Process all windows for one subject_type.
 
         Returns:
-            (invoices_imported, invoices_skipped) totals for this subject_type.
+            (invoices_imported, invoices_skipped, failures) totals for this
+            subject_type. `failures` is a list of (window_start, window_end,
+            error) tuples for the GUI / error_message summary.
         """
         imported = 0
         skipped = 0
+        failures: list = []
         cursor = start_date
 
         # Resume: if job has a current_subject_type matching this one,
@@ -362,6 +390,9 @@ class InitialLoadManager:
                     "Export failed for %s [%s → %s]: %s",
                     subject_type, window_start.date(), window_end.date(), result.error,
                 )
+                failures.append(
+                    (window_start.date(), window_end.date(), result.error or "unknown")
+                )
                 # Non-fatal: still bump windows_completed so progress UI reaches
                 # 100% even if some windows errored (otherwise the job shows
                 # "Ukończony 50%" which is just confusing).
@@ -420,7 +451,7 @@ class InitialLoadManager:
             else:
                 cursor = window_end + _ONE_DAY
 
-        return imported, skipped
+        return imported, skipped, failures
 
     def _save_invoices(self, invoices: List[Dict], subject_type: str) -> tuple[int, int]:
         """
