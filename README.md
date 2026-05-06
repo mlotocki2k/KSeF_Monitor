@@ -346,6 +346,8 @@ System powiadomień obsługuje **6 kanałów** jednocześnie. Możesz włączyć
 4. Regeneracja credentials: `POST /api/v1/push/regenerate`
 5. Reset pełny: `POST /api/v1/push/reset`
 
+> ⚠ **Status aplikacji iOS:** wersja w App Store nie obsługuje jeszcze parowania push — pełna funkcjonalność wkrótce. Po wersję testową przez TestFlight napisz na [kontakt@krzewilabs.pl](mailto:kontakt@krzewilabs.pl).
+
 Secret: `IOS_PUSH_INSTANCE_KEY` (env var / Docker secret)
 </details>
 
