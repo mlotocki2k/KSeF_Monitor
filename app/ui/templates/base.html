@@ -106,7 +106,7 @@
            style="border-radius: 6px;">
       Monitor KSeF
     </a>
-    <nav class="flex items-center gap-1 flex-wrap" aria-label="Główna nawigacja">
+    <nav class="flex items-center gap-1 flex-wrap ml-2 sm:ml-4" aria-label="Główna nawigacja">
       {% for item in nav %}
       <a href="{{ item.href }}"
          class="nav-link {% if request.url.path == item.href or (item.href != '/ui' and request.url.path.startswith(item.href)) %}nav-link-active{% else %}nav-link-idle{% endif %}">
