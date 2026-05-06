@@ -62,8 +62,15 @@
 
     .th { padding: .5rem .75rem; text-align: left; font-size: .75rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: .05em; }
     .td { padding: .5rem .75rem; font-size: .875rem; color: var(--text-primary); }
-    tr { border-bottom: 1px solid rgba(36,52,84,.5); }
-    tr:last-child { border-bottom: none; }
+    /* No `tr { border-bottom }` rule — every table in the app already uses
+       <tbody class="divide-y divide-gray-100">, and a generic tr border-bottom
+       declared in this <style> block (loads after tailwind.min.css) was
+       winning the CSS cascade against divide-y at the shared edge between
+       rows under border-collapse: collapse. Result: between-row separators
+       drew in the dim --card-border tone instead of the bright divide-gray-100
+       (rgb 243 244 246). Letting divide-y win restores the white separator
+       between every row; tbody > tr:first-child below covers the
+       header-to-first-row gap that divide-y skips. */
 
     .input { display: block; width: 100%; border-radius: .375rem; border: 1px solid var(--input-border); background: var(--input-bg); color: var(--text-primary); padding: .375rem .75rem; font-size: .875rem; box-shadow: none; }
     .input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
