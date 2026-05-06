@@ -1,7 +1,7 @@
 requests>=2.32.5,<3.0.0
 urllib3>=2.6.3,<3.0.0  # CVE-2026-21441 (fix in 2.6.3)
 python-dateutil==2.9.0.post0
-cryptography==46.0.7
+cryptography==47.0.0
 prometheus-client==0.24.1
 pytz==2026.1.post1
 
