@@ -1,0 +1,304 @@
+<!doctype html>
+<html lang="pl" class="h-full">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>{% block title %}Monitor KSeF{% endblock %}</title>
+  <link rel="icon" type="image/png" sizes="32x32" href="/ui/static/favicon.png?v={{ ui_version }}">
+  <link rel="apple-touch-icon" href="/ui/static/icon-128.png?v={{ ui_version }}">
+  <link rel="stylesheet" href="/ui/static/tailwind.min.css?v={{ ui_version }}">
+  <style>
+    :root {
+      --app-bg: #0B1A3E;
+      --card-bg: #1A2B50;
+      --card-border: #243454;
+      --nav-bg: #0B1A3E;
+      --text-primary: #FFFFFF;
+      --text-muted: #8E99AF;
+      --accent: #0066CC;       /* WCAG AA: 4.6:1 z #FFFFFF */
+      --accent-hover: #0A84FF;
+      --accent-link: #4DA3FF;  /* link na ciemnym tle: 7.2:1 z #1A2B50 */
+      --status-green: #34C759;
+      --status-orange: #FF9500;
+      --status-red: #FF3B30;
+      --input-bg: #152344;
+      --input-border: #2A3A62;
+    }
+    html, body { background: var(--app-bg); color: var(--text-primary); }
+    ::selection { background: var(--accent); color: #fff; }
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 10px; height: 10px; }
+    ::-webkit-scrollbar-track { background: var(--app-bg); }
+    ::-webkit-scrollbar-thumb { background: #2A3A62; border-radius: 5px; }
+    ::-webkit-scrollbar-thumb:hover { background: #3A4A7A; }
+
+    /* Component classes override Tailwind @layer — use plain CSS since
+       Tailwind is served as a prebuilt minified CSS (no JIT available). */
+    .nav-link { padding: 0.5rem 1rem; font-size: 0.875rem; font-weight: 500; border-radius: 0.375rem; transition: background-color .15s, color .15s; }
+    .nav-link-active { background: var(--accent); color: #fff; }
+    .nav-link-idle { color: var(--text-muted); }
+    .nav-link-idle:hover { background: rgba(255,255,255,.06); color: var(--text-primary); }
+
+    .card { background: var(--card-bg); border: 1px solid var(--card-border); border-radius: .5rem; box-shadow: 0 1px 2px rgba(0,0,0,.25); }
+
+    .badge-s1 { display: inline-flex; align-items: center; padding: .125rem .5rem; border-radius: .25rem; font-size: .75rem; font-weight: 500; background: rgba(0,122,255,.15); color: #7FB8FF; }
+    .badge-s2 { display: inline-flex; align-items: center; padding: .125rem .5rem; border-radius: .25rem; font-size: .75rem; font-weight: 500; background: rgba(175,82,222,.15); color: #D0A6F5; }
+    .badge-ok { display: inline-flex; align-items: center; padding: .125rem .5rem; border-radius: .25rem; font-size: .75rem; font-weight: 500; background: rgba(52,199,89,.15); color: var(--status-green); }
+    .badge-err { display: inline-flex; align-items: center; padding: .125rem .5rem; border-radius: .25rem; font-size: .75rem; font-weight: 500; background: rgba(255,59,48,.15); color: var(--status-red); }
+    .badge-warn { display: inline-flex; align-items: center; padding: .125rem .5rem; border-radius: .25rem; font-size: .75rem; font-weight: 500; background: rgba(255,149,0,.15); color: var(--status-orange); }
+
+    .btn-primary { display: inline-flex; align-items: center; gap: .375rem; padding: .375rem .75rem; font-size: .875rem; font-weight: 500; border-radius: .375rem; background: var(--accent); color: #fff; border: 1px solid var(--accent); transition: background .15s; cursor: pointer; }
+    .btn-primary:hover:not(:disabled) { background: var(--accent-hover); }
+    .btn-primary:disabled { opacity: .5; cursor: not-allowed; }
+
+    .btn-secondary { display: inline-flex; align-items: center; gap: .375rem; padding: .375rem .75rem; font-size: .875rem; font-weight: 500; border-radius: .375rem; background: var(--card-bg); color: var(--text-primary); border: 1px solid var(--card-border); transition: background .15s; cursor: pointer; }
+    .btn-secondary:hover:not(:disabled) { background: #243454; }
+    .btn-secondary:disabled { opacity: .5; cursor: not-allowed; }
+
+    .btn-danger { display: inline-flex; align-items: center; gap: .375rem; padding: .375rem .75rem; font-size: .875rem; font-weight: 500; border-radius: .375rem; background: var(--status-red); color: #fff; border: 1px solid var(--status-red); cursor: pointer; }
+    .btn-danger:hover:not(:disabled) { background: #E0342A; }
+    .btn-danger:disabled { opacity: .5; cursor: not-allowed; }
+
+    .th { padding: .5rem .75rem; text-align: left; font-size: .75rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: .05em; }
+    .td { padding: .5rem .75rem; font-size: .875rem; color: var(--text-primary); }
+    /* No `tr { border-bottom }` rule — every table in the app already uses
+       <tbody class="divide-y divide-gray-100">, and a generic tr border-bottom
+       declared in this <style> block (loads after tailwind.min.css) was
+       winning the CSS cascade against divide-y at the shared edge between
+       rows under border-collapse: collapse. Result: between-row separators
+       drew in the dim --card-border tone instead of the bright divide-gray-100
+       (rgb 243 244 246). Letting divide-y win restores the white separator
+       between every row; tbody > tr:first-child below covers the
+       header-to-first-row gap that divide-y skips. */
+
+    .input { display: block; width: 100%; border-radius: .375rem; border: 1px solid var(--input-border); background: var(--input-bg); color: var(--text-primary); padding: .375rem .75rem; font-size: .875rem; box-shadow: none; }
+    .input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+    /* w-auto utility wasn't winning over .input (same specificity, .input loaded
+       later from <style>); use !important so .input.w-auto sizes to content. */
+    .input.w-auto { width: auto !important; }
+    /* .hidden IS in tailwind.min.css but loses the cascade to .btn-* / .input
+       rules in this <style> block (same specificity, .style block loads later).
+       Result: btn-secondary.hidden / input.hidden render visible. !important
+       puts .hidden back on top. Affected: "Pobierz PDF (0)" bulk button at 0
+       selected, QR-pairing reveal block before auth, per-window history
+       toggle target. */
+    .hidden { display: none !important; }
+    .label { display: block; font-size: .75rem; font-weight: 500; color: var(--text-muted); margin-bottom: .25rem; }
+    /* Utilities not present in the bundled tailwind subset but used in
+       templates — added inline so the dark UI renders correctly without
+       rebuilding the CSS bundle. */
+    .whitespace-pre-line { white-space: pre-line; }
+    .break-words { overflow-wrap: break-word; word-wrap: break-word; }
+    .font-sans { font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+    .min-w-full { min-width: 100%; }
+    /* Amber callout palette used by initial_load + push templates — tailwind
+       v3 hex values, applied with !important so the dark-theme overrides
+       above (which clobber bg-white / bg-gray-* under :root) don't clash. */
+    .bg-amber-50 { background-color: #fffbeb !important; }
+    .border-amber-200 { border-color: #fde68a !important; }
+    .text-amber-700 { color: #b45309 !important; }
+    .text-amber-800 { color: #92400e !important; }
+    /* Tailwind's `divide-y` only sets border-top on the 2nd+ child, so the
+       first <tr> in a tbody had no light separator — but row-to-row used
+       divide-gray-100 (rgb 243 244 246, near-white) AND the thead's
+       border-gray-200 above it was clobbered to --card-border by the dark
+       overrides. Result: row 1 sat under a dim line while rows 2+ sat under
+       bright ones. Mirror the divide-y color on tr:first-child for a
+       consistent "white underline" between header and every row. */
+    table tbody > tr:first-child { border-top: 1px solid rgb(243 244 246); }
+    /* sr-only — accessibility-only labels. Missing from the bundled subset,
+       so <span class="sr-only">Zaznaczanie</span> in the invoice table thead
+       was rendering as a visible "ZAZNACZANIE" column heading next to the
+       checkbox. Also catches the duplicate <h1 class="sr-only">Faktury</h1>
+       on /ui/invoices. */
+    .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border-width: 0; }
+
+    /* Soft global overrides to blend Tailwind utility classes with dark palette */
+    .bg-white { background-color: var(--card-bg) !important; }
+    .bg-gray-50 { background-color: var(--app-bg) !important; }
+    .bg-gray-100 { background-color: #1E2C50 !important; }
+    .text-gray-500, .text-gray-600 { color: var(--text-muted) !important; }
+    .text-gray-700, .text-gray-800, .text-gray-900 { color: var(--text-primary) !important; }
+    .border-gray-200, .border-gray-300 { border-color: var(--card-border) !important; }
+    .text-brand { color: var(--accent-link) !important; }
+    .bg-brand { background-color: var(--accent) !important; }
+    .hover\:bg-gray-100:hover { background-color: rgba(255,255,255,.06) !important; }
+    .hover\:bg-gray-50:hover { background-color: rgba(255,255,255,.04) !important; }
+
+    /* Status-tinted alert boxes — keep color hue, darken bg for legibility */
+    .bg-red-50 { background-color: rgba(255,59,48,.1) !important; }
+    .border-red-200 { border-color: rgba(255,59,48,.3) !important; }
+    .text-red-700, .text-red-800 { color: #FF6B62 !important; }
+    .bg-yellow-50 { background-color: rgba(255,149,0,.1) !important; }
+    .border-yellow-200 { border-color: rgba(255,149,0,.3) !important; }
+    .text-yellow-700, .text-yellow-800 { color: #FFB340 !important; }
+    .bg-green-50 { background-color: rgba(52,199,89,.1) !important; }
+    .border-green-200 { border-color: rgba(52,199,89,.3) !important; }
+    .text-green-700, .text-green-800 { color: #5DD67D !important; }
+    .bg-blue-50 { background-color: rgba(0,122,255,.1) !important; }
+    .border-blue-200 { border-color: rgba(0,122,255,.3) !important; }
+    .text-blue-700, .text-blue-800 { color: #4DA3FF !important; }
+  </style>
+</head>
+<body class="h-full flex flex-col">
+
+<!-- Top navbar -->
+<header style="background: var(--nav-bg); border-bottom: 1px solid var(--card-border);">
+  <div class="max-w-screen-xl mx-auto px-4 flex flex-wrap items-center min-h-14 gap-x-4 gap-y-2 py-2">
+    <a href="/ui" class="flex items-center gap-2 font-bold text-sm shrink-0" style="color: var(--text-primary);">
+      <img src="/ui/static/icon-64.png?v={{ ui_version }}" alt="" width="28" height="28"
+           style="border-radius: 6px;">
+      Monitor KSeF
+    </a>
+    <nav class="flex items-center gap-1 flex-wrap" style="margin-left: 1rem;" aria-label="Główna nawigacja">
+      {% for item in nav %}
+      <a href="{{ item.href }}"
+         class="nav-link {% if request.url.path == item.href or (item.href != '/ui' and request.url.path.startswith(item.href)) %}nav-link-active{% else %}nav-link-idle{% endif %}">
+        {{ item.label }}
+      </a>
+      {% endfor %}
+    </nav>
+    <div class="ml-auto flex items-center gap-3 flex-wrap">
+      <button id="btn-trigger" type="button"
+        class="nav-link nav-link-idle text-xs flex items-center gap-1" title="Wyzwól natychmiastowe sprawdzenie">
+        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+        </svg>
+        Sprawdź
+      </button>
+      {% if ui_username %}
+      <a href="/ui/account"
+        class="nav-link {% if request.url.path == '/ui/account' %}nav-link-active{% else %}nav-link-idle{% endif %} text-xs flex items-center gap-1"
+        title="Konto: {{ ui_username }}">
+        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round"
+            d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/>
+        </svg>
+        {{ ui_username }}
+      </a>
+      <form action="/ui/logout" method="post" class="m-0">
+        <button type="submit"
+          class="nav-link nav-link-idle text-xs flex items-center gap-1" title="Wyloguj">
+          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round"
+              d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/>
+          </svg>
+          Wyloguj
+        </button>
+      </form>
+      {% endif %}
+    </div>
+  </div>
+</header>
+
+<!-- Flash message area -->
+<div id="flash" class="hidden max-w-screen-xl mx-auto px-4 pt-3"></div>
+
+<!-- Main content -->
+<main class="flex-1 max-w-screen-xl mx-auto w-full px-4 py-6">
+  {% if error is defined and error %}
+  <div class="mb-4 rounded-md bg-red-50 border border-red-200 p-4 text-sm text-red-700">
+    <strong>Błąd:</strong> {{ error }}
+  </div>
+  {% endif %}
+  {% if errors is defined %}
+  {% for e in errors %}
+  <div class="mb-2 rounded-md bg-yellow-50 border border-yellow-200 p-3 text-sm text-yellow-800">⚠ {{ e }}</div>
+  {% endfor %}
+  {% endif %}
+  {% block content %}{% endblock %}
+</main>
+
+<!-- Footer -->
+<footer style="background: var(--nav-bg); border-top: 1px solid var(--card-border);">
+  <div class="max-w-screen-xl mx-auto px-4 py-2 text-xs flex justify-between" style="color: var(--text-muted);">
+    <span>Monitor KSeF v{{ ui_version }}</span>
+    {% if docs_enabled %}<a href="/docs" style="color: var(--accent);">API docs</a>{% endif %}
+  </div>
+</footer>
+
+<script nonce="{{ request.state.csp_nonce }}">
+// ── Flash messages ────────────────────────────────────────────────────────────
+function flash(msg, type = 'ok') {
+  const el = document.getElementById('flash');
+  const colors = { ok: 'bg-green-50 border-green-200 text-green-800',
+                   err: 'bg-red-50 border-red-200 text-red-700',
+                   warn: 'bg-yellow-50 border-yellow-200 text-yellow-700' };
+  el.innerHTML = `<div class="rounded-md border p-3 text-sm ${colors[type] || colors.ok}">${msg}</div>`;
+  el.classList.remove('hidden');
+  setTimeout(() => el.classList.add('hidden'), 4000);
+}
+
+// ── API call helper ───────────────────────────────────────────────────────────
+// V5-12: cookie session sent automatically (same-origin). No Bearer needed.
+async function apiCall(method, url, body = null) {
+  const opts = {
+    method,
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'same-origin',
+  };
+  if (body) opts.body = JSON.stringify(body);
+  const resp = await fetch(url, opts);
+  if (resp.status === 401 || resp.status === 403) {
+    window.location.href = '/ui/login?next=' + encodeURIComponent(window.location.pathname);
+    throw new Error('Sesja wygasła — przekierowanie do logowania.');
+  }
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({ detail: resp.statusText }));
+    throw new Error(err.detail || resp.statusText);
+  }
+  return resp.json().catch(() => ({}));
+}
+
+// ── Trigger check ─────────────────────────────────────────────────────────────
+async function triggerCheck() {
+  const btn = document.getElementById('btn-trigger');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Sprawdzam…'; }
+  try {
+    const r = await apiCall('POST', '/api/v1/monitor/trigger');
+    flash(r.message || 'Sprawdzenie wyzwolone.', r.triggered ? 'ok' : 'err');
+  } catch (e) {
+    flash(`Błąd: ${e.message}`, 'err');
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = `
+      <svg class="w-4 h-4 inline" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+        <path stroke-linecap="round" stroke-linejoin="round"
+          d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+      </svg> Sprawdź`; }
+  }
+}
+// ── File download with auth ───────────────────────────────────────────────────
+// V5-12: cookie session sent automatically (same-origin). No Bearer needed.
+async function downloadFile(url, filename) {
+  try {
+    const r = await fetch(url, { credentials: 'same-origin' });
+    if (r.status === 401 || r.status === 403) {
+      window.location.href = '/ui/login?next=' + encodeURIComponent(window.location.pathname);
+      return;
+    }
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({ detail: r.statusText }));
+      throw new Error(err.detail || r.statusText);
+    }
+    const blob = await r.blob();
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(a.href);
+  } catch (e) {
+    flash(`Błąd pobierania: ${e.message}`, 'err');
+  }
+}
+
+// ── Wire inline handlers (CSP nonce-mode requires addEventListener) ──────────
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('btn-trigger')?.addEventListener('click', triggerCheck);
+});
+</script>
+{% block extra_js %}{% endblock %}
+</body>
+</html>

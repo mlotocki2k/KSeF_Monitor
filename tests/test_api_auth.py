@@ -109,7 +109,7 @@ class TestTokenAuth:
 
 
 class TestSecurityHeaders:
-    """Security headers present on all responses."""
+    """Security headers present on all responses (V5-05)."""
 
     def test_nosniff_header(self, client_open):
         resp = client_open.get("/api/v1/monitor/health")
@@ -128,6 +128,35 @@ class TestSecurityHeaders:
         resp = client_auth.get("/api/v1/invoices")
         assert resp.headers.get("X-Content-Type-Options") == "nosniff"
 
+    def test_xcto_nosniff(self, client_open):
+        resp = client_open.get("/api/v1/monitor/health")
+        assert resp.headers["X-Content-Type-Options"] == "nosniff"
+
+    def test_xfo_deny(self, client_open):
+        resp = client_open.get("/api/v1/monitor/health")
+        assert resp.headers["X-Frame-Options"] == "DENY"
+
+    def test_csp_default_self(self, client_open):
+        resp = client_open.get("/api/v1/monitor/health")
+        csp = resp.headers.get("Content-Security-Policy", "")
+        assert "default-src 'self'" in csp
+        assert "frame-ancestors 'none'" in csp
+
+    def test_hsts_max_age(self, client_open):
+        resp = client_open.get("/api/v1/monitor/health")
+        hsts = resp.headers.get("Strict-Transport-Security", "")
+        assert "max-age=" in hsts
+        assert "includeSubDomains" in hsts
+
+    def test_referrer_policy(self, client_open):
+        resp = client_open.get("/api/v1/monitor/health")
+        assert resp.headers.get("Referrer-Policy") == "strict-origin-when-cross-origin"
+
+    def test_permissions_policy(self, client_open):
+        resp = client_open.get("/api/v1/monitor/health")
+        pp = resp.headers.get("Permissions-Policy", "")
+        assert "geolocation=()" in pp
+
 
 class TestGenericErrorHandler:
     """Internal errors return generic message, no stack trace."""
@@ -145,3 +174,100 @@ class TestGenericErrorHandler:
         body = resp.json()
         assert body["detail"] == "Internal server error"
         assert "secret" not in str(body)
+
+
+class TestUiAuth:
+    """V5-01 + V5-12: UI routes redirect to /ui/login when unauthenticated."""
+
+    def test_ui_redirects_to_login(self, app_auth):
+        """GET /ui without auth should 303 to /ui/login."""
+        client = TestClient(app_auth, follow_redirects=False)
+        resp = client.get("/ui")
+        assert resp.status_code == 303
+        assert resp.headers["location"].startswith("/ui/login")
+
+    def test_ui_invoices_redirects_to_login(self, app_auth):
+        client = TestClient(app_auth, follow_redirects=False)
+        resp = client.get("/ui/invoices")
+        assert resp.status_code == 303
+        assert "/ui/login" in resp.headers["location"]
+
+    def test_ui_push_redirects_to_login(self, app_auth):
+        client = TestClient(app_auth, follow_redirects=False)
+        resp = client.get("/ui/push")
+        assert resp.status_code == 303
+
+    def test_ui_accessible_with_bearer(self, app_auth):
+        """Bearer header still works (integrations / curl)."""
+        client = TestClient(app_auth, raise_server_exceptions=False)
+        resp = client.get(
+            "/ui", headers={"Authorization": f"Bearer {'a' * 32}"}
+        )
+        assert resp.status_code != 401
+        assert resp.status_code != 303
+
+    def test_invoice_pdf_requires_auth(self, client_auth):
+        """V5-03: /invoices/{ksef}/pdf must not bypass auth."""
+        resp = client_auth.get(
+            "/api/v1/invoices/1234567890-20260101-ABCDEF-01/pdf"
+        )
+        assert resp.status_code == 401
+
+    def test_invoice_xml_requires_auth(self, client_auth):
+        resp = client_auth.get(
+            "/api/v1/invoices/1234567890-20260101-ABCDEF-01/xml"
+        )
+        assert resp.status_code == 401
+
+    def test_push_devices_requires_auth(self, client_auth):
+        resp = client_auth.get("/api/v1/push/devices")
+        assert resp.status_code == 401
+
+    def test_ksef_status_requires_auth(self, client_auth):
+        resp = client_auth.get("/api/v1/monitor/ksef-status")
+        assert resp.status_code == 401
+
+
+class TestUiAuthEndpointsExempt:
+    """V5-12 + V5-13: /ui/login, /ui/logout, /ui/setup must stay public so the
+    auth flow itself is reachable. Detailed cookie session + user/pass coverage
+    lives in tests/test_ui_user_auth.py."""
+
+    def test_login_get_is_public(self, client_auth):
+        # No DB attached → login form fallback path: bounce to /ui (open-mode shortcut).
+        # Either way, must NOT 401.
+        resp = client_auth.get("/ui/login")
+        assert resp.status_code in (200, 303)
+
+    def test_setup_get_is_public(self, client_auth):
+        resp = client_auth.get("/ui/setup")
+        assert resp.status_code in (200, 303)
+
+    def test_logout_post_is_public(self, client_auth):
+        # Logout without a session is a no-op redirect, never 401.
+        resp = client_auth.post("/ui/logout")
+        assert resp.status_code != 401
+
+
+class TestUiPublicOptIn:
+    """V5-01: api.ui_public=True lets UI bypass auth (legacy/reverse-proxy mode)."""
+
+    def test_ui_public_opt_in_allows_ui(self):
+        from app.api import create_app
+        from fastapi.testclient import TestClient
+        app = create_app(auth_token="a" * 32, ui_public=True)
+        client = TestClient(app, raise_server_exceptions=False)
+        resp = client.get("/ui")
+        # UI may 500 (template error, no db) — but NOT 401
+        assert resp.status_code != 401
+
+    def test_ui_public_still_protects_api(self):
+        """ui_public must NOT widen the bypass beyond /ui."""
+        from app.api import create_app
+        from fastapi.testclient import TestClient
+        app = create_app(auth_token="a" * 32, ui_public=True)
+        client = TestClient(app)
+        resp = client.get("/api/v1/push/devices")
+        assert resp.status_code == 401
+        resp2 = client.get("/api/v1/invoices/1-1-1-1/pdf")
+        assert resp2.status_code == 401

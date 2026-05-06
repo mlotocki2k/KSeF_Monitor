@@ -5,14 +5,13 @@ Sends notifications to custom HTTP/HTTPS endpoints
 
 import hashlib
 import hmac
-import ipaddress
 import json
 import logging
 import requests
-import socket
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
-from urllib.parse import urlparse
+
+from app._ssrf_guard import is_safe_public_url
 
 from .base_notifier import BaseNotifier
 
@@ -60,31 +59,8 @@ class WebhookNotifier(BaseNotifier):
 
     @staticmethod
     def _validate_webhook_url(url: str) -> bool:
-        """Validate webhook URL to prevent SSRF attacks on internal services."""
-        if not url:
-            return False
-        try:
-            parsed = urlparse(url)
-            if parsed.scheme not in ('https', 'http'):
-                logger.warning(f"Webhook URL rejected: unsupported scheme '{parsed.scheme}'")
-                return False
-            hostname = parsed.hostname
-            if not hostname:
-                return False
-            # Resolve hostname and check all IPs
-            try:
-                addr_info = socket.getaddrinfo(hostname, None)
-                for family, _, _, _, sockaddr in addr_info:
-                    ip = ipaddress.ip_address(sockaddr[0])
-                    if ip.is_private or ip.is_loopback or ip.is_link_local:
-                        logger.warning(f"Webhook URL rejected: resolves to private/internal IP")
-                        return False
-            except socket.gaierror:
-                logger.warning(f"Webhook URL rejected: cannot resolve hostname")
-                return False
-            return True
-        except Exception:
-            return False
+        """Validate webhook URL via shared SSRF guard (app._ssrf_guard)."""
+        return is_safe_public_url(url)
 
     def _revalidate_url(self) -> bool:
         """Re-validate webhook URL DNS at request time to prevent DNS rebinding SSRF."""

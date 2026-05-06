@@ -1,6 +1,6 @@
 # KSeF Monitor - Documentation Index
 
-**Version:** v0.4
+**Version:** v0.5.3
 **Based on:** KSeF API v2.4.0
 **License:** MIT
 
@@ -34,20 +34,27 @@ chmod +x setup.sh && ./setup.sh
 
 | Document | Description | Read When |
 |----------|-------------|-----------|
-| **[NOTIFICATIONS.md](NOTIFICATIONS.md)** | All 5 notification channels guide | Configuring notifications |
+| **[NOTIFICATIONS.md](NOTIFICATIONS.md)** | All 6 notification channels guide | Configuring notifications |
 | **[TEMPLATES.md](TEMPLATES.md)** | Jinja2 notification templates (v0.3) | Customizing notification format |
 
 ### 🌐 REST API
 
 | Document | Description | Read When |
 |----------|-------------|-----------|
-| **[REST_API.md](REST_API.md)** | REST API endpoints, auth, response schemas (v0.4) | Building integrations, Web UI |
+| **[REST_API.md](REST_API.md)** | REST API endpoints, dual-path auth (Bearer + cookie session), schemas (v0.5.2) | Building integrations, Web UI |
 
 ### 🔐 Security
 
 | Document | Description | Read When |
 |----------|-------------|-----------|
-| **[SECURITY.md](SECURITY.md)** | Complete security guide | Before production deployment |
+| **[SECURITY.md](SECURITY.md)** | Complete security guide (updated for v0.5.2: V5-13 UI user accounts) | Before production deployment |
+| **[TODO.md](TODO.md)** | Pre-prod checklist, user-test scenarios, follow-ups (branch `test`) | Tracking what's left for 0.5.3 ship |
+| **[ROADMAP.md](ROADMAP.md)** | All milestones + per-V5 task detail | Planning ahead / reviewing history |
+| **[CHANGELOG.md](../CHANGELOG.md)** | Full release history with security changelog | Reviewing what changed per release |
+| **[audit/20260421_security_audit_docker_v0_5_test_branch.md](../audit/20260421_security_audit_docker_v0_5_test_branch.md)** | v0.5 security audit report (original findings) | Reviewing audit scope and findings |
+| **[audit/20260422_security_reaudit_v0_5_post_remediation.md](../audit/20260422_security_reaudit_v0_5_post_remediation.md)** | v0.5 post-remediation re-audit | Verifying all findings were closed |
+| **[audit/20260504_security_audit_v0_5_1_ui_auth.md](../audit/20260504_security_audit_v0_5_1_ui_auth.md)** | v0.5.1 UI auth focused audit (V5-12/V5-13/V5-14) — 14 findings, all closed in v0.5.2 | Reviewing UI auth attack surface |
+| **[REAUDIT_REMEDIATION_REPORT.md](REAUDIT_REMEDIATION_REPORT.md)** | v0.4 re-audit remediation report (R-01…R-03) | Reviewing v0.4 remediation lineage |
 | **[.env.example](.env.example)** | Environment variables template | Setting up secrets |
 
 **Key Security Methods:**
@@ -88,13 +95,14 @@ chmod +x setup.sh && ./setup.sh
 | Document | Description | Read When |
 |----------|-------------|-----------|
 | **[PDF_GENERATION.md](PDF_GENERATION.md)** | PDF generation from KSeF invoices | Configuring file storage |
-| **[PDF_TEMPLATES.md](PDF_TEMPLATES.md)** | Custom invoice PDF templates (v0.3) | Customizing PDF appearance |
+| **[PDF_TEMPLATES.md](PDF_TEMPLATES.md)** | Custom invoice PDF templates (v0.3/v0.5) | Customizing PDF appearance |
 
 **Features:**
 - ✅ Fetch invoice XML by KSeF number
-- ✅ Parse FA(3) format (full schema compliance)
+- ✅ Multi-schema parsing: FA(3), FA(2), FA_RR, PEF (PEPPOL UBL), UNKNOWN fallback (v0.5)
 - ✅ Generate PDF with QR code, Polish characters
-- ✅ Two rendering engines: xhtml2pdf (primary) + ReportLab (fallback)
+- ✅ Three rendering engines: CIRFMF microservice (v0.5) → xhtml2pdf → ReportLab fallback
+- ✅ FA_RR dedicated PDF template (rolnik, PESEL, oświadczenie, KwotaVatRR) (v0.5)
 - ✅ Integrated with main app (config: `storage.save_pdf`)
 - ✅ Configurable output directory with folder structure patterns (v0.3)
 - ✅ Safe file writing: skip/rename/overwrite strategy (v0.3)
@@ -182,21 +190,25 @@ KSeF_Monitor/
 │       ├── invoice_monitor.py      # Main monitoring logic
 │       ├── rate_limiter.py         # Sliding window rate limiter (v0.4)
 │       ├── database.py             # SQLite + SQLAlchemy 2.0 ORM
-│       ├── invoice_xml_parser.py   # FA(3) XML parser (v0.4)
+│       ├── invoice_xml_parser.py   # Multi-schema XML parser: FA(3/2), FA_RR, PEF, UNKNOWN (v0.5)
 │       ├── pdf_constants.py        # PDF constants (v0.4)
-│       ├── invoice_pdf_generator.py # ReportLab PDF (fallback)
-│       ├── invoice_pdf_template.py  # HTML/CSS → PDF via xhtml2pdf (primary)
+│       ├── invoice_pdf_generator.py # ReportLab PDF (fallback) + CIRFMF integration (v0.5)
+│       ├── invoice_pdf_template.py  # HTML/CSS → PDF via xhtml2pdf, schema dispatch (v0.5)
+│       ├── initial_load_manager.py # Historical import: moving window, resume (v0.5)
 │       ├── template_renderer.py    # Jinja2 template engine
 │       ├── prometheus_metrics.py   # Prometheus metrics (10 metrics)
 │       ├── scheduler.py            # Flexible scheduling (5 modes)
 │       ├── logging_config.py       # Logging with timezone
-│       ├── templates/              # Built-in Jinja2 templates (6 files)
+│       ├── push_manager.py         # PushManager: credentials, rejestracja, QR, wysyłka (v0.5)
+│       ├── templates/              # Built-in Jinja2 templates (8 files, incl. invoice_pdf_fa_rr.html.j2)
 │       ├── api/                    # REST API (FastAPI, v0.4)
-│       │   ├── __init__.py         # App factory + auth + security headers
+│       │   ├── __init__.py         # App factory + auth + security headers + Web UI mount
 │       │   ├── server.py           # Uvicorn daemon thread
 │       │   ├── schemas.py          # Pydantic response models
-│       │   └── routers/            # API endpoints (invoices, stats, monitor, artifacts)
-│       └── notifiers/              # Multi-channel notifications (5 channels)
+│       │   └── routers/            # API endpoints (invoices, stats, monitor, artifacts, push, ui)
+│       ├── ui/                     # Web UI: Jinja2 SSR templates + static (v0.5)
+│       │   └── templates/          # base.html, dashboard, invoices, invoice_detail, initial_load
+│       └── notifiers/              # Multi-channel notifications (6 channels)
 │
 ├── ⚙️ Configuration & Examples
 │   ├── examples/config.example.json # Config template (with secrets)
@@ -210,7 +222,9 @@ KSeF_Monitor/
 │   ├── spec/openapi.json           # KSeF API v2.2.0 OpenAPI spec (production)
 │   ├── spec/openapi-test.json      # KSeF API OpenAPI spec (test)
 │   ├── spec/openapi-demo.json      # KSeF API OpenAPI spec (demo)
-│   └── spec/schemat_FA(3)_v1-0E.xsd # FA(3) invoice XSD schema
+│   ├── spec/schemat_FA(3)_v1-0E.xsd  # FA(3) invoice XSD schema
+│   ├── spec/schemat_FA(2)_v1-0E.xsd  # FA(2) XSD stub (v0.5)
+│   └── spec/schemat_FA_RR_v1-0E.xsd  # FA_RR XSD stub (v0.5)
 │
 ├── 🐳 Docker
 │   ├── Dockerfile                  # Image definition (OCI labels, healthcheck)
@@ -236,7 +250,7 @@ KSeF_Monitor/
 │
 ├── 💾 Database Migrations
 │   ├── alembic.ini                 # Alembic configuration
-│   └── alembic/                    # Migration scripts
+│   └── alembic/                    # Migration scripts (phase1, phase2, phase3 push_instances)
 │
 └── 💾 Data (created at runtime)
     └── data/
@@ -328,11 +342,11 @@ Before running in production:
 
 ## 📊 Version Information
 
-**Current Version:** v0.4
+**Current Version:** v0.5
 
 **Features:**
-- ✅ Full KSeF API v2.2/v2.3 support
-- ✅ Multi-channel notifications (5 channels)
+- ✅ Full KSeF API v2.4.0 support (Problem Details, 429 retry, 410 Gone, isTruncated pagination)
+- ✅ Multi-channel notifications (6 channels)
 - ✅ Customizable Jinja2 notification templates
 - ✅ Polish monetary formatting
 - ✅ Prometheus metrics endpoint (10 metrics)
@@ -348,12 +362,19 @@ Before running in production:
 - ✅ Configurable XML/PDF file storage with folder structure patterns
 - ✅ SQLite database for invoice metadata + notification log
 - ✅ Database admin CLI tool: `db_admin.py`
-- ✅ Custom HTML/CSS invoice PDF templates
+- ✅ Custom HTML/CSS invoice PDF templates (v0.3)
 - ✅ REST API with FastAPI (read-only, Bearer auth, Swagger UI, rate limiting) (v0.4)
 - ✅ Sliding window rate limiter (3 windows) (v0.4)
 - ✅ API request logging + artifact download tracking (v0.4)
 - ✅ Security audit: 10 controls (SSTI sandbox, auth enforcement, rate limiting, CORS, CRLF, info disclosure) (v0.4)
-- ✅ 423 unit tests (v0.4)
+- ✅ iOS Push notifications (native iOS, via Monitor KSeF app) (v0.5)
+- ✅ Historical invoice import — Initial Load with moving window, resume support (v0.5)
+- ✅ Web UI: dashboard, invoice list (filters/sort/pagination/bulk PDF), invoice detail, initial load view (v0.5)
+- ✅ KSeF API status widget in dashboard (real-time availability + latency probe) (v0.5)
+- ✅ Multi-schema XML parser: FA(3), FA(2), FA_RR, PEF (PEPPOL UBL), UNKNOWN fallback (v0.5)
+- ✅ FA_RR PDF template (Faktura VAT RR — rolnik ryczałtowy, PESEL, oświadczenie) (v0.5)
+- ✅ Optional CIRFMF ksef-pdf-generator microservice integration (v0.5)
+- ✅ **581 unit tests** (v0.5)
 
 **Requirements:**
 - Docker & Docker Compose

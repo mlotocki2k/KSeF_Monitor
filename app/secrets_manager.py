@@ -172,6 +172,12 @@ class SecretsManager:
             config.setdefault("api", {})["auth_token"] = api_auth_token
             logger.info("API auth token loaded from secure source")
 
+        # iOS Push instance key
+        ios_push_key = self.get_secret("IOS_PUSH_INSTANCE_KEY")
+        if ios_push_key:
+            config.setdefault("notifications", {}).setdefault("ios_push", {})["instance_key"] = ios_push_key
+            logger.info("iOS Push instance key loaded from secure source")
+
         return config
     
     def validate_secrets(self, config: Dict[str, Any]) -> bool:

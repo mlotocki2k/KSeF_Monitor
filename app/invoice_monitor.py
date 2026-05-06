@@ -7,6 +7,7 @@ import json
 import hashlib
 import logging
 import os
+import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -14,6 +15,7 @@ from typing import Any, Dict, List, Optional
 from .scheduler import Scheduler
 from .notifiers import NotificationManager
 from .invoice_pdf_generator import generate_invoice_pdf, REPORTLAB_AVAILABLE
+from .invoice_xml_parser import detect_schema_type, SCHEMA_TYPE_UNKNOWN
 from .database import Database, Invoice
 
 # Optional timezone support
@@ -150,8 +152,11 @@ class InvoiceMonitor:
 
         KSeF API v2.2.0/v2.3.0 limits dateRange to 3 months. If date_from is older,
         cap it and log a warning about the skipped period.
+
+        Range is inclusive on both ends, so 90 days = (now - date_from).days + 1.
+        Subtract MAX-1 to keep the window at the limit, not 1 day past it.
         """
-        max_lookback = now - timedelta(days=self.MAX_DATE_RANGE_DAYS)
+        max_lookback = now - timedelta(days=self.MAX_DATE_RANGE_DAYS - 1)
 
         if date_from < max_lookback:
             skipped_days = (max_lookback - date_from).days
@@ -533,6 +538,7 @@ class InvoiceMonitor:
                 20
             ),
             "subject_type": subject_type,
+            "schema_type": self._detect_schema_type_from_metadata(invoice),
             "title": title,
             "priority": self.message_priority,
             "priority_emoji": priority_emojis.get(self.message_priority, "📋"),
@@ -541,8 +547,30 @@ class InvoiceMonitor:
             "priority_color_int": priority_colors_int.get(self.message_priority, 0x3498db),
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "url": None,
+            "notification_id": str(uuid.uuid4()),
         }
-    
+
+    @staticmethod
+    def _detect_schema_type_from_metadata(invoice: Dict) -> str:
+        """Best-effort schema type detection from KSeF API metadata.
+
+        KSeF API metadata may include a 'type' field ('FA', 'FA_RR', 'PEF').
+        Falls back to 'FA3' (most common) when not available.
+        """
+        from .invoice_xml_parser import (
+            SCHEMA_TYPE_FA3, SCHEMA_TYPE_FA2, SCHEMA_TYPE_FA_RR, SCHEMA_TYPE_PEF,
+        )
+        raw_type = (invoice.get('type') or invoice.get('schemaType') or '').upper()
+        mapping = {
+            'FA': SCHEMA_TYPE_FA3,
+            'FA3': SCHEMA_TYPE_FA3,
+            'FA2': SCHEMA_TYPE_FA2,
+            'FA_RR': SCHEMA_TYPE_FA_RR,
+            'FARR': SCHEMA_TYPE_FA_RR,
+            'PEF': SCHEMA_TYPE_PEF,
+        }
+        return mapping.get(raw_type, SCHEMA_TYPE_FA3)
+
     def _format_date_for_filename(self, date_string: str) -> str:
         """Format date string to YYYYMMDD for filename"""
         try:
@@ -719,6 +747,16 @@ class InvoiceMonitor:
 
         xml_content = xml_result['xml_content']
 
+        # Detect schema type for logging and downstream decisions
+        schema_type = detect_schema_type(xml_content)
+        if schema_type == SCHEMA_TYPE_UNKNOWN:
+            logger.warning(
+                "Unknown XML schema for invoice %s — XML will be saved but PDF skipped",
+                ksef_number,
+            )
+        else:
+            logger.debug("Invoice %s schema: %s", ksef_number, schema_type)
+
         # Save XML
         if self.save_xml:
             xml_orig_path = target_dir / f"{base_name}.xml"
@@ -760,7 +798,12 @@ class InvoiceMonitor:
 
     def _update_artifact_in_db(self, db_session, invoice_id: Optional[int],
                                artifact_type: str, file_path: Path):
-        """Update artifact flags and paths in DB for a saved file."""
+        """Update artifact flags and paths in DB for a saved file.
+
+        Writes both the inline `Invoice.has_xml/xml_path/has_pdf/pdf_path`
+        fields and the dedicated `invoice_artifacts` row (status='downloaded')
+        that the API cache lookup queries.
+        """
         if not db_session or not invoice_id:
             return
         try:
@@ -774,8 +817,102 @@ class InvoiceMonitor:
             elif artifact_type == "pdf":
                 inv.has_pdf = True
                 inv.pdf_path = rel_path
+            # Mirror to invoice_artifacts so /api/v1/invoices/{ksef}/{xml|pdf}
+            # cache hit path actually finds the file. db.create_artifact is a
+            # no-op when the (invoice_id, artifact_type) row already exists.
+            try:
+                size = file_path.stat().st_size if file_path.exists() else None
+            except OSError:
+                size = None
+            try:
+                from app.database import Database  # local import to avoid cycle
+            except Exception:
+                Database = None
+            if self.db is not None:
+                self.db.create_artifact(db_session, invoice_id, artifact_type)
+                self.db.mark_artifact_downloaded(
+                    db_session, invoice_id, artifact_type,
+                    file_path=rel_path, file_size=size,
+                )
         except Exception as e:
             logger.error(f"Failed to update artifact in DB: {e}")
+
+    def save_artifact_for_invoice(
+        self,
+        invoice_meta: Dict,
+        subject_type: str,
+        artifact_type: str,
+        content,
+        invoice_id: int,
+        db_session,
+    ) -> Optional[Path]:
+        """Persist on-demand-fetched XML or generated PDF to disk + DB.
+
+        Reuses the same path resolution / file_exists_strategy as the live
+        polling path so on-demand artifacts land in the same folder layout.
+
+        Args:
+            invoice_meta: KSeF v2.4 InvoiceMetadata dict (from raw_metadata).
+            subject_type: Subject1 / Subject2 / etc.
+            artifact_type: "xml" or "pdf".
+            content: str (XML) or bytes (PDF).
+            invoice_id: DB Invoice.id.
+            db_session: open SQLAlchemy session (caller commits).
+
+        Returns the Path that was written, or None on skip / collision /
+        path-traversal guard hit.
+        """
+        if artifact_type not in ("xml", "pdf"):
+            raise ValueError(f"unsupported artifact_type: {artifact_type}")
+
+        ksef_number = invoice_meta.get("ksefNumber") or ""
+        if not ksef_number:
+            logger.warning("save_artifact: missing ksefNumber, aborting")
+            return None
+
+        base_name = self._build_file_name(invoice_meta, subject_type, file_type="invoice")
+        target_dir = self._resolve_output_dir(invoice_meta, subject_type)
+        try:
+            target_dir.mkdir(parents=True, exist_ok=True)
+        except OSError as e:
+            logger.error(f"save_artifact: cannot mkdir {target_dir}: {e}")
+            return None
+
+        # Path traversal guard
+        resolved_dir = self.output_dir.resolve()
+        test_path = (target_dir / f"{base_name}.tmp").resolve()
+        if not test_path.is_relative_to(resolved_dir):
+            logger.error(f"save_artifact: path traversal blocked for {ksef_number}")
+            return None
+
+        suffix = ".xml" if artifact_type == "xml" else ".pdf"
+        orig_path = target_dir / f"{base_name}{suffix}"
+        write_path = self._resolve_safe_path(orig_path)
+        if write_path is None:
+            # `skip` strategy and file already on disk — still register in DB
+            # so the next API lookup is a cache hit.
+            if orig_path.exists():
+                self._update_artifact_in_db(db_session, invoice_id, artifact_type, orig_path)
+                return orig_path
+            return None
+
+        try:
+            if artifact_type == "xml":
+                if isinstance(content, bytes):
+                    content = content.decode("utf-8")
+                with open(write_path, "w", encoding="utf-8") as f:
+                    f.write(content)
+            else:  # pdf
+                if hasattr(content, "read"):
+                    content = content.read()
+                with open(write_path, "wb") as f:
+                    f.write(content)
+            logger.info(f"Invoice {artifact_type.upper()} saved (on-demand): {write_path}")
+            self._update_artifact_in_db(db_session, invoice_id, artifact_type, write_path)
+            return write_path
+        except Exception as e:
+            logger.error(f"save_artifact: write failed for {ksef_number} {artifact_type}: {e}")
+            return None
 
     def run(self):
         """

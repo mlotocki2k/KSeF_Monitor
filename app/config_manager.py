@@ -161,6 +161,9 @@ class ConfigManager:
         # Set API defaults
         self._apply_api_defaults(config)
 
+        # Set initial load defaults
+        self._apply_initial_load_defaults(config)
+
     def _validate_schedule(self, schedule: Dict[str, Any]):
         """
         Validate schedule configuration based on mode
@@ -289,6 +292,7 @@ class ConfigManager:
                      "list_fields": ["to_addresses"]},
         "webhook":  {"required_warn": ["url"],
                      "enum_fields": {"method": ["GET", "POST", "PUT"]}},
+        "ios_push": {"required_warn": ["worker_url"]},
     }
 
     def _validate_channel(self, channel_name: str, channel_config: Dict[str, Any]):
@@ -422,6 +426,13 @@ class ConfigManager:
                     f"Built-in default template will be used."
                 )
 
+        # Optional CIRFMF ksef-pdf-generator microservice URL.
+        # If set, PDF generation tries this service first before local rendering.
+        # Example: "http://ksef-pdf-generator:8080"
+        pdf_ksef_generator_url = storage.get("pdf_ksef_generator_url")
+        if pdf_ksef_generator_url:
+            logger.info(f"CIRFMF PDF generator URL configured: {pdf_ksef_generator_url}")
+
         logger.info(f"Storage: save_xml={storage['save_xml']}, save_pdf={storage['save_pdf']}, output_dir={storage['output_dir']}")
 
     def _apply_rate_limit_defaults(self, config: Dict[str, Any]):
@@ -462,26 +473,87 @@ class ConfigManager:
         rate_limit.setdefault("enabled", True)
         rate_limit.setdefault("default", "60/minute")
         rate_limit.setdefault("trigger", "2/minute")
+        rate_limit.setdefault("initial_load_start", "1/hour")
+        rate_limit.setdefault("push_regenerate", "5/hour")
+        rate_limit.setdefault("push_reset", "1/hour")
+        rate_limit.setdefault("invoice_download", "30/minute")
 
         # Auto-generate auth token if API enabled without one (F-01 security fix)
         if api["enabled"] and not api["auth_token"]:
             generated_token = secrets.token_urlsafe(48)
             api["auth_token"] = generated_token
+            # Marker for main.py: auto-gen means fresh install — skip bootstrap admin
+            # and let /ui/setup wizard create the first user instead.
+            api["_auth_token_auto_generated"] = True
+            # Write full token to file so user can retrieve it without it appearing in logs
+            token_file = Path("/data/api_token.txt")
+            try:
+                token_file.write_text(generated_token + "\n", encoding="utf-8")
+                token_file.chmod(0o600)
+                token_file_msg = f"Full token saved to: {token_file}"
+            except Exception:
+                token_file_msg = "Could not save token to file — set api.auth_token in config.json"
             logger.warning("=" * 60)
-            logger.warning(
-                "API enabled without auth_token — auto-generated:"
-            )
-            logger.warning("  %s...", generated_token[:8])
+            logger.warning("API enabled without auth_token — auto-generated:")
+            logger.warning("  %s... (first 8 chars)", generated_token[:8])
+            logger.warning(token_file_msg)
             logger.warning(
                 "Set api.auth_token in config.json or "
                 "API_AUTH_TOKEN env var for a persistent token."
             )
             logger.warning("=" * 60)
 
+        api.setdefault("ui_enabled", True)
+        api.setdefault("ui_public", False)
+        if api["ui_public"] and api["auth_token"]:
+            logger.warning(
+                "api.ui_public=true bypasses auth for /ui/* — only safe when "
+                "port is bound to 127.0.0.1 or a trusted reverse proxy enforces "
+                "authentication. Set to false for production."
+            )
+
         if api["enabled"]:
             logger.info(
                 f"API: enabled on {api['bind_address']}:{api['port']}, "
                 f"auth={'enabled' if api['auth_token'] else 'DISABLED (open access)'}"
+            )
+
+    def _apply_initial_load_defaults(self, config: Dict[str, Any]):
+        """Apply defaults for initial_load section."""
+        il = config.setdefault("initial_load", {})
+        il.setdefault("enabled", False)
+        il.setdefault("start_date", "")
+        il.setdefault("subject_types", ["Subject1", "Subject2"])
+        il.setdefault("date_type", "Invoicing")
+
+        if il["enabled"]:
+            if not il["start_date"]:
+                logger.warning("initial_load.enabled=true but start_date not set — initial load disabled")
+                il["enabled"] = False
+            else:
+                # Validate date format
+                from datetime import datetime as _dt
+                try:
+                    _dt.fromisoformat(il["start_date"])
+                except ValueError:
+                    logger.warning(
+                        "initial_load.start_date '%s' is not a valid ISO date — initial load disabled",
+                        il["start_date"],
+                    )
+                    il["enabled"] = False
+
+            valid_types = {"Subject1", "Subject2", "Subject3", "SubjectAuthorized"}
+            invalid = set(il["subject_types"]) - valid_types
+            if invalid:
+                logger.warning(
+                    "initial_load.subject_types contains unknown values: %s — will be ignored",
+                    invalid,
+                )
+
+        if il["enabled"]:
+            logger.info(
+                "Initial load: enabled, start_date=%s, subject_types=%s, date_type=%s",
+                il["start_date"], il["subject_types"], il["date_type"],
             )
 
     _SENTINEL = object()

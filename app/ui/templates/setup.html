@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="pl" class="h-full">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>Konfiguracja konta — Monitor KSeF</title>
+  <link rel="icon" type="image/png" sizes="32x32" href="/ui/static/favicon.png?v={{ ui_version }}">
+  <link rel="stylesheet" href="/ui/static/tailwind.min.css?v={{ ui_version }}">
+  <style>
+    :root {
+      --app-bg: #0B1A3E; --card-bg: #1A2B50; --card-border: #243454;
+      --text-primary: #FFFFFF; --text-muted: #8E99AF;
+      --accent: #007AFF; --accent-hover: #0A84FF;
+      --input-bg: #152344; --input-border: #2A3A62;
+    }
+    html, body { background: var(--app-bg); color: var(--text-primary); }
+    .input { display: block; width: 100%; border-radius: .375rem; border: 1px solid var(--input-border); background: var(--input-bg); color: var(--text-primary); padding: .5rem .75rem; font-size: .875rem; }
+    .input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+    .label { display: block; font-size: .75rem; font-weight: 500; color: var(--text-muted); margin-bottom: .25rem; }
+    .btn-primary { display: inline-flex; align-items: center; justify-content: center; width: 100%; padding: .5rem .75rem; font-size: .875rem; font-weight: 500; border-radius: .375rem; background: var(--accent); color: #fff; border: 1px solid var(--accent); cursor: pointer; transition: background .15s; }
+    .btn-primary:hover { background: var(--accent-hover); }
+    .card { background: var(--card-bg); border: 1px solid var(--card-border); border-radius: .5rem; box-shadow: 0 4px 20px rgba(0,0,0,.35); }
+    .bg-red-50 { background-color: rgba(255,59,48,.1) !important; }
+    .border-red-200 { border-color: rgba(255,59,48,.3) !important; }
+    .text-red-700 { color: #FF6B62 !important; }
+  </style>
+</head>
+<body class="h-full flex items-center justify-center">
+  <div class="card p-8 w-full max-w-sm mx-4">
+    <h1 class="flex items-center gap-3 font-bold text-base mb-1" style="color: var(--text-primary);">
+      <img src="/ui/static/icon-64.png?v={{ ui_version }}" alt="" width="36" height="36" style="border-radius: 8px;">
+      Monitor KSeF
+    </h1>
+    <p class="text-xs mb-1" style="color: var(--text-muted);">Pierwsze uruchomienie</p>
+    <h2 class="text-sm font-semibold mb-4" style="color: var(--text-primary);">Utwórz konto administratora</h2>
+
+    {% if error %}
+    <div class="mb-4 rounded-md bg-red-50 border border-red-200 p-3 text-sm text-red-700">
+      {{ error }}
+    </div>
+    {% endif %}
+
+    <form method="post" action="/ui/setup" autocomplete="off">
+      <label for="username" class="label">Nazwa użytkownika</label>
+      <input id="username" name="username" type="text" class="input mb-3"
+        placeholder="np. admin" required autofocus
+        minlength="3" maxlength="64" pattern="[A-Za-z0-9._\-]+">
+
+      <label for="password" class="label">Hasło (min. 8 znaków)</label>
+      <input id="password" name="password" type="password" class="input mb-3"
+        required minlength="8">
+
+      <label for="password_confirm" class="label">Powtórz hasło</label>
+      <input id="password_confirm" name="password_confirm" type="password" class="input mb-4"
+        required minlength="8">
+
+      <button type="submit" class="btn-primary">Utwórz konto i zaloguj</button>
+    </form>
+
+    <p class="mt-4 text-[11px] text-center" style="color: var(--text-muted);">
+      Konto przechowywane lokalnie w bazie SQLite. Hasło hashowane (bcrypt).
+    </p>
+  </div>
+</body>
+</html>

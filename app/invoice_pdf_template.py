@@ -21,8 +21,11 @@ from io import BytesIO
 from pathlib import Path
 from typing import Dict, Optional
 
-from jinja2 import FileSystemLoader, select_autoescape
+from jinja2 import FileSystemLoader
 from jinja2.sandbox import SandboxedEnvironment
+
+from app import __version__ as _APP_VERSION
+from app.template_renderer import _jinja_autoescape
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +58,26 @@ from .pdf_constants import (
 )
 
 TEMPLATE_NAME = "invoice_pdf.html.j2"
+TEMPLATE_NAME_FA_RR = "invoice_pdf_fa_rr.html.j2"
+
+_PDF_SAFE_PREFIXES = ("data:", "/app/app/templates/")
+
+
+def _pdf_link_callback(uri, rel):
+    """Block external resources when rendering invoice PDFs (V5-08).
+
+    Allowed:
+      - data: URIs (QR code image embedded in template context)
+      - Bundled fonts & template assets under /app/app/templates/
+
+    Everything else returns '' → xhtml2pdf skips the resource.
+    """
+    if not uri:
+        return ""
+    if uri.startswith(_PDF_SAFE_PREFIXES):
+        return uri
+    logger.warning("xhtml2pdf: blocked external resource %s", uri[:120])
+    return ""
 
 
 def fmt_amt_filter(val) -> str:
@@ -119,7 +142,7 @@ class InvoicePDFTemplateRenderer:
 
         self.env = SandboxedEnvironment(
             loader=FileSystemLoader(search_paths),
-            autoescape=select_autoescape(["html"]),
+            autoescape=_jinja_autoescape,
             trim_blocks=True,
             lstrip_blocks=True,
         )
@@ -131,7 +154,8 @@ class InvoicePDFTemplateRenderer:
 
     def render(self, invoice_data: Dict, ksef_number: str = '',
                xml_content: str = '', environment: str = '',
-               timezone: str = '', output_path: str = None) -> BytesIO:
+               timezone: str = '', output_path: str = None,
+               schema_type: str = '') -> BytesIO:
         """
         Render invoice data to PDF via HTML template.
 
@@ -142,6 +166,7 @@ class InvoicePDFTemplateRenderer:
             environment: KSeF environment ('test', 'demo', 'prod')
             timezone: IANA timezone name for generation timestamp
             output_path: File path to write PDF (if None, returns BytesIO)
+            schema_type: Schema type string (e.g. 'FA_RR') for template dispatch
 
         Returns:
             BytesIO with PDF content
@@ -152,13 +177,28 @@ class InvoicePDFTemplateRenderer:
         # Prepare template context
         context = self._prepare_context(invoice_data, ksef_number, qr_data_uri, timezone)
 
+        # Add FA_RR specific fields to context
+        if schema_type == 'FA_RR':
+            context['fa_rr'] = invoice_data.get('fa_rr', {})
+
+        # Dispatch to schema-specific template
+        if schema_type == 'FA_RR':
+            template_name = TEMPLATE_NAME_FA_RR
+        else:
+            template_name = TEMPLATE_NAME
+
         # Render Jinja2 template to HTML
-        template = self.env.get_template(TEMPLATE_NAME)
+        template = self.env.get_template(template_name)
         html_content = template.render(**context)
 
         # Convert HTML to PDF using xhtml2pdf
         buffer = BytesIO()
-        pisa_status = pisa.CreatePDF(html_content, dest=buffer, encoding='utf-8')
+        pisa_status = pisa.CreatePDF(
+            html_content,
+            dest=buffer,
+            encoding='utf-8',
+            link_callback=_pdf_link_callback,
+        )
 
         if pisa_status.err:
             raise RuntimeError(f"xhtml2pdf rendering failed with {pisa_status.err} error(s)")
@@ -264,6 +304,7 @@ class InvoicePDFTemplateRenderer:
             'invoice_type_title': invoice_type_title,
             'total_label': total_label,
             'generation_stamp': generation_stamp,
+            'app_version': _APP_VERSION,
             'has_col': has_col,
             'payment_methods': PAYMENT_METHODS,
             'vat_rate_labels': VAT_RATE_LABELS,

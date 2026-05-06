@@ -166,52 +166,55 @@ Poprawki niezwiązane z konkretnymi feature'ami, ale krytyczne dla stabilności:
 
 ---
 
-## v0.5 (Initial load + Web UI: odczyt)
+## v0.5 (Initial load + Web UI: odczyt) ✅ (zrobione)
 **Cel:** pierwszy sensowny produkt dla użytkownika: dane + podgląd
 
-### 1) Initial load (dane historyczne)
-- od `2026-02-01` albo data definiowana w config (`initial_load.start_date`)
-- tryb: jednorazowy import + zapis do DB + raport (ile pobrano, ile pominięto)
-- **Moving window** — obejście limitu 90 dni (3 miesiące) API KSeF:
+### 1) Initial load (dane historyczne) ✅
+- [x] od `2026-02-01` albo data definiowana w config (`initial_load.start_date`)
+- [x] tryb: jednorazowy import + zapis do DB + raport (ile pobrano, ile pominięto)
+- [x] **Moving window** — obejście limitu 90 dni (3 miesiące) API KSeF:
   - automatyczne dzielenie zakresu dat na okna ≤90 dni
   - sekwencyjne pobieranie okno po oknie z paginacją w każdym
   - progress tracking: zapis postępu (ostatnie zakończone okno) → resume po przerwaniu
   - rate limiting / backoff między oknami (unikanie throttlingu API)
 
-### 2) Interfejs webowy (odczyt)
-- pokazywanie health endpointa (api.kef.gov.pl be logowania zwraca status endpointa)
-- pokazywanie ile nowych faktur od ostatniego sprawdzenia: **per subject, per NIP**
-- pokazywanie ile ogólnie faktur: **per subject, per NIP** (sprzedawcy i kupującego)
-- lista wszystkich faktur (z bazy): filtry/sort/paginacja
-- podgląd wybranej faktury: pobranie po API z KSeF konkretnej faktury (z cache, jeśli już jest)
-- możliwość zaznaczenia jednej lub wielu faktur do wygenerowania PDF
-- integracja z oficjalną biblioteką CIRFMF do wizualizacji PDF ([ksef-pdf-generator](https://github.com/CIRFMF/ksef-pdf-generator)) jako opcjonalny mikroserwis Docker (REST API: XML → PDF), obok wbudowanego generatora (xhtml2pdf/ReportLab)
+### 2) Interfejs webowy (odczyt) ✅
+- [x] Dashboard: statystyki faktur, stan monitora, ostatnio dodane, widget KSeF API status
+- [x] Widget KSeF API status: polling `/api/v1/monitor/ksef-status`, badge dostępności, latencja
+- [x] Lista faktur: filtry (typ, NIP, daty, szukaj), sort, paginacja, zaznaczanie, bulk PDF
+- [x] Podgląd faktury: metadane, kwoty, daty, pobieranie PDF i XML z cache lub live z KSeF
+- [x] Podgląd initial load: progress bar, status okien, log operacji
+- [x] Tailwind CSS CDN — zero build step, responsywny layout
+- [x] Auth bypass dla `/ui` (token z localStorage, taki sam jak API)
+- [x] `app/api/routers/ui.py` — trasy Jinja2 SSR dla wszystkich widoków
+- [x] integracja z oficjalną biblioteką CIRFMF ([ksef-pdf-generator](https://github.com/CIRFMF/ksef-pdf-generator)) jako opcjonalny mikroserwis (`storage.pdf_ksef_generator_url`)
 
-### 3) Push notyfikacje iOS — Monitor KSeF (Cloudflare Worker)
+### 3) Push notyfikacje iOS — Monitor KSeF (Cloudflare Worker) ✅
 - nowy kanał powiadomień: natywne push notifications na iOS via aplikację **Monitor KSeF**
-- Aplikacja iOS: Monitor KSeF w trakcie review
-- Cloudflare Worker jako proxy do Apple Push Notification Service (APNs)
-  - Worker odbiera POST z KSeF Monitor (JSON payload) → wysyła do APNs
-  - Autentykacja Worker ↔ APNs via token-based auth (p8 key)
-  - Autentykacja Monitor → Worker via shared secret (header `Authorization`)
-- integracja z aplikacją Monitor KSeF:
-  - rejestracja device token w Worker (KV storage: device tokens per user)
-  - rich push notifications z danymi faktury (numer, kwota, kontrahent)
-  - push notification jest w roadmapie aplikacji iOS
-- konfiguracja w `config.json`:
-  ```json
-  {
-    "notifications": {
-      "channels": ["ios_push"],
-      "ios_push": {
-        "worker_url": "https://ksef-push.your-domain.workers.dev",
-        "worker_secret": "shared-secret"
-      }
-    }
-  }
-  ```
-- nowy notifier: `app/notifiers/ios_push_notifier.py` (POST JSON do Worker URL)
-- szablon Jinja2: `app/templates/ios_push.json.j2`
+- Aplikacja iOS: Monitor KSeF (w trakcie review w App Store)
+- **Architektura** (wg `architektura_push_notifications_v1_1_PL.md`):
+  - Central Push Service: Cloudflare Worker (`push.monitorksef.com`) jako proxy do APNs
+  - Worker przechowuje klucz .p8 — nigdy nie opuszcza Worker
+  - Autentykacja Worker ↔ APNs: token-based auth (JWT ES256, .p8 key)
+  - Autentykacja Monitor → Worker: `X-Instance-Id` + `X-Instance-Key` headers
+  - Payload: `{title, body, data}` — Worker buduje envelope `aps`
+- **Parowanie instancji Docker ↔ iOS**:
+  - Docker generuje `instance_id` (UUID), `instance_key` (32B random), `pairing_code` (8 hex)
+  - Docker rejestruje instancję w Worker (`POST /instances/register`, hashe SHA-256)
+  - Docker wyświetla QR code z `MKSEF:{pairing_code}` w Web UI (`/api/v1/push/setup`)
+  - iOS skanuje QR → wysyła `device_token` + `pairing_code` do Worker → mapowanie
+
+- [x] `app/push_manager.py` — PushManager: credentials, rejestracja, QR, wysyłka
+- [x] `app/notifiers/ios_push_notifier.py` — IosPushNotifier (integracja z NotificationManager)
+- [x] `app/templates/ios_push.json.j2` — szablon payloadu push
+- [x] `app/api/routers/push.py` — REST endpoint `/api/v1/push/setup`, `/push/regenerate`, `/push/reset`
+- [x] Konfiguracja w `config.json`: sekcja `notifications.ios_push`
+- [x] Secret: `IOS_PUSH_INSTANCE_KEY` (env var / Docker secret)
+- [x] Credentials auto-generowane przez PushManager na pierwszym uruchomieniu
+- [x] QR code ASCII w logach przy starcie
+- [x] Parowanie iOS: pairing_code + Worker registration
+- [x] Baza danych Phase 3: tabela `push_instances` (alembic migration)
+- [x] 62 nowe testy (`test_ios_push_notifier.py`, `test_push_manager.py`)
 
 ### 4) Obsługa wszystkich schematów faktur KSeF
 Cel: uniwersalny monitor i generator PDF dla każdego typu faktury w KSeF — nie tylko FA(3).
@@ -227,29 +230,200 @@ Cel: uniwersalny monitor i generator PDF dla każdego typu faktury w KSeF — ni
 | FA_RR (1) | 1-1E | RR | Faktura VAT RR (nowa wersja, obowiązkowa od 01.04.2026) |
 
 **Zakres prac:**
-- [ ] Architektura multi-schema: bazowy `InvoiceXMLParser` (z v0.4) + parser per schemat (FA, PEF, RR)
-- [ ] Auto-detekcja schematu z namespace XML (bez konfiguracji — aplikacja rozpoznaje typ automatycznie)
-- [ ] Parser FA(2) — mapowanie pól na wspólny model danych (różnice vs FA(3))
-- [ ] Parser PEF(3) / PEF_KOR(3) — odmienna struktura (zamówienia publiczne, inne pola)
-- [ ] Parser FA_RR(1) — pola specyficzne: dane rolnika, stawka ryczałtu 7%, oświadczenie
-- [ ] Template PDF per schemat — osobny `invoice_pdf_{schema}.html.j2` z odpowiednim layoutem
-- [ ] Fallback: nieznany schemat → zapis XML bez PDF + warning w logu i powiadomieniu
-- [ ] Pobranie i wersjonowanie specyfikacji XSD dla nowych schematów w `spec/`
-- [ ] Aktualizacja szablonów powiadomień — informacja o typie schematu faktury
-- [ ] Dokumentacja: rozszerzenie PDF_TEMPLATES.md o nowe schematy
+- [x] Architektura multi-schema: `BaseInvoiceXMLParser` + `create_invoice_xml_parser()` factory
+- [x] Auto-detekcja schematu z namespace XML (bez konfiguracji — `detect_schema_type()`)
+- [x] Parser FA(2) — mapowanie pól na wspólny model danych (obsługa obu namespace URI)
+- [x] Parser PEF(3) / PEF_KOR(3) — `PEFInvoiceXMLParser` (UBL CBC/CAC namespaces)
+- [x] Parser FA_RR(1) — `FA_RRInvoiceXMLParser` (rolnik PESEL, KwotaVatRR, oświadczenie)
+- [x] Template PDF per schemat — `invoice_pdf_fa_rr.html.j2` dla FA_RR, PEF → ReportLab minimal
+- [x] Fallback: nieznany schemat → zapis XML bez PDF + warning w logu i powiadomieniu
+- [x] Specyfikacje XSD stubs: `spec/schemat_FA(2)_v1-0E.xsd`, `spec/schemat_FA_RR_v1-0E.xsd`
+- [x] Aktualizacja szablonów powiadomień — pole `schema_type` w webhook.json.j2 i ios_push.json.j2
+- [x] Dokumentacja: rozszerzenie `PDF_TEMPLATES.md` o nowe schematy i CIRFMF integrację
+- [x] 50 nowych testów (`test_multi_schema_parser.py`)
 
-**Uwagi:**
-- Bazuje na refaktoringu `InvoiceXMLParser` z v0.4 (wydzielenie parsera z `invoice_pdf_generator.py`)
-- Wspólny model danych (dataclass) z opcjonalnymi polami per schemat
-- CI workflow już monitoruje zmiany XSD — nowe schematy będą automatycznie wykrywane
+### 5) Security hardening — audit remediation ✅
+_Źródło: `audit/20260421_security_audit_docker_v0_5_test_branch.md` + `audit/20260422_security_reaudit_v0_5_post_remediation.md`. Pełna lista zmian: `CHANGELOG.md` [0.5.0]._
 
-### Zmiany API / schema
-- Obsługa ewentualnych nowych wersji KSeF API (breaking changes w endpointach, paginacji, autentykacji)
-- Wsparcie nowych wersji schematu FA — jeśli pojawi się FA(4) lub nowe pola w FA(3), adaptacja parsera XML i template PDF
-- Aktualizacja `spec/openapi.json` i `spec/schemat_FA(3)_v1-0E.xsd` do najnowszych wersji
+- [x] **V5-01** Zawężenie whitelist auth do `{/docs, /redoc, /openapi.json, /api/v1/monitor/health}`. Nowa opcja `api.ui_public` (domyślnie `false`) jako opt-in dla reverse-proxy.
+- [x] **V5-02** Pairing code rozszerzony 32-bit → 64-bit, maskowany w UI (`X…Y`). Plaintext code + QR przeniesiony za auth do `GET /api/v1/push/pairing`.
+- [x] **V5-03** Auth bypass `/invoices/{ksef}/pdf|xml` usunięty. `KsefNumberPath` Pydantic type waliduje `ksef_number` na poziomie path-param (422 przy niezgodności). `Content-Disposition` używa `urllib.parse.quote()`.
+- [x] **V5-04** CVE-driven pinning: `urllib3>=2.6.3`, `starlette>=0.49.1,<1.0.0`, `python-multipart>=0.0.26`, `cryptography==46.0.7`. `requirements.lock` z hashami, CI: `pip-audit` + `trivy image`.
+- [x] **V5-05** Security headers: CSP, HSTS (`max-age=31536000`), `Referrer-Policy`, `Permissions-Policy`.
+- [x] **V5-06** Per-endpoint rate limity: `/monitor/trigger` 2/min, `/initial-load/start` 1/hr, `/push/regenerate` 5/hr, `/push/reset` 1/hr, `/invoices/{}/pdf|xml` 30/min. Konfigurowalne przez `api.rate_limit.*`.
+- [x] **V5-07** SSRF guard `app._ssrf_guard.is_safe_public_url` — wspólny walidator dla webhook + CIRFMF PDF generator URL.
+- [x] **V5-08** `xhtml2pdf` `link_callback` blokuje zewnętrzne URI — dozwolone tylko `data:` i ścieżki bundlowanych szablonów.
+- [x] **V5-09/V5-12** Ujednolicenie stringa wersji do `0.5.0`, single-source przez `app.__version__`.
+- [x] **V5-10** Tailwind CSS self-hosted (`app/ui/static/tailwind.min.css`, 14 KB). Usunięta zależność CDN.
+- [x] **V5-11** `StartJobRequest` odrzuca zakresy dat > 5 lat przez Pydantic `model_validator`.
+- [x] **v0.4 F-06** Jinja2 autoescape extension-driven — callable `_jinja_autoescape(name)`.
+- [x] **v0.4 F-07** `_migrate_schema` zastąpiony przez `alembic.command.upgrade(head)` / `stamp(head)`.
+- [x] **v0.4 F-09** `entrypoint.sh` — rootless mode: `id -u` check, pomija `usermod`/`chown` gdy non-root.
+
+### Zmiany API / schema ✅
+- [x] KSeF API v2.4.0: Problem Details, 429 retry, 410 Gone, isTruncated pagination, API status monitor
+- [x] `GET /api/v1/monitor/ksef-status` — probe dostępności API bez logowania
+- [x] `GET /api/v1/invoices/{ksef_number}/xml` — pobieranie XML (cache → live KSeF fallback)
+- [x] `GET /api/v1/invoices/{ksef_number}/pdf` — pobieranie PDF (cache → generuj on-demand)
+- [x] `storage.pdf_ksef_generator_url` — opcjonalny CIRFMF microservice jako pierwszy renderer
 
 **Zależności:** v0.4
-**DoD:** użytkownik widzi dashboard + listę + podgląd; initial load działa powtarzalnie bez duplikatów; push notification dociera na iOS; PDF generuje się poprawnie dla każdego typu faktury obsługiwanego przez KSeF.
+**DoD:** ✅ użytkownik widzi dashboard + listę + podgląd; initial load działa powtarzalnie bez duplikatów; push notification dociera na iOS; PDF generuje się poprawnie dla każdego typu faktury obsługiwanego przez KSeF. **581 testów, 0 failures.**
+
+---
+
+## v0.5.1 (UI auth UX) ✅
+_Źródło: regresja UX po V5-01 — token modal blokował dashboard. Pełna lista: `CHANGELOG.md` [0.5.1]._
+
+- [x] **V5-12** Cookie session zamiast localStorage Bearer (interim — value = api.auth_token).
+- [x] **V5-13** User accounts w DB (bcrypt) + opaque DB-backed sessions (256-bit, 7-dni rolling TTL).
+  - Tabele `ui_users`, `ui_sessions` (Alembic head: `e0f1g2h34567`).
+  - First-launch wizard `/ui/setup` (form: username + password); locks idempotently po pierwszym userze.
+  - `/ui/login`, `/ui/logout`, `/ui/account` (zmiana hasła revoke wszystkie sesje, w tym bieżącą).
+  - Bearer nadal działa równolegle dla curl/iOS pairing/integracji.
+  - Rate limit: `POST /ui/login` 5/min, `/ui/setup` 3/min, `/ui/account/password` 5/min.
+  - Open-redirect guard na `next=`; cookie `HttpOnly`+`SameSite=Strict`+`Secure` (https).
+  - **Upgrade-friendly:** main.py auto-tworzy usera `admin` z `password = api.auth_token` przy pierwszym starcie z istniejącym tokenem i pustą tabelą userów. Zero key regeneration.
+  - CLI: `python -m app.user_admin {list, add, reset-password, delete, cleanup-sessions}`.
+- [x] **deps:** `bcrypt>=4.2.0,<5.0.0`.
+- [x] **V5-14** Regresja `/ui/account` pod `ui_public=true` / `auth_token=""` — split middleware: `resolve_ui_session` (ZAWSZE) + `verify_auth` (gate tylko gdy `auth_token`). Cookie state populowany niezależnie od ścieżki auth. 4 regresyjne testy.
+- [x] **V5-15** Dark theme spójny z iOS app — paleta 1:1 z `monitor_ksef_ios/.../Assets.xcassets/*.colorset` (dark appearance). `--app-bg #0B1A3E`, `--accent #007AFF`, iOS status colors. Ikona `AppIcon.appiconset/icon_dark_1024.png` reuse (128/64/32 PNG). Dark-only (`color-scheme: dark`); plain CSS (prebuilt tailwind.min.css bez JIT). `base.html`, `login.html`, `setup.html` przepisane.
+- [x] **V5-16** Fix `POST /api/v1/monitor/trigger` — router wołał nieistniejącą `monitor.scheduler.force_next_run()`. Podmiana na `monitor.trigger_check()` (istniejąca metoda w `InvoiceMonitor`, flipuje `_manual_trigger`). Testy `test_api_monitor.py`, `test_api_rate_limit.py` zaktualizowane.
+- [x] **V5-17** Fix stopki PDF — oba generatory (`InvoicePDFGenerator` ReportLab + `invoice_pdf.html.j2` xhtml2pdf) miały hardcoded `v0.3`. Teraz czytają `app.__version__` (single source of truth). Footer na test: `v0.5.1`.
+- [x] **testy:** `tests/test_ui_user_auth.py` (55 testów, w tym 4 z `TestSessionResolver`); `test_api_auth.py`, `test_api_monitor.py`, `test_api_rate_limit.py` zaktualizowane; head ref w `test_db_migration.py` bumped. **114+ testów passes.**
+
+**Follow-ups (non-blocking):**
+- Multi-user admin panel w UI (obecnie CLI-only)
+- Opcjonalny 2FA / TOTP
+- Lista aktywnych sesji w `/ui/account` (revoke per-device)
+- Rotacja cookie value przy każdym requeście (defense-in-depth)
+- Light-mode toggle (obecnie dark-only)
+
+---
+
+## v0.5.2 (UI auth security audit remediation) ✅
+_Źródło: focused audyt V5-12/V5-13/V5-14 → `audit/20260504_security_audit_v0_5_1_ui_auth.md`. Pełna lista zmian: `CHANGELOG.md` [0.5.2]._
+
+Audyt dał 0 CRITICAL, 0 HIGH, 6 MEDIUM, 6 LOW, 5 INFO. Wszystkie 14 punktów zaadresowane.
+
+### Sesja
+- [x] **U-01** `api.cookie_secure_mode` (`auto`/`always`/`never`) + honor `X-Forwarded-Proto`. Default `auto` — w prod za reverse-proxy cookie dostaje `Secure` mimo `request.url.scheme="http"`.
+- [x] **U-04** Opt-in `api.session_strict_binding` — SHA-256(UA) w `ui_sessions.ua_hash` (alembic phase7), mismatch → revoke. Legacy rows bez `ua_hash` grandfathered.
+- [x] **U-09** Absolute lifetime cap 30 dni (`SESSION_ABSOLUTE_LIFETIME`) — sliding renew nie omija.
+- [x] **U-12** Audit log: session create/revoke/eviction, lockout. `username_len` zamiast raw username (U-08 partial).
+
+### Auth strength
+- [x] **U-02** SHA-256+b64 pre-hash dla haseł >72B → bcrypt 5.0-ready (5.0 rzuca `ValueError`, byłby DoS na obecnych userach z długimi hasłami).
+- [x] **U-03** Per-username brute-force lockout: tabela `ui_login_attempts` (alembic phase6), 5 fails / 15 min sliding → 15 min lock. Check przed bcrypt.
+- [x] **U-07** Constant-time login: bcrypt zawsze (dummy hash dla nieistniejącego usera) → bez timing oracle dla username enumeration.
+- [x] **U-11** Password strength: blocklist top-100 (rockyou, in-process, NIST SP 800-63B) + reject jeśli zawiera username (≥3 chars, case-insensitive).
+
+### Setup wizard
+- [x] **U-06** `create_first_admin_atomic()` z `BEGIN IMMEDIATE` (SQLite RESERVED lock) — concurrent setup POSTs nie tworzą drugiego konta admin.
+
+### Web hardening
+- [x] **U-05** CSP `script-src` używa per-request nonce (16-byte `secrets.token_urlsafe`) zamiast `'unsafe-inline'`. Wszystkie inline `<script>` w templates niosą `nonce="{{ request.state.csp_nonce }}"`. `style-src 'unsafe-inline'` zostaje (carryover).
+- [x] **U-10** `_safe_next()` strict prefix — odrzuca `/ui-attacker/…`.
+
+### Code quality
+- [x] **U-13** `count_users()` używa `COUNT(*)` zamiast materializacji wszystkich row IDs.
+- [x] **U-15** `resolve_ui_session` catch tylko `(OperationalError, DBAPIError)` — programming errors propagują się normalnie do 500 handler.
+- [x] **U-17** Username case-insensitive (`func.lower`): lookup, lockout key, login flow. `admin`/`Admin`/`ADMIN` → ten sam wpis, ten sam licznik.
+
+### Migrations
+- [x] `f1a2b3c45678` — phase6 `ui_login_attempts`
+- [x] `g2b3c4d56789` — phase7 `ui_sessions.ua_hash`
+
+### Testy
+- [x] `tests/test_ui_user_auth.py` 91 testów (był 57). Nowe klasy: `TestUsernameCaseInsensitive` (3), `TestLoginLockout` (7), `TestCookieSecureFlag` (6), `TestSessionUaBinding` (6), `TestCspNonce` (3); rozszerzenia w `TestPasswordHashing`, `TestSetupWizard`, `TestSessionLifecycle`, `TestValidation`.
+- [x] `tests/test_db_migration.py` head ref bumped do `g2b3c4d56789`.
+
+### Bonus (równolegle z audit-remediation)
+- [x] `chore: sync spec/openapi.json with KSeF production (2026-04-23 build)` — closes #51 (RR enum cleanup, 16-hex validation, build `20260422.4 → 20260423.2`).
+- [x] `ci(deps): respect wontfix label` — workflow `check-requirements-updates.yml` nie reopenuje issues z labelem `wontfix` dopóki tylko stare paczki są outdated; nowe paczki tworzą fresh issue (closes recurring noise from #28).
+
+---
+
+## v0.5.3 (post-0.5.2 hotfix bundle) ✅
+_Pełna lista zmian: `CHANGELOG.md` [0.5.3]. Siedem defektów wykrytych w pre-merge user-test 0.5.2 — żaden nie był złapany przez cykl audytu._
+
+### Showstoppery
+- [x] **Fresh-install lockout (UI)** — auto-gen `auth_token` + bootstrap admin = ten sam token blokował GUI. `ConfigManager` ustawia `api["_auth_token_auto_generated"]`, `main.py` skipuje bootstrap przy markerze. Wizard `/ui/setup` jedynym entry point dla fresh install. Bootstrap zostaje przy operator-supplied token (upgrade v0.5.0).
+- [x] **Initial load: każda faktura odrzucona** — `_map_export_invoice` używał pre-v2.x nazw pól. Re-mapped do v2.4 `InvoiceMetadata` schema (`ksefNumber`, `grossAmount`, `seller.nip`, `invoiceHash` jako string), legacy keys jako fallback. Bonus: `isSelfInvoicing`, `hasAttachment`.
+- [x] **Initial load: KSeF 21405 co drugie okno** — `cursor + timedelta(days=90)` daje 91-day inclusive window. Fix: `_WINDOW_SPAN = 89` + cursor advance `+1day`. To samo w `InvoiceMonitor._cap_date_from`.
+
+### Logowanie
+- [x] **U-12 audit log silently dropped (wszystkie `logger.info`)** — `alembic.ini` `[logger_root] level = WARNING` nadpisywało app config przez `fileConfig()`. Fix: WARNING → INFO. 5 z 7 zdarzeń U-12 (session create/revoke, password change, user create, absolute-cap eviction) niewidocznych w prod aż do tego fixa.
+
+### GUI
+- [x] **Progress bar 50% pod "Ukończony"** — `windows_completed_delta=1` tylko przy success. Bump też na non-fatal failure path. Nowy status `completed_with_errors` + amber badge "Ukończony z błędami" + callout "Niepowodzenia okien" z `error_message` (top 5).
+- [x] **Per-window history (phase 8)** — nowa tabela `initial_load_windows` (FK CASCADE, idx `(job_id, created_at)`) zapisuje każde okno: typ, range, status, imported, skipped, error, duration_ms. Endpoint `GET /api/v1/initial-load/windows?job_id=…` + toggle "Pokaż historię okien" w karcie status (lazy-loaded tabelka, brak inline event handlers — CSP nonce intact).
+- [x] **Logo↔menu spacing** — active nav-link niebieskie tło zlewało się z brand text. `ml-2 sm:ml-4` na `<nav>`, prawa strona spacing bez zmian.
+
+### Dokumentacja
+- [x] **iOS App Store status notice** — App Store v1.0.2 nie obsługuje parowania push. Amber callout w `/ui/push` pod CTA + blockquote w `README.md` iOS Push, oba pointujące na `kontakt@krzewilabs.pl` po TestFlight v1.1.x.
+
+### Migracje
+- [x] `h3c4d5e67890` — phase 8 `initial_load_windows`. Idempotent, head-revision check w `tests/test_db_migration.py` zaktualizowany.
+
+### Testy
+- [x] `tests/test_security_controls.py` — `TestAuthTokenAutoGeneration`: `test_auto_gen_sets_marker`, `test_user_token_no_marker`.
+- [x] `tests/test_initial_load_manager.py` — `TestInitialLoadWindowLog`: success+failed roundtrip, error_message truncation.
+- [x] `tests/test_invoice_monitor.py::test_exceeds_range` zaktualizowany (90 → 89 dni inclusive).
+- Suite: **743 passed, 2 skipped** (był 739).
+
+---
+
+## v0.6 (Lightweight Polling)
+**Cel:** rozdzielenie detekcji nowych faktur od pobierania artefaktów — oszczędność API calls, szybsze push notifications
+
+### Analiza limitów API
+- `POST /invoices/query/metadata`: **hour=20** (nie 120 jak dotąd zakładano — per endpoint, nie globalnie)
+- Minimum bezpieczny polling interval: **4 min** (1 subject) / **7 min** (oba subjects)
+- Poll co 60s = niemożliwe (3× przekroczony limit hour=20)
+
+### 1) Dwufazowy cykl monitoringu
+- [ ] Faza 1: detekcja — `pageSize=10`, tylko metadane, bez XML (1-2 API calls per cykl)
+- [ ] Faza 2: artefakty — lazy/background, osobny rate budget (`GET /invoices/ksef/{ksefNumber}` hour=64)
+- [ ] Konfiguracja interwału pollingu per subject type w `config.json`
+- [ ] Update `invoice_monitor.py` — oddzielenie detekcji od artifact download
+
+### 2) Push notification z metadata (bez XML)
+- [ ] Treść push budowana z pól `InvoiceMetadata` (seller, buyer, kwoty, typ, daty)
+- [ ] XML pobierany lazy dopiero gdy user otwiera fakturę w app
+- [ ] Update `ios_push.json.j2` — template oparty wyłącznie o metadata
+
+### 3) Dokumentacja
+- [x] Analiza limitów per endpoint (z OpenAPI spec `x-rate-limits`) — [KSEF_API_LIMITATIONS.md](KSEF_API_LIMITATIONS.md)
+- [x] Design lekkiego pollingu — [LIGHTWEIGHT_POLLING_DESIGN.md](LIGHTWEIGHT_POLLING_DESIGN.md)
+
+### 4) Pobieranie UPO (Urzędowe Poświadczenie Odbioru)
+**Cel:** wykorzystanie nowego tokenu z uprawnieniem `Introspection` do pobierania UPO faktur sprzedażowych — wartość prawna potwierdzenia wystawienia.
+
+**Status:** ścieżka API zweryfikowana skryptem `examples/test_upo_download.py` (env=test, 2026-04-29) — auth + listing sesji + UPO faktury + UPO sesji, SHA256 OK, schema `http://upo.schematy.mf.gov.pl/KSeF/v4-3`.
+
+- [ ] Rozszerzenie `app/ksef_client.py`:
+  - `list_sessions(sessionType, dateFrom, dateTo, statuses)` → `GET /v2/sessions` (rate: 5/s, 10/min, 60/h)
+  - `get_session_invoices(referenceNumber)` → `GET /v2/sessions/{ref}/invoices` (zwraca też `upoDownloadUrl` SAS direct)
+  - `get_invoice_upo(sessionRef, ksefNumber)` → `GET /v2/sessions/{ref}/invoices/ksef/{ksefNumber}/upo` (rate: 10/s, 120/min, 1200/h)
+  - Weryfikacja `x-ms-meta-hash` (SHA256 base64) per artefakt
+- [ ] Integracja z `invoice_monitor.py`:
+  - Dla faktur Subject1 (sprzedażowe) — po wykryciu znajdź sesję i pobierz UPO XML
+  - Strategia mapowania ksefNumber → sessionRef: cache sesji (lista + invoices), TTL np. 24h
+  - Backoff przy 21178 (UPO not found) — UPO może pojawić się z opóźnieniem po wystawieniu
+- [ ] Storage:
+  - Aktywacja kolumn `has_upo`/`upo_path` w `invoices` (już w schema, dotąd nieużywane)
+  - Zapis pliku obok XML/PDF: `{output_dir}/upo/{ksefNumber}.xml`
+  - `artifact_type='upo'` w `invoice_artifacts` (typ już dopuszczony w schema)
+- [ ] Web UI:
+  - Przycisk "Pobierz UPO" na `invoice_detail.html` (gdy `has_upo=True`)
+  - Endpoint `GET /api/invoices/{ksefNumber}/upo` zwracający XML
+- [ ] Konfiguracja: flaga `monitoring.fetch_upo` (default: false — opt-in, dodatkowy rate budget)
+- [ ] Token wymaga uprawnienia `Introspection` (lub `InvoiceWrite` — ograniczone do sesji własnych) — udokumentować w [KSEF_TOKEN.md](KSEF_TOKEN.md)
+- [ ] Testy: mock `/sessions` + `/sessions/{ref}/invoices/ksef/{ksefNumber}/upo`, weryfikacja SHA256 mismatch handling, 21178
+
+**Zależności:** v0.5
+**DoD:** monitor wykrywa nowe faktury i wysyła push w jednym tanim API call; artefakty pobierane niezależnie; konfigurowalny interwał pollingu; UPO faktur sprzedażowych pobierane i zapisywane gdy `fetch_upo=true`; testy aktualne.
 
 ---
 

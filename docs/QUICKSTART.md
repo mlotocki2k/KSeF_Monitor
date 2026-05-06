@@ -194,6 +194,36 @@ docker stack deploy -c docker-compose.secrets.yml ksef
 docker service logs -f ksef_ksef-monitor
 ```
 
+## Browser UI access (v0.5.1)
+
+Po uruchomieniu z `api.enabled: true` web UI jest pod `http://localhost:8080/ui`.
+
+**Pierwszy login (V5-13):**
+
+- **Świeża instalacja** (brak `auth_token` w configu): pierwszy `/ui` przekieruje na `/ui/setup` — wpisz username + hasło, kliknij _Utwórz konto i zaloguj_.
+- **Upgrade z v0.5.0** (`auth_token` już ustawiony): `main.py` przy starcie tworzy automatycznie usera `admin` z hasłem = `auth_token`. Login na `/ui/login` jako `admin` / `<wartość auth_token>`. Zmień hasło w `/ui/account`.
+- **Bearer dla curl/integracji**: `auth_token` nadal działa jak dotąd:
+  ```bash
+  curl -H "Authorization: Bearer YOUR_TOKEN" http://localhost:8080/api/v1/invoices
+  ```
+
+**Zarządzanie kontami z CLI (kontekst Docker):**
+```bash
+docker exec -it ksef-monitor python -m app.user_admin list
+docker exec -it ksef-monitor python -m app.user_admin add <username>
+docker exec -it ksef-monitor python -m app.user_admin reset-password <username>
+docker exec -it ksef-monitor python -m app.user_admin delete <username>
+docker exec -it ksef-monitor python -m app.user_admin cleanup-sessions
+```
+
+**Trigger natychmiastowego sprawdzenia (z UI):**
+Przycisk **"Sprawdź"** w górnym navbar → `POST /api/v1/monitor/trigger` →
+`InvoiceMonitor.trigger_check()` ustawia flagę `_manual_trigger` → pętla
+monitora zareaguje w następnej iteracji. Status widoczny jako flash message.
+
+**Motyw:** Dark-only, paleta 1:1 z aplikacją iOS Monitor KSeF
+(`--app-bg #0B1A3E`, akcent Apple blue `#007AFF`).
+
 ## Verification
 
 ### Check if it's running:
@@ -213,8 +243,8 @@ docker service logs -f ksef_ksef-monitor
 ### Expected output:
 ```
 ksef-monitor | ======================================================================
-ksef-monitor | KSeF Monitor v0.3
-ksef-monitor | Based on KSeF API v2.2.0 (github.com/CIRFMF/ksef-docs)
+ksef-monitor | KSeF Monitor v0.5.1
+ksef-monitor | Based on KSeF API v2.4.0 (github.com/CIRFMF/ksef-docs)
 ksef-monitor | Multi-channel notifications with Jinja2 templates
 ksef-monitor | ======================================================================
 ksef-monitor | Loading configuration...

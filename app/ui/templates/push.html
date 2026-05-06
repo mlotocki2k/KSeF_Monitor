@@ -1,0 +1,201 @@
+{% extends "base.html" %}
+{% block title %}Parowanie iOS — Monitor KSeF{% endblock %}
+
+{% block content %}
+<div class="space-y-4 max-w-lg mx-auto">
+
+  <h1 class="text-lg font-semibold text-gray-900">Parowanie z aplikacją iOS</h1>
+
+  {% if not push %}
+  <div class="card px-4 py-8 text-center text-sm text-gray-500">
+    Push nie jest skonfigurowany. Ustaw <code class="bg-gray-100 px-1 rounded">ios_push.enabled = true</code>
+    w pliku konfiguracyjnym.
+  </div>
+
+  {% else %}
+
+  <!-- Status -->
+  <div class="card p-4 flex items-center gap-3">
+    {% if push.is_registered %}
+      <span class="badge-ok">Zarejestrowano</span>
+      <span class="text-xs text-gray-500">Instance: <span class="font-mono">{{ push.instance_id[:8] }}…</span></span>
+      {% if push.registered_at %}
+      <span class="text-xs text-gray-400 ml-auto">od {{ push.registered_at[:10] }}</span>
+      {% endif %}
+    {% else %}
+      <span class="badge-warn">Niezarejestrowano</span>
+      <span class="text-xs text-gray-500">Rejestracja nastąpi przy kolejnym powiadomieniu.</span>
+    {% endif %}
+  </div>
+
+  <!-- QR + code (V5-02: sensitive data hidden until admin authenticates) -->
+  <div class="card p-6 flex flex-col items-center gap-4">
+    <p class="text-sm text-gray-600 text-center">
+      Zeskanuj kod QR w aplikacji <strong>Monitor KSeF</strong> lub wpisz kod ręcznie w zakładce Konfiguracja.
+    </p>
+    <a href="https://apps.apple.com/app/id6759834557" target="_blank" rel="noopener noreferrer"
+       class="inline-flex items-center gap-1.5 text-xs text-blue-600 hover:text-blue-800 hover:underline">
+      <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg>
+      Pobierz Monitor KSeF z App Store
+    </a>
+
+    <div class="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2 text-center">
+      Wersja w App Store nie obsługuje jeszcze parowania push. Pełna funkcjonalność wkrótce —
+      po wersję testową (TestFlight) napisz na
+      <a href="mailto:kontakt@krzewilabs.pl" class="underline font-medium">kontakt@krzewilabs.pl</a>.
+    </div>
+
+    <!-- QR (shown only after auth reveal) -->
+    <div id="pairing-full" class="hidden flex flex-col items-center gap-4">
+      <img id="pairing-qr" alt="QR kod parowania"
+           class="border border-gray-200 rounded-lg p-2 bg-white"
+           style="width:200px;height:200px;image-rendering:pixelated">
+      <div class="text-center">
+        <p class="text-xs text-gray-500 mb-1">Kod parowania</p>
+        <p class="text-3xl font-mono font-bold tracking-widest text-gray-900 select-all" id="pairing-code"></p>
+      </div>
+    </div>
+
+    <!-- Masked code + reveal button (shown before auth) -->
+    <div id="pairing-masked" class="flex flex-col items-center gap-3">
+      <div class="w-48 h-12 border-2 border-dashed border-gray-300 rounded-lg flex items-center justify-center text-sm text-gray-400">
+        QR ukryty
+      </div>
+      <div class="text-center">
+        <p class="text-xs text-gray-500 mb-1">Kod parowania (ukryty)</p>
+        <p class="text-xl font-mono font-bold tracking-widest text-gray-400 select-none" id="pairing-mask">
+          {{ push.pairing_code_masked or "—" }}
+        </p>
+      </div>
+      <button type="button" id="reveal-btn" class="btn-secondary text-xs">
+        Pokaż kod parowania
+      </button>
+    </div>
+  </div>
+
+  <!-- Paired devices -->
+  <div class="card" id="devices-card">
+    <div class="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
+      <h2 class="text-sm font-semibold text-gray-800">Sparowane urządzenia</h2>
+      <span id="devices-count" class="text-xs text-gray-400"></span>
+    </div>
+    <div id="devices-list" class="divide-y divide-gray-100">
+      <div class="px-4 py-3 text-xs text-gray-400">Ładowanie…</div>
+    </div>
+  </div>
+
+  <!-- Actions -->
+  <div class="card p-4 flex items-center gap-3">
+    <div class="text-xs text-gray-500 flex-1">
+      Regeneracja kodu rozłączy sparowane urządzenia iOS i wygeneruje nowy QR kod.
+    </div>
+    <button type="button" class="btn-danger text-xs" id="btn-regen">
+      Nowy kod
+    </button>
+  </div>
+
+  {% endif %}
+
+</div>
+{% endblock %}
+
+{% block extra_js %}
+{% if push %}
+<script nonce="{{ request.state.csp_nonce }}">
+async function revealPairing() {
+  // V5-12: cookie session sent automatically (same-origin).
+  const resp = await fetch("/api/v1/push/pairing", { credentials: "same-origin" });
+  if (resp.status === 401 || resp.status === 403) {
+    window.location.href = '/ui/login?next=' + encodeURIComponent(window.location.pathname);
+    return;
+  }
+  if (!resp.ok) {
+    alert("Błąd (status " + resp.status + ")");
+    return;
+  }
+  const data = await resp.json();
+  document.getElementById("pairing-qr").src = data.qr_data_uri || "";
+  document.getElementById("pairing-code").textContent = data.pairing_code || "—";
+  document.getElementById("pairing-full").classList.remove("hidden");
+  document.getElementById("pairing-masked").classList.add("hidden");
+}
+
+async function regenerate() {
+  if (!confirm('Wygenerować nowy kod? Sparowane urządzenia iOS zostaną odłączone.')) return;
+  const btn = document.getElementById('btn-regen');
+  btn.disabled = true;
+  btn.textContent = '…';
+  try {
+    await apiCall('POST', '/api/v1/push/regenerate');
+    location.reload();
+  } catch (e) {
+    flash(`Błąd: ${e.message}`, 'err');
+    btn.disabled = false;
+    btn.textContent = 'Nowy kod';
+  }
+}
+
+function fmtTs(ts) {
+  if (!ts) return '—';
+  return new Date(ts * 1000).toLocaleString('pl-PL', {
+    day: '2-digit', month: '2-digit', year: 'numeric',
+    hour: '2-digit', minute: '2-digit'
+  });
+}
+
+async function loadDevices() {
+  const list = document.getElementById('devices-list');
+  const count = document.getElementById('devices-count');
+  try {
+    const d = await apiCall('GET', '/api/v1/push/devices');
+    const devices = d.devices || [];
+    count.textContent = `${devices.length} / 50`;
+    if (devices.length === 0) {
+      list.innerHTML = '<div class="px-4 py-6 text-center text-sm text-gray-400">Brak sparowanych urządzeń.</div>';
+      return;
+    }
+    list.innerHTML = devices.map(dev => `
+      <div class="px-4 py-3 flex items-center gap-3">
+        <div class="flex-1 min-w-0">
+          <p class="text-sm font-medium text-gray-800">${dev.device_name || 'Urządzenie ' + dev.index}</p>
+          <p class="text-xs text-gray-400">
+            Sparowano: ${fmtTs(dev.paired_at)}
+            ${dev.last_push_at ? ' · Ostatni push: ' + fmtTs(dev.last_push_at) : ''}
+          </p>
+          <p class="text-xs text-gray-300 font-mono truncate">${dev.device_id.slice(0, 16)}…</p>
+        </div>
+        <button type="button" class="btn-danger text-xs shrink-0 js-remove-device"
+          data-device-id="${dev.device_id}">
+          Odłącz
+        </button>
+      </div>
+    `).join('');
+    list.querySelectorAll('.js-remove-device').forEach(b => {
+      b.addEventListener('click', () => removeDevice(b.dataset.deviceId, b));
+    });
+  } catch (e) {
+    list.innerHTML = `<div class="px-4 py-3 text-xs text-red-600">Błąd ładowania: ${e.message}</div>`;
+  }
+}
+
+async function removeDevice(deviceId, btn) {
+  if (!confirm('Odłączyć to urządzenie?')) return;
+  btn.disabled = true;
+  btn.textContent = '…';
+  try {
+    await apiCall('POST', `/api/v1/push/devices/remove?device_id=${encodeURIComponent(deviceId)}`);
+    flash('Urządzenie odłączone.', 'ok');
+    loadDevices();
+  } catch (e) {
+    flash(`Błąd: ${e.message}`, 'err');
+    btn.disabled = false;
+    btn.textContent = 'Odłącz';
+  }
+}
+
+document.getElementById('reveal-btn')?.addEventListener('click', revealPairing);
+document.getElementById('btn-regen')?.addEventListener('click', regenerate);
+loadDevices();
+</script>
+{% endif %}
+{% endblock %}

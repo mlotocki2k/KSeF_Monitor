@@ -18,10 +18,14 @@ PDF contains ONLY data present in the source XML. No calculations, no defaults.
 import base64
 import hashlib
 import html
+
+from app import __version__ as _APP_VERSION
 import logging
 from datetime import datetime
 from typing import Dict, Optional, List
 from io import BytesIO
+
+from app._ssrf_guard import is_safe_public_url
 
 try:
     import pytz
@@ -56,12 +60,23 @@ from .pdf_constants import (
     FONT_NAME, FONT_NAME_BOLD,
 )
 
-# Import XML parser from dedicated module
-from .invoice_xml_parser import InvoiceXMLParser
+# Import XML parsers from dedicated module
+from .invoice_xml_parser import (
+    InvoiceXMLParser,
+    FA_RRInvoiceXMLParser,
+    PEFInvoiceXMLParser,
+    FallbackInvoiceXMLParser,
+    create_invoice_xml_parser,
+    detect_schema_type,
+    SCHEMA_TYPE_UNKNOWN,
+    SCHEMA_TYPE_PEF,
+)
 
 # Re-export for backward compatibility (existing code imports these from here)
 __all__ = [
-    'InvoiceXMLParser', 'InvoicePDFGenerator', 'generate_invoice_pdf',
+    'InvoiceXMLParser', 'FA_RRInvoiceXMLParser', 'PEFInvoiceXMLParser',
+    'FallbackInvoiceXMLParser', 'create_invoice_xml_parser', 'detect_schema_type',
+    'InvoicePDFGenerator', 'generate_invoice_pdf',
     'VAT_RATE_LABELS', 'PAYMENT_METHODS', 'INVOICE_TYPE_TITLES',
     'QR_BASE_URLS', 'VAT_SUMMARY_ROWS', '_resolve_vat_summary_labels',
     'REPORTLAB_AVAILABLE',
@@ -986,7 +1001,7 @@ class InvoicePDFGenerator:
             tz_label = tz_name
 
         stamp = now.strftime('%y.%m.%d %H:%M:%S')
-        text = f'Wygenerowane przez KSeF Monitor v0.3 | {stamp} {tz_label}'
+        text = f'Wygenerowane przez KSeF Monitor v{_APP_VERSION} | {stamp} {tz_label}'
         font = self.font
 
         def _draw(canvas_obj, doc):
@@ -1097,11 +1112,14 @@ except ImportError:
 def generate_invoice_pdf(xml_content: str, ksef_number: str = '',
                          output_path: str = None, environment: str = '',
                          timezone: str = '',
-                         template_dir: str = None) -> BytesIO:
+                         template_dir: str = None,
+                         ksef_generator_url: str = None) -> BytesIO:
     """Generate PDF from KSeF invoice XML.
 
-    Uses HTML template rendering (xhtml2pdf) when available, with automatic
-    fallback to direct ReportLab generation.
+    Generation chain (first success wins):
+      1. CIRFMF ksef-pdf-generator microservice (if ksef_generator_url set)
+      2. HTML template rendering via xhtml2pdf (FA/FA_RR use schema-specific templates)
+      3. ReportLab fallback generator
 
     Args:
         xml_content: Raw XML string of the KSeF invoice
@@ -1110,20 +1128,48 @@ def generate_invoice_pdf(xml_content: str, ksef_number: str = '',
         environment: KSeF environment ('test', 'demo', 'prod') for QR code URL
         timezone: IANA timezone name for generation timestamp (default: Europe/Warsaw)
         template_dir: Custom PDF template directory (overrides built-in default)
+        ksef_generator_url: Base URL of CIRFMF ksef-pdf-generator microservice
     """
-    parser = InvoiceXMLParser(xml_content)
+    # Auto-detect schema and dispatch to appropriate parser
+    parser = create_invoice_xml_parser(xml_content)
+    schema = parser.schema_type
+    logger.debug("PDF generation — detected schema: %s", schema)
+
+    # UNKNOWN schema: skip PDF generation, log warning
+    if schema == SCHEMA_TYPE_UNKNOWN:
+        logger.warning(
+            "Skipping PDF generation for KSeF number '%s': unrecognised XML schema. "
+            "XML content is preserved. Extend invoice_xml_parser.py to add support.",
+            ksef_number,
+        )
+        return None
+
+    # Step 1: try CIRFMF ksef-pdf-generator microservice
+    if ksef_generator_url:
+        result = _try_ksef_generator(xml_content, ksef_number, ksef_generator_url)
+        if result is not None:
+            if output_path:
+                with open(output_path, 'wb') as f:
+                    f.write(result.getvalue())
+            return result
+
     invoice_data = parser.parse()
     if ksef_number:
         invoice_data['ksef_metadata']['ksef_number'] = ksef_number
 
-    # Try template-based rendering first (xhtml2pdf)
+    # PEF schema: use simplified text-based PDF (no FA-specific template)
+    if schema == SCHEMA_TYPE_PEF:
+        return _generate_pef_pdf(invoice_data, ksef_number, output_path, timezone)
+
+    # FA(3), FA(2), FA_RR: try template-based rendering first (xhtml2pdf)
     if XHTML2PDF_AVAILABLE:
         try:
             from .invoice_pdf_template import InvoicePDFTemplateRenderer
             renderer = InvoicePDFTemplateRenderer(custom_templates_dir=template_dir)
             return renderer.render(invoice_data, ksef_number=ksef_number,
                                    xml_content=xml_content, environment=environment,
-                                   timezone=timezone, output_path=output_path)
+                                   timezone=timezone, output_path=output_path,
+                                   schema_type=schema)
         except Exception as e:
             logger.warning(f"Template PDF rendering failed, falling back to ReportLab: {e}")
 
@@ -1132,3 +1178,130 @@ def generate_invoice_pdf(xml_content: str, ksef_number: str = '',
     return generator.generate(invoice_data, output_path,
                               xml_content=xml_content, environment=environment,
                               timezone=timezone)
+
+
+def _try_ksef_generator(xml_content: str, ksef_number: str,
+                        base_url: str) -> Optional[BytesIO]:
+    """POST invoice XML to CIRFMF ksef-pdf-generator microservice.
+
+    Endpoint: POST {base_url}/api/generate
+    Body: multipart/form-data with field 'xml' (UTF-8 encoded XML)
+    Expected response: application/pdf binary
+
+    Returns BytesIO with PDF on success, None on any failure (caller falls back).
+    """
+    # Validate URL — must be public HTTP(S) (prevents SSRF to internal services)
+    if not is_safe_public_url(base_url):
+        logger.warning("CIRFMF generator URL rejected (non-public or bad scheme): %s", base_url)
+        return None
+
+    try:
+        import requests as _requests
+
+        url = base_url.rstrip('/') + '/api/generate'
+        filename = f"{ksef_number or 'invoice'}.xml"
+        xml_bytes = xml_content.encode('utf-8')
+
+        resp = _requests.post(
+            url,
+            files={'xml': (filename, xml_bytes, 'application/xml')},
+            headers={'Accept': 'application/pdf'},
+            timeout=30,
+        )
+        if resp.status_code == 200:
+            pdf_bytes = resp.content
+            if pdf_bytes[:4] == b'%PDF':
+                buf = BytesIO(pdf_bytes)
+                buf.seek(0)
+                logger.info("CIRFMF generator returned PDF (%d bytes) for %s",
+                            len(pdf_bytes), ksef_number)
+                return buf
+            logger.warning("CIRFMF generator returned non-PDF response for %s", ksef_number)
+        else:
+            logger.warning("CIRFMF generator HTTP %s for %s", resp.status_code, ksef_number)
+    except Exception as e:
+        logger.warning("CIRFMF generator unavailable for %s: %s", ksef_number, e)
+    return None
+
+
+def _generate_pef_pdf(invoice_data: Dict, ksef_number: str,
+                      output_path: Optional[str], timezone: str) -> Optional['BytesIO']:
+    """Generate minimal ReportLab PDF for PEF (PEPPOL UBL) invoices."""
+    if not REPORTLAB_AVAILABLE:
+        logger.warning("ReportLab not available — cannot generate PEF PDF")
+        return None
+
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import getSampleStyleSheet
+    from reportlab.lib.units import mm
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+    from io import BytesIO
+
+    buf = BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=A4,
+                            leftMargin=20*mm, rightMargin=20*mm,
+                            topMargin=20*mm, bottomMargin=20*mm)
+    styles = getSampleStyleSheet()
+    story = []
+
+    def para(text, style='Normal'):
+        story.append(Paragraph(str(text), styles[style]))
+
+    hdr = invoice_data.get('header', {})
+    seller = invoice_data.get('seller', {})
+    buyer = invoice_data.get('buyer', {})
+    vat = invoice_data.get('vat_summary', {})
+
+    para(f"Faktura PEF / PEPPOL UBL — {hdr.get('p2', '')}", 'Heading1')
+    story.append(Spacer(1, 6*mm))
+
+    para(f"Nr faktury: {hdr.get('p2', '—')}")
+    para(f"Data wystawienia: {hdr.get('p1', '—')}")
+    para(f"Waluta: {hdr.get('kod_waluty', 'PLN')}")
+    para(f"Nr KSeF: {ksef_number or '—'}")
+    story.append(Spacer(1, 4*mm))
+
+    para("Sprzedawca", 'Heading2')
+    para(seller.get('nazwa', '—'))
+    if seller.get('nip'):
+        para(f"NIP: {seller['nip']}")
+    if seller.get('adres_l1'):
+        para(seller.get('adres_l1', ''))
+
+    story.append(Spacer(1, 4*mm))
+    para("Nabywca", 'Heading2')
+    para(buyer.get('nazwa', '—'))
+    if buyer.get('nip'):
+        para(f"NIP: {buyer['nip']}")
+    if buyer.get('adres_l1'):
+        para(buyer.get('adres_l1', ''))
+
+    story.append(Spacer(1, 4*mm))
+    para("Kwoty", 'Heading2')
+    if vat.get('TaxExclusiveAmount'):
+        para(f"Netto: {vat['TaxExclusiveAmount']} {hdr.get('kod_waluty', 'PLN')}")
+    if vat.get('TaxAmount'):
+        para(f"VAT: {vat['TaxAmount']} {hdr.get('kod_waluty', 'PLN')}")
+    if vat.get('PayableAmount') or hdr.get('p15'):
+        amt = vat.get('PayableAmount') or hdr.get('p15')
+        para(f"Do zapłaty: {amt} {hdr.get('kod_waluty', 'PLN')}")
+
+    # Line items
+    items = invoice_data.get('items', [])
+    if items:
+        story.append(Spacer(1, 4*mm))
+        para("Pozycje faktury", 'Heading2')
+        for i, item in enumerate(items, 1):
+            desc = item.get('p7') or item.get('p8a') or ''
+            net = item.get('p11', '')
+            para(f"{i}. {desc} — {net} {hdr.get('kod_waluty', 'PLN')}")
+
+    doc.build(story)
+    buf.seek(0)
+
+    if output_path:
+        with open(output_path, 'wb') as f:
+            f.write(buf.read())
+        buf.seek(0)
+
+    return buf

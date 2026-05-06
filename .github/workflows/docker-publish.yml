@@ -28,6 +28,27 @@ jobs:
           fi
           echo "No secrets detected."
 
+      - name: Install system dependencies for pip-audit
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libcairo2-dev pkg-config
+
+      - name: Python dependency vulnerability scan
+        run: |
+          python -m pip install --upgrade pip
+          pip install -q pip-audit
+          # Scan requirements.txt — lockfile pending regen under Py3.11 (R2 deferred).
+          pip-audit --requirement requirements.txt --strict --format columns
+
+      - name: Set up Trivy (config scan)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25  # v0.36.0
+        with:
+          scan-type: config
+          scan-ref: .
+          severity: CRITICAL,HIGH
+          exit-code: 0   # config scan is advisory
+          ignore-unfixed: true
+
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f  # v3
 
       - name: Login to GHCR
@@ -46,7 +67,7 @@ jobs:
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
             type=raw,value=test,enable=${{ github.ref == 'refs/heads/test' }}
             type=ref,event=tag
-            type=sha
+            type=sha,format=long
 
       - name: Build & push
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8  # v6
@@ -55,3 +76,15 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+
+      - name: Lowercase repo for image ref
+        id: repo
+        run: echo "lower=${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+
+      - name: Trivy image scan
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25  # v0.36.0
+        with:
+          image-ref: ghcr.io/${{ steps.repo.outputs.lower }}:sha-${{ github.sha }}
+          severity: CRITICAL,HIGH
+          exit-code: 1
+          ignore-unfixed: true

@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  STUB — Faktura FA(2) Schema
+
+  This is a reference stub. The authoritative XSD for FA schema version 2 is published
+  by the Ministry of Finance (Ministerstwo Finansów) at:
+
+    https://www.podatki.gov.pl/ksef/dokumenty-do-pobrania/
+
+  FA(2) uses an older namespace URI:
+    urn:crd.gov.pl:KSeF:FA:1:0
+
+  Key differences from FA(3):
+  - No DodatkowyOpis section
+  - No WarunkiTransakcji section
+  - No Podmiot3 section
+  - Limited annotation fields
+  - Older KursWaluty placement
+
+  The monitor_ksef parser (invoice_xml_parser.py) auto-detects FA(2) by namespace
+  and routes to InvoiceXMLParser with schema_type='FA2'.
+-->
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
+           targetNamespace="urn:crd.gov.pl:KSeF:FA:1:0"
+           xmlns="urn:crd.gov.pl:KSeF:FA:1:0"
+           elementFormDefault="qualified">
+  <!-- Full schema available from Ministerstwo Finansów / CIRFMF -->
+  <!-- See: https://github.com/CIRFMF/ksef-docs -->
+</xs:schema>

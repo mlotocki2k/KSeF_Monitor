@@ -1,0 +1,214 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — Monitor KSeF{% endblock %}
+
+{% block content %}
+<h1 class="sr-only">Dashboard Monitor KSeF</h1>
+<div class="space-y-6">
+
+  <!-- KSeF API status widget -->
+  <div class="card px-4 py-3 flex flex-wrap items-center gap-4">
+    <span class="text-xs font-semibold text-gray-500 uppercase tracking-wide">Status KSeF API</span>
+    <div id="ksef-status-badge">
+      <span class="badge-warn text-xs animate-pulse">Sprawdzam…</span>
+    </div>
+    <span id="ksef-status-detail" class="text-xs text-gray-400"></span>
+    <button id="btn-refresh-ksef" class="ml-auto btn-secondary text-xs py-0.5 px-2">Odśwież</button>
+  </div>
+
+  <!-- Stat cards -->
+  <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
+    <div class="card p-4">
+      <p class="text-xs text-gray-500 mb-1">Wszystkie faktury</p>
+      <p class="text-2xl font-bold text-gray-900">{{ total_invoices }}</p>
+    </div>
+    <div class="card p-4">
+      <p class="text-xs text-gray-500 mb-1">Sprzedażowe</p>
+      <p class="text-2xl font-bold text-blue-700">{{ by_subject.get("Subject1", 0) }}</p>
+    </div>
+    <div class="card p-4">
+      <p class="text-xs text-gray-500 mb-1">Zakupowe</p>
+      <p class="text-2xl font-bold text-purple-700">{{ by_subject.get("Subject2", 0) }}</p>
+    </div>
+    <div class="card p-4">
+      <p class="text-xs text-gray-500 mb-1">Inne</p>
+      <p class="text-2xl font-bold text-gray-600">
+        {{ by_subject.get("Subject3", 0) + by_subject.get("SubjectAuthorized", 0) }}
+      </p>
+    </div>
+  </div>
+
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+
+    <!-- Monitor state -->
+    <div class="card">
+      <div class="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
+        <h2 class="text-sm font-semibold text-gray-800">Stan monitora</h2>
+        <span class="text-xs text-gray-400">NIP / typ faktury</span>
+      </div>
+      {% if monitor_states %}
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead class="bg-gray-50">
+            <tr>
+              <th class="th">NIP</th>
+              <th class="th">Typ</th>
+              <th class="th">Ostatnie sprawdzenie</th>
+              <th class="th">Błędy z rzędu</th>
+              <th class="th">Status</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-gray-100">
+            {% for s in monitor_states %}
+            <tr class="hover:bg-gray-50">
+              <td class="td font-mono">{{ s.nip }}</td>
+              <td class="td">
+                {% if s.subject_type == "Subject1" %}
+                  <span class="badge-s1">Sprz</span>
+                {% elif s.subject_type == "Subject2" %}
+                  <span class="badge-s2">Zak</span>
+                {% else %}
+                  <span class="badge-warn">{{ s.subject_type }}</span>
+                {% endif %}
+              </td>
+              <td class="td text-gray-500">{{ s.last_check | fmt_dt }}</td>
+              <td class="td text-center">
+                {% if s.consecutive_errors > 0 %}
+                  <span class="badge-err">{{ s.consecutive_errors }}</span>
+                {% else %}
+                  <span class="text-gray-400">0</span>
+                {% endif %}
+              </td>
+              <td class="td">
+                {% if s.consecutive_errors >= 3 %}
+                  <span class="badge-err">Błąd</span>
+                {% elif s.last_check %}
+                  <span class="badge-ok">OK</span>
+                {% else %}
+                  <span class="badge-warn">Oczekuje</span>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="px-4 py-8 text-center text-sm text-gray-400">
+        Brak danych monitora. Uruchom pierwsze sprawdzenie.
+      </div>
+      {% endif %}
+    </div>
+
+    <!-- Recent invoices -->
+    <div class="card">
+      <div class="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
+        <h2 class="text-sm font-semibold text-gray-800">Ostatnio dodane faktury</h2>
+        <a href="/ui/invoices" class="text-xs text-brand hover:underline">Wszystkie →</a>
+      </div>
+      {% if recent_invoices %}
+      <ul class="divide-y divide-gray-100">
+        {% for inv in recent_invoices %}
+        <li class="px-4 py-3 hover:bg-gray-50">
+          <a href="/ui/invoices/{{ inv.ksef_number }}" class="block">
+            <div class="flex items-center justify-between gap-2">
+              <div class="min-w-0">
+                <p class="text-sm font-medium text-gray-900 truncate">
+                  {{ inv.invoice_number or inv.ksef_number | ksef_short }}
+                </p>
+                <p class="text-xs text-gray-500 truncate">
+                  {{ inv.seller_name or inv.seller_nip or "—" }}
+                  {% if inv.subject_type == "Subject1" %}
+                    <span class="badge-s1 ml-1">Sprz</span>
+                  {% elif inv.subject_type == "Subject2" %}
+                    <span class="badge-s2 ml-1">Zak</span>
+                  {% endif %}
+                </p>
+              </div>
+              <div class="text-right shrink-0">
+                <p class="text-sm font-semibold text-gray-800">{{ inv.gross_amount | fmt_amount(inv.currency or "PLN") }}</p>
+                <p class="text-xs text-gray-400">{{ inv.issue_date | fmt_date }}</p>
+              </div>
+            </div>
+          </a>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <div class="px-4 py-8 text-center text-sm text-gray-400">
+        Brak faktur w bazie danych.
+      </div>
+      {% endif %}
+    </div>
+
+  </div>
+
+  <!-- Initial load status -->
+  {% if il_status %}
+  <div class="card">
+    <div class="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
+      <h2 class="text-sm font-semibold text-gray-800">Import historyczny</h2>
+      <a href="/ui/initial-load" class="text-xs text-brand hover:underline">Szczegóły →</a>
+    </div>
+    <div class="px-4 py-3 flex flex-wrap items-center gap-4">
+      <div>
+        {% set st = il_status.status %}
+        {% if st == "running" %}
+          <span class="badge-warn">W trakcie</span>
+        {% elif st == "completed" %}
+          <span class="badge-ok">Ukończony</span>
+        {% elif st == "cancelled" %}
+          <span class="badge-warn">Anulowany</span>
+        {% elif st == "failed" %}
+          <span class="badge-err">Błąd</span>
+        {% else %}
+          <span class="badge-warn">{{ st }}</span>
+        {% endif %}
+      </div>
+      {% if il_status.progress_pct is not none %}
+      <div class="flex-1 min-w-48">
+        <div class="flex justify-between text-xs text-gray-500 mb-1">
+          <span>Okna: {{ il_status.windows_completed }}/{{ il_status.windows_total }}</span>
+          <span>{{ il_status.progress_pct }}%</span>
+        </div>
+        <div class="h-2 bg-gray-200 rounded-full overflow-hidden">
+          <div class="h-full bg-brand rounded-full transition-all" style="width: {{ il_status.progress_pct }}%"></div>
+        </div>
+      </div>
+      {% endif %}
+      <div class="text-sm text-gray-600">
+        Zaimportowano: <strong>{{ il_status.invoices_imported }}</strong> faktur
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script nonce="{{ request.state.csp_nonce }}">
+// Auto-refresh dashboard every 60 seconds
+setTimeout(() => location.reload(), 60000);
+
+// KSeF API status probe
+async function refreshKsefStatus() {
+  const badge = document.getElementById('ksef-status-badge');
+  const detail = document.getElementById('ksef-status-detail');
+  try {
+    const d = await apiCall('GET', '/api/v1/monitor/ksef-status');
+    if (d.available) {
+      badge.innerHTML = '<span class="badge-ok text-xs">Dostępne</span>';
+      detail.textContent = `${d.environment} • ${d.latency_ms} ms`;
+    } else {
+      badge.innerHTML = '<span class="badge-err text-xs">Niedostępne</span>';
+      detail.textContent = d.error || `HTTP ${d.http_status}`;
+    }
+  } catch (e) {
+    badge.innerHTML = '<span class="badge-err text-xs">Błąd</span>';
+    detail.textContent = e.message;
+  }
+}
+document.getElementById('btn-refresh-ksef')?.addEventListener('click', refreshKsefStatus);
+refreshKsefStatus();
+</script>
+{% endblock %}

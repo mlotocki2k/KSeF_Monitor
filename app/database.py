@@ -4,10 +4,13 @@ Database layer for KSeF Monitor.
 SQLite + WAL mode + SQLAlchemy 2.0 ORM.
 Phase 1 (v0.3): invoices, monitor_state, notification_log tables.
 Phase 2 (v0.4): api_request_log, invoice_artifacts tables.
+Phase 3 (v0.5): push_instances table.
+Phase 4 (v0.5): initial_load_jobs table.
 """
 
 import json
 import logging
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -284,6 +287,219 @@ class InvoiceArtifact(Base):
         return f"<InvoiceArtifact invoice_id={self.invoice_id} type={self.artifact_type!r} status={self.status!r}>"
 
 
+class PushInstance(Base):
+    """Push notification instance credentials for iOS pairing.
+
+    Stores instance_id, instance_key, pairing_code for Central Push Service
+    registration. Designed for multi-instance support (one row per NIP or
+    monitoring scope).
+    """
+
+    __tablename__ = "push_instances"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+
+    instance_id: Mapped[str] = mapped_column(String, unique=True, nullable=False)
+    instance_key: Mapped[str] = mapped_column(String, nullable=False)
+    pairing_code: Mapped[str] = mapped_column(String, nullable=False)
+    central_push_url: Mapped[str] = mapped_column(
+        String, nullable=False, default="https://push.monitorksef.com"
+    )
+    registered_at: Mapped[Optional[str]] = mapped_column(String)
+
+    # For future multi-instance: link to NIP or scope
+    label: Mapped[Optional[str]] = mapped_column(String)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(timezone.utc)
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+    def __repr__(self) -> str:
+        return f"<PushInstance id={self.instance_id!r} label={self.label!r}>"
+
+
+class InitialLoadJob(Base):
+    """Tracks historical invoice import jobs using the /invoices/exports async API.
+
+    Each job covers a date range split into ≤90-day windows per subject_type.
+    Supports resume: current_window_from/to + current_subject_type allow restart
+    after interruption without re-importing already-processed windows.
+
+    Status flow: pending → running → completed | failed | cancelled
+    """
+
+    __tablename__ = "initial_load_jobs"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+
+    # Job config (immutable after creation)
+    status: Mapped[str] = mapped_column(String, nullable=False, default="pending")
+    subject_types: Mapped[str] = mapped_column(Text, nullable=False)  # JSON array
+    date_type: Mapped[str] = mapped_column(String, nullable=False, default="Invoicing")
+    start_date: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    end_date: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+
+    # Resume state (updated as windows are processed)
+    current_window_from: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    current_window_to: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    current_subject_type: Mapped[Optional[str]] = mapped_column(String)
+
+    # Progress counters
+    windows_total: Mapped[int] = mapped_column(Integer, default=0)
+    windows_completed: Mapped[int] = mapped_column(Integer, default=0)
+    invoices_imported: Mapped[int] = mapped_column(Integer, default=0)
+    invoices_skipped: Mapped[int] = mapped_column(Integer, default=0)
+
+    # Error tracking
+    error_message: Mapped[Optional[str]] = mapped_column(Text)
+
+    # Timestamps
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(timezone.utc)
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+    __table_args__ = (
+        Index("ix_initial_load_jobs_status", "status"),
+        Index("ix_initial_load_jobs_created", created_at.desc()),
+    )
+
+    def __repr__(self) -> str:
+        return f"<InitialLoadJob id={self.id!r} status={self.status!r}>"
+
+
+# Phase 8 (v0.5.3 hotfix): per-window log for initial load jobs.
+# Surfaces success/failure of each date-range chunk to the GUI so the
+# operator no longer has to grep stderr to diagnose partial imports.
+
+
+class InitialLoadWindow(Base):
+    """One row per processed window of an InitialLoadJob."""
+
+    __tablename__ = "initial_load_windows"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    job_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("initial_load_jobs.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    subject_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    window_start: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    window_end: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    status: Mapped[str] = mapped_column(String(24), nullable=False)  # success | failed
+    imported: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    skipped: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    error_message: Mapped[Optional[str]] = mapped_column(Text)
+    duration_ms: Mapped[Optional[int]] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(timezone.utc), nullable=False
+    )
+
+    __table_args__ = (
+        Index("ix_initial_load_windows_job_created", "job_id", "created_at"),
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<InitialLoadWindow job={self.job_id[:8]} {self.subject_type} "
+            f"[{self.window_start.date()}→{self.window_end.date()}] {self.status}>"
+        )
+
+
+# Phase 5 (v0.5.1): UI user accounts + sessions (V5-13).
+# Self-hosted-style auth — no SSH/CLI needed for first-run, web setup wizard.
+
+
+class UiUser(Base):
+    """Browser-UI user account. Distinct from `api.auth_token` (Bearer key for
+    integrations). Created via /ui/setup wizard on first launch."""
+
+    __tablename__ = "ui_users"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    username: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    password_hash: Mapped[str] = mapped_column(String(255), nullable=False)  # bcrypt
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(timezone.utc)
+    )
+    last_login_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+
+    __table_args__ = (
+        Index("ix_ui_users_username", "username", unique=True),
+    )
+
+    def __repr__(self) -> str:
+        return f"<UiUser id={self.id} username={self.username!r}>"
+
+
+class UiLoginAttempt(Base):
+    """Per-username failed-login counter + temporary lockout (V5-13 → U-03).
+
+    Distinct from per-IP rate limit (slowapi `5/minute`) — keyed by username
+    so a botnet rotating IPs cannot bypass the lockout. Lockout is always
+    time-bounded (15 min) to keep DoS-via-lockout impact bounded; sliding
+    window auto-resets the counter when no fails arrived in the last window.
+    """
+
+    __tablename__ = "ui_login_attempts"
+
+    username: Mapped[str] = mapped_column(String(64), primary_key=True)
+    failed_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    locked_until: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    last_failed_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    last_success_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+
+    def __repr__(self) -> str:
+        return (
+            f"<UiLoginAttempt user={self.username!r} fails={self.failed_count}"
+            f" locked_until={self.locked_until}>"
+        )
+
+
+class UiSession(Base):
+    """Browser session — opaque random ID stored in HttpOnly cookie. Decoupled
+    from password_hash so password change can revoke other sessions cleanly."""
+
+    __tablename__ = "ui_sessions"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)  # uuid4 hex
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("ui_users.id", ondelete="CASCADE"), nullable=False
+    )
+    expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(timezone.utc)
+    )
+    last_accessed_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(timezone.utc)
+    )
+    # SHA-256 of User-Agent at session creation (U-04). Nullable: only
+    # populated when api.session_strict_binding is enabled. Stored as hash,
+    # not raw UA, so a leaked DB doesn't expose the user's browser fingerprint.
+    ua_hash: Mapped[Optional[str]] = mapped_column(String(64))
+
+    __table_args__ = (
+        Index("ix_ui_sessions_user", "user_id"),
+        Index("ix_ui_sessions_expires", "expires_at"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<UiSession id={self.id[:8]}… user_id={self.user_id}>"
+
+
 # ── Engine & Session ────────────────────────────────────────────────────────
 
 
@@ -314,32 +530,84 @@ class Database:
         logger.info(f"Database initialized: {self.db_path}")
 
     def create_tables(self):
-        """Create all tables (used only if Alembic is not available)."""
+        """Ensure the DB schema exists and is tracked by alembic.
+
+        Runs `Base.metadata.create_all` for pristine DBs, then delegates to
+        `_migrate_schema` which invokes alembic (stamp-at-head or upgrade).
+        """
         Base.metadata.create_all(self.engine)
         self._migrate_schema()
         logger.info("Database tables created")
 
     def _migrate_schema(self):
-        """Add missing columns to existing tables (lightweight auto-migration)."""
-        from sqlalchemy import inspect as sa_inspect
-        inspector = sa_inspect(self.engine)
+        """Apply alembic migrations to bring DB schema to head (v0.4 F-07).
 
-        for table in Base.metadata.sorted_tables:
-            if not inspector.has_table(table.name):
-                continue
-            existing = {col["name"] for col in inspector.get_columns(table.name)}
-            for col in table.columns:
-                if col.name not in existing:
-                    col_type = col.type.compile(self.engine.dialect)
-                    default_clause = ""
-                    if col.server_default is not None:
-                        default_clause = f" DEFAULT {col.server_default.arg}"
-                    elif col.default is not None and hasattr(col.default, 'arg') and isinstance(col.default.arg, str):
-                        default_clause = f" DEFAULT '{col.default.arg}'"
-                    stmt = f"ALTER TABLE {table.name} ADD COLUMN {col.name} {col_type}{default_clause}"
-                    with self.engine.begin() as conn:
-                        conn.execute(text(stmt))
-                    logger.info("Schema migration: added column %s.%s", table.name, col.name)
+        Previously built ALTER TABLE statements via f-string interpolation —
+        an anti-pattern flagged as F-07.  Now delegates to alembic, which is a
+        hard dependency of this project.
+
+        Strategy:
+        - If tables already exist but alembic_version is absent (fresh install
+          bootstrapped by create_all), stamp to head so future upgrades work.
+        - Otherwise run upgrade(head) normally (e.g. incremental production
+          upgrade, or the very first run with no tables at all).
+
+        NOTE for existing production DBs created before v0.5:
+        Those DBs have no alembic_version row.  This code will stamp them at
+        head rather than replaying migrations.  If columns added by intermediate
+        migrations are missing, the operator must run:
+            alembic stamp <known-revision>
+            alembic upgrade head
+        manually.
+        """
+        try:
+            from alembic import command
+            from alembic.config import Config
+            from sqlalchemy import inspect as sa_inspect
+        except ImportError:
+            logger.error("alembic not installed — schema may be out of date")
+            return
+
+        try:
+            project_root = Path(__file__).resolve().parent.parent
+            alembic_cfg = Config(str(project_root / "alembic.ini"))
+            # Override sqlalchemy.url so each Database instance (e.g. test
+            # fixtures using tmp_path) targets the correct file.
+            alembic_cfg.set_main_option(
+                "sqlalchemy.url", f"sqlite:///{self.db_path}"
+            )
+
+            inspector = sa_inspect(self.engine)
+            table_names = inspector.get_table_names()
+            has_tables = bool(table_names)
+            has_alembic_version = "alembic_version" in table_names
+
+            if has_tables and not has_alembic_version:
+                # create_all already built the latest schema; just stamp so
+                # alembic knows the DB is at head.
+                # WARN: for v0.4→v0.5 upgrades on existing prod DBs, this skips
+                # column-level migrations from phases 1-4. Operator must run
+                # `alembic stamp <known-rev>; alembic upgrade head` manually
+                # BEFORE this code path runs.
+                non_alembic_tables = {t for t in table_names if t != "alembic_version"}
+                if non_alembic_tables - set(Base.metadata.tables.keys()):
+                    logger.warning(
+                        "Detected unknown tables %s in DB without alembic_version — "
+                        "possible stale schema. Stamping at head may skip needed "
+                        "migrations; review 'alembic stamp' docs before upgrading.",
+                        non_alembic_tables - set(Base.metadata.tables.keys()),
+                    )
+                command.stamp(alembic_cfg, "head")
+                logger.info("Alembic version stamped to head (fresh DB)")
+            else:
+                # Either a pristine DB with no tables (alembic creates them)
+                # or an existing tracked DB that needs incremental upgrades.
+                command.upgrade(alembic_cfg, "head")
+                logger.info("Alembic upgrade to head complete")
+        except Exception as e:
+            logger.error("Alembic migration failed: %s", e)
+            # create_all already put the tables in place, so the app can still
+            # start; schema drift is possible for incremental upgrades.
 
     def get_session(self) -> Session:
         """Get a new session. Caller must close it."""
@@ -603,6 +871,209 @@ class Database:
             .filter(InvoiceArtifact.status.in_(["pending", "failed"]))
             .filter(InvoiceArtifact.download_attempts < 3)
             .order_by(InvoiceArtifact.created_at)
+            .limit(limit)
+            .all()
+        )
+
+    # ── Push Instances ────────────────────────────────────────────────
+
+    def get_push_instance(self, session: Session, label: Optional[str] = None) -> Optional[PushInstance]:
+        """Get push instance by label (None = default instance)."""
+        return (
+            session.query(PushInstance)
+            .filter_by(label=label)
+            .first()
+        )
+
+    def save_push_instance(
+        self,
+        session: Session,
+        instance_id: str,
+        instance_key: str,
+        pairing_code: str,
+        central_push_url: str,
+        registered_at: Optional[str] = None,
+        label: Optional[str] = None,
+    ) -> PushInstance:
+        """Create or update push instance credentials."""
+        existing = self.get_push_instance(session, label=label)
+        if existing:
+            existing.instance_id = instance_id
+            existing.instance_key = instance_key
+            existing.pairing_code = pairing_code
+            existing.central_push_url = central_push_url
+            existing.registered_at = registered_at
+            existing.updated_at = datetime.now(timezone.utc)
+            session.flush()
+            return existing
+
+        instance = PushInstance(
+            instance_id=instance_id,
+            instance_key=instance_key,
+            pairing_code=pairing_code,
+            central_push_url=central_push_url,
+            registered_at=registered_at,
+            label=label,
+        )
+        session.add(instance)
+        session.flush()
+        return instance
+
+    def update_push_pairing_code(
+        self, session: Session, pairing_code: str, label: Optional[str] = None
+    ) -> Optional[PushInstance]:
+        """Update pairing code for existing push instance."""
+        instance = self.get_push_instance(session, label=label)
+        if not instance:
+            return None
+        instance.pairing_code = pairing_code
+        instance.updated_at = datetime.now(timezone.utc)
+        session.flush()
+        return instance
+
+    def delete_push_instance(self, session: Session, label: Optional[str] = None) -> bool:
+        """Delete push instance by label (None = default). Returns True if deleted."""
+        instance = self.get_push_instance(session, label=label)
+        if not instance:
+            return False
+        session.delete(instance)
+        session.flush()
+        return True
+
+    # ── Initial Load Jobs ────────────────────────────────────────────────
+
+    def create_initial_load_job(
+        self,
+        session: Session,
+        subject_types: List[str],
+        start_date: datetime,
+        end_date: datetime,
+        date_type: str = "Invoicing",
+        windows_total: int = 0,
+    ) -> "InitialLoadJob":
+        """Create a new initial load job in pending state."""
+        job = InitialLoadJob(
+            subject_types=json.dumps(subject_types),
+            start_date=start_date,
+            end_date=end_date,
+            date_type=date_type,
+            windows_total=windows_total,
+        )
+        session.add(job)
+        session.flush()
+        logger.info("Created initial load job %s (%d windows)", job.id, windows_total)
+        return job
+
+    def get_initial_load_job(self, session: Session, job_id: str) -> Optional["InitialLoadJob"]:
+        """Get job by ID."""
+        return session.query(InitialLoadJob).filter_by(id=job_id).first()
+
+    def get_active_initial_load_job(self, session: Session) -> Optional["InitialLoadJob"]:
+        """Get the currently running or pending job (at most one at a time)."""
+        return (
+            session.query(InitialLoadJob)
+            .filter(InitialLoadJob.status.in_(["pending", "running"]))
+            .order_by(InitialLoadJob.created_at.desc())
+            .first()
+        )
+
+    def get_latest_initial_load_job(self, session: Session) -> Optional["InitialLoadJob"]:
+        """Get most recently created job regardless of status."""
+        return (
+            session.query(InitialLoadJob)
+            .order_by(InitialLoadJob.created_at.desc())
+            .first()
+        )
+
+    def update_initial_load_progress(
+        self,
+        session: Session,
+        job_id: str,
+        status: Optional[str] = None,
+        current_window_from: Optional[datetime] = None,
+        current_window_to: Optional[datetime] = None,
+        current_subject_type: Optional[str] = None,
+        windows_completed_delta: int = 0,
+        invoices_imported_delta: int = 0,
+        invoices_skipped_delta: int = 0,
+        error_message: Optional[str] = None,
+    ) -> Optional["InitialLoadJob"]:
+        """Update job progress after processing a window."""
+        job = self.get_initial_load_job(session, job_id)
+        if not job:
+            return None
+
+        if status is not None:
+            job.status = status
+        if current_window_from is not None:
+            job.current_window_from = current_window_from
+        if current_window_to is not None:
+            job.current_window_to = current_window_to
+        if current_subject_type is not None:
+            job.current_subject_type = current_subject_type
+        if windows_completed_delta:
+            job.windows_completed = (job.windows_completed or 0) + windows_completed_delta
+        if invoices_imported_delta:
+            job.invoices_imported = (job.invoices_imported or 0) + invoices_imported_delta
+        if invoices_skipped_delta:
+            job.invoices_skipped = (job.invoices_skipped or 0) + invoices_skipped_delta
+        if error_message is not None:
+            job.error_message = str(error_message)[:1000]
+
+        job.updated_at = datetime.now(timezone.utc)
+        session.flush()
+        return job
+
+    def cancel_initial_load_job(self, session: Session, job_id: str) -> Optional["InitialLoadJob"]:
+        """Cancel a pending or running job."""
+        job = self.get_initial_load_job(session, job_id)
+        if not job or job.status not in ("pending", "running"):
+            return None
+        job.status = "cancelled"
+        job.updated_at = datetime.now(timezone.utc)
+        session.flush()
+        logger.info("Cancelled initial load job %s", job_id)
+        return job
+
+    # ── Initial-load window log (phase 8) ───────────────────────────────
+
+    def record_initial_load_window(
+        self,
+        session: Session,
+        job_id: str,
+        subject_type: str,
+        window_start: datetime,
+        window_end: datetime,
+        status: str,
+        imported: int = 0,
+        skipped: int = 0,
+        error_message: Optional[str] = None,
+        duration_ms: Optional[int] = None,
+    ) -> "InitialLoadWindow":
+        """Append a row to initial_load_windows. status is 'success' | 'failed'."""
+        row = InitialLoadWindow(
+            job_id=job_id,
+            subject_type=subject_type,
+            window_start=window_start,
+            window_end=window_end,
+            status=status,
+            imported=imported,
+            skipped=skipped,
+            error_message=str(error_message)[:1000] if error_message else None,
+            duration_ms=duration_ms,
+        )
+        session.add(row)
+        session.flush()
+        return row
+
+    def list_initial_load_windows(
+        self, session: Session, job_id: str, limit: int = 500,
+    ) -> List["InitialLoadWindow"]:
+        """Return windows for a job, oldest first."""
+        return (
+            session.query(InitialLoadWindow)
+            .filter(InitialLoadWindow.job_id == job_id)
+            .order_by(InitialLoadWindow.created_at.asc())
             .limit(limit)
             .all()
         )

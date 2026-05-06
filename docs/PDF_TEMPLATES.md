@@ -5,16 +5,24 @@ Customize the visual appearance of generated invoice PDFs using HTML/CSS templat
 **New in v0.3** - Invoice PDFs are now rendered from a Jinja2 HTML/CSS template via xhtml2pdf,
 with automatic fallback to the direct ReportLab generator.
 
+**New in v0.5** - Multi-schema support: FA(2), FA_RR, PEF (PEPPOL UBL), UNKNOWN.
+FA_RR uses a dedicated template. Optional CIRFMF microservice integration.
+
 ## How It Works
 
 ```
-Invoice XML (KSeF) -> InvoiceXMLParser -> invoice_data dict
-                                              |
-                              Jinja2: invoice_pdf.html.j2 + context -> HTML
-                                              |
-                              xhtml2pdf: HTML -> PDF
-
-                     (fallback if xhtml2pdf unavailable: ReportLab generator)
+Invoice XML (KSeF)
+    |
+    +-- schema detection (namespace URI)
+    |       FA(3), FA(2) -> InvoiceXMLParser      -> invoice_pdf.html.j2
+    |       FA_RR        -> FA_RRInvoiceXMLParser -> invoice_pdf_fa_rr.html.j2
+    |       PEF (UBL)    -> PEFInvoiceXMLParser   -> ReportLab minimal renderer
+    |       UNKNOWN      -> FallbackParser         -> PDF skipped, XML saved only
+    |
+    +-- generation chain (first success wins):
+            1. CIRFMF ksef-pdf-generator microservice  (if storage.pdf_ksef_generator_url set)
+            2. xhtml2pdf + Jinja2 template             (if xhtml2pdf installed)
+            3. ReportLab InvoicePDFGenerator           (always available fallback)
 ```
 
 ## Quick Start
@@ -272,18 +280,95 @@ xhtml2pdf supports CSS 2.1 with some CSS3 extensions. Key supported features:
 
 Use `table` layout for all structural elements (already done in the default template).
 
+## FA_RR Template (Faktura VAT RR)
+
+FA_RR invoices (agricultural flat-rate VAT invoices) use a dedicated template
+`invoice_pdf_fa_rr.html.j2` with RR-specific layout.
+
+### Additional template variables for FA_RR
+
+The `fa_rr` context dict contains:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `fa_rr.kwota_vat_rr` | str | Flat-rate VAT refund amount |
+| `fa_rr.stawka_vat_rr` | str | Flat-rate VAT refund rate |
+| `fa_rr.p15_rr` | str | Total amount due (with VAT RR) |
+| `fa_rr.data_odbioru` | str | Date of product delivery |
+| `fa_rr.oswiadczenie` | str | Farmer's declaration text |
+| `fa_rr.farmer_pesel` | str | Farmer's PESEL number |
+
+Party mapping differs from standard FA:
+
+| Template var | FA_RR meaning |
+|--------------|---------------|
+| `buyer` | Skupujący (Podmiot1 — the purchasing company) |
+| `seller` | Rolnik ryczałtowy (Podmiot2 — the farmer) |
+
+### Customize FA_RR template
+
+```bash
+cp app/templates/invoice_pdf_fa_rr.html.j2 pdf_templates/
+nano pdf_templates/invoice_pdf_fa_rr.html.j2
+```
+
+## CIRFMF ksef-pdf-generator Integration
+
+The CIRFMF project provides an optional `ksef-pdf-generator` microservice that generates
+PDFs using the official KSeF XSL stylesheet. When configured, it is tried first — before
+local template rendering — for the highest-fidelity output.
+
+See: https://github.com/CIRFMF/ksef-pdf-generator
+
+### Configuration
+
+In `config.json`:
+```json
+{
+  "storage": {
+    "pdf_ksef_generator_url": "http://ksef-pdf-generator:8080"
+  }
+}
+```
+
+### Docker Compose
+
+```yaml
+services:
+  ksef-monitor:
+    # ... existing config ...
+    environment:
+      - KSEF_PDF_GENERATOR_URL=http://ksef-pdf-generator:8080
+
+  ksef-pdf-generator:
+    image: ghcr.io/cirfmf/ksef-pdf-generator:latest
+    ports:
+      - "8080:8080"
+```
+
+### Behavior
+
+- `POST {url}/api/generate` with `multipart/form-data` XML upload
+- On success (HTTP 200, `%PDF` response): returns generator PDF
+- On failure/timeout: silently falls back to local template rendering
+- No error raised — the chain continues automatically
+
 ## File Structure
 
 ```
 KSeF_Monitor/
 ├── app/
-│   ├── invoice_pdf_template.py      # Template renderer class
+│   ├── invoice_pdf_template.py          # Template renderer class
 │   └── templates/
-│       └── invoice_pdf.html.j2      # Built-in default template
-├── pdf_templates/                    # Your custom templates (optional)
-│   └── invoice_pdf.html.j2          # Your modified template
+│       ├── invoice_pdf.html.j2          # Built-in FA(3)/FA(2) template
+│       └── invoice_pdf_fa_rr.html.j2    # Built-in FA_RR template
+├── pdf_templates/                        # Your custom templates (optional)
+│   ├── invoice_pdf.html.j2              # Custom FA template
+│   └── invoice_pdf_fa_rr.html.j2        # Custom FA_RR template
 └── config.json
-    └── storage.pdf_templates_dir    # Points to /data/pdf_templates
+    └── storage
+        ├── pdf_templates_dir            # Points to /data/pdf_templates
+        └── pdf_ksef_generator_url       # CIRFMF microservice URL (optional)
 ```
 
 ## Dependencies

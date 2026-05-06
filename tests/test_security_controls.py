@@ -352,6 +352,26 @@ class TestAuthTokenAutoGeneration:
         assert raw["api"]["rate_limit"]["default"] == "60/minute"
         assert raw["api"]["rate_limit"]["trigger"] == "2/minute"
 
+    def test_auto_gen_sets_marker(self):
+        """Auto-generated token sets internal marker so main.py can skip
+        bootstrap admin (fresh-install path uses /ui/setup wizard)."""
+        from app.config_manager import ConfigManager
+
+        config = ConfigManager.__new__(ConfigManager)
+        raw = {"api": {"enabled": True, "auth_token": ""}}
+        config._apply_api_defaults(raw)
+        assert raw["api"].get("_auth_token_auto_generated") is True
+
+    def test_user_token_no_marker(self):
+        """User-provided token does not set the auto-gen marker so bootstrap
+        admin runs (upgrade path from v0.5.0)."""
+        from app.config_manager import ConfigManager
+
+        config = ConfigManager.__new__(ConfigManager)
+        raw = {"api": {"enabled": True, "auth_token": "user-provided-" + "x" * 32}}
+        config._apply_api_defaults(raw)
+        assert raw["api"].get("_auth_token_auto_generated") is None
+
 
 class TestSecretsManagerApiToken:
     """F-01: Verify API_AUTH_TOKEN injection via secrets_manager."""

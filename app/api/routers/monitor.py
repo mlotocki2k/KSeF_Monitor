@@ -7,6 +7,8 @@ import logging
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
+from app import __version__
+from app.api._limiter import limiter, _endpoint_limits
 from ..schemas import HealthResponse, MonitorStateResponse, TriggerResponse
 
 logger = logging.getLogger(__name__)
@@ -32,7 +34,7 @@ def health_check(request: Request):
 
     return HealthResponse(
         status="ok",
-        version="0.4.0",
+        version=__version__,
         db_connected=db_connected,
     )
 
@@ -54,7 +56,32 @@ def get_monitor_state(request: Request):
         session.close()
 
 
+@router.get("/monitor/ksef-status")
+def ksef_api_status(request: Request):
+    """Check KSeF API availability — requires API auth (Task 4).
+
+    Probes /security/public-key-certificates as a connectivity check.
+    Returns available, environment, latency_ms, http_status.
+    """
+    monitor = request.app.state.monitor
+    if not monitor or not hasattr(monitor, 'ksef'):
+        return JSONResponse(
+            status_code=503,
+            content={"available": False, "error": "Monitor not initialised", "environment": "unknown"},
+        )
+    try:
+        status = monitor.ksef.get_api_status()
+        return JSONResponse(content=status)
+    except Exception as e:
+        logger.error("KSeF status probe failed: %s", e)
+        return JSONResponse(
+            status_code=500,
+            content={"available": False, "error": "probe failed", "environment": "unknown"},
+        )
+
+
 @router.post("/monitor/trigger", response_model=TriggerResponse)
+@limiter.limit(lambda key: _endpoint_limits["trigger"])
 def trigger_check(request: Request):
     """Trigger an immediate invoice check."""
     monitor = request.app.state.monitor
@@ -62,16 +89,10 @@ def trigger_check(request: Request):
         return TriggerResponse(message="Monitor not available", triggered=False)
 
     try:
-        # Signal the monitor to run a check on next cycle
-        if hasattr(monitor, 'scheduler') and monitor.scheduler:
-            monitor.scheduler.force_next_run()
-            return TriggerResponse(
-                message="Check scheduled for next cycle",
-                triggered=True,
-            )
+        monitor.trigger_check()
         return TriggerResponse(
-            message="Scheduler not available",
-            triggered=False,
+            message="Check scheduled for next cycle",
+            triggered=True,
         )
     except Exception as e:
         logger.error("Failed to trigger check: %s", str(e))

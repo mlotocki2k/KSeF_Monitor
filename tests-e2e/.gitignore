@@ -1,0 +1,10 @@
+.venv/
+.env
+__pycache__/
+*.pyc
+.pytest_cache/
+reports/*.html
+reports/*.json
+reports/.auth-state.json
+screenshots/*.png
+!screenshots/.gitkeep

@@ -12,6 +12,7 @@ import sys
 import signal
 import logging
 
+from app import __version__
 from app.config_manager import ConfigManager
 from app.ksef_client import KSeFClient
 from app.notifiers import NotificationManager
@@ -54,8 +55,8 @@ def main():
     global monitor
     
     logger.info("=" * 70)
-    logger.info("KSeF Monitor v0.4")
-    logger.info("Based on KSeF API v2.2.0/v2.3.0 (github.com/CIRFMF/ksef-docs)")
+    logger.info(f"KSeF Monitor v{__version__}")
+    logger.info("Based on KSeF API v2.4.0 (github.com/CIRFMF/ksef-docs)")
     logger.info("Multi-channel notifications with Jinja2 templates")
     logger.info("=" * 70)
     
@@ -105,6 +106,57 @@ def main():
                     logger.warning(f"JSON migration failed (non-fatal): {e}")
         else:
             logger.info("Database disabled in configuration")
+
+        # Initialize Push Manager (iOS push notifications)
+        push_manager = None
+        ios_push_config = (config.get("notifications") or {}).get("ios_push")
+        if ios_push_config and ios_push_config.get("enabled"):
+            try:
+                from app.push_manager import PushManager
+                push_manager = PushManager(
+                    ios_push_config,
+                    data_dir="/data",
+                    db=database,
+                )
+                # Inject auto-generated credentials into config for IosPushNotifier
+                ios_push_config["instance_id"] = push_manager.instance_id
+                ios_push_config["instance_key"] = push_manager.instance_key
+                logger.info("✓ Push Manager initialized")
+            except Exception as e:
+                logger.warning(f"Failed to initialize Push Manager: {e}")
+                logger.info("Continuing without iOS push notifications")
+
+        # Initialize Initial Load Manager (historical invoice import)
+        initial_load_manager = None
+        initial_load_config = config.get("initial_load") or {}
+        if database and initial_load_config.get("enabled"):
+            try:
+                from datetime import datetime as _dt
+                from app.initial_load_manager import InitialLoadManager
+                initial_load_manager = InitialLoadManager(config, ksef_client, database)
+                logger.info("✓ Initial Load Manager initialized")
+
+                # Auto-start job if configured and no active job exists
+                start_date_str = initial_load_config.get("start_date", "")
+                if start_date_str:
+                    start_date = _dt.fromisoformat(start_date_str)
+                    end_date = _dt.utcnow()
+                    subject_types = initial_load_config.get("subject_types", ["Subject1", "Subject2"])
+                    date_type = initial_load_config.get("date_type", "Invoicing")
+                    initial_load_manager.resume_interrupted_jobs()
+                    job_id = initial_load_manager.start_job(
+                        start_date=start_date,
+                        end_date=end_date,
+                        subject_types=subject_types,
+                        date_type=date_type,
+                    )
+                    if job_id:
+                        logger.info("✓ Initial load job started: %s", job_id)
+                    else:
+                        logger.info("Initial load: job already running, not starting new one")
+            except Exception as e:
+                logger.warning(f"Failed to initialize Initial Load Manager: {e}")
+                logger.info("Continuing without initial load")
 
         # Initialize notification manager
         logger.info("Initializing notification channels...")
@@ -169,6 +221,56 @@ def main():
                 from app.api import create_app
                 from app.api.server import APIServer
 
+                # V5-13 upgrade-friendly bootstrap: if api.auth_token is set in
+                # config and there are 0 UI users yet, auto-create the 'admin'
+                # user with password = auth_token. Lets v0.5.0 deployments
+                # upgrade without touching the API key — login as 'admin' with
+                # the existing token, then change password via /ui/account.
+                #
+                # Skipped when token was auto-generated this run (fresh install):
+                # /ui/login redirects to /ui/setup wizard so the user picks their
+                # own credentials instead of fishing the auto-gen token out of
+                # /data/api_token.txt.
+                bootstrap_token = (api_config.get("auth_token") or "").strip()
+                token_auto_generated = bool(
+                    api_config.get("_auth_token_auto_generated")
+                )
+                if (
+                    database is not None
+                    and bootstrap_token
+                    and len(bootstrap_token) >= 8
+                    and not token_auto_generated
+                ):
+                    try:
+                        from app.ui_auth import (
+                            count_users as _count_users,
+                            create_user as _create_user,
+                        )
+
+                        with database.get_session() as _s:
+                            if _count_users(_s) == 0:
+                                _create_user(_s, "admin", bootstrap_token)
+                                logger.warning(
+                                    "Bootstrap: created UI user 'admin' with "
+                                    "password = api.auth_token. Login at /ui/login "
+                                    "and change password via /ui/account."
+                                )
+                    except Exception as _e:
+                        logger.warning(f"UI bootstrap admin skipped: {_e}")
+                elif token_auto_generated and database is not None:
+                    try:
+                        from app.ui_auth import count_users as _count_users
+
+                        with database.get_session() as _s:
+                            if _count_users(_s) == 0:
+                                logger.warning(
+                                    "Fresh install detected (auto-generated auth_token, "
+                                    "no UI users) — open /ui/setup to create the first "
+                                    "admin account."
+                                )
+                    except Exception:
+                        pass
+
                 api_app = create_app(
                     db=database,
                     monitor_instance=monitor,
@@ -177,6 +279,12 @@ def main():
                     rate_limit_config=api_config.get("rate_limit"),
                     docs_enabled=api_config.get("docs_enabled", True),
                     prometheus_metrics=prometheus_metrics,
+                    push_manager=push_manager,
+                    initial_load_manager=initial_load_manager,
+                    ui_enabled=api_config.get("ui_enabled", True),
+                    ui_public=api_config.get("ui_public", False),
+                    cookie_secure_mode=api_config.get("cookie_secure_mode", "auto"),
+                    session_strict_binding=api_config.get("session_strict_binding", False),
                 )
                 api_server = APIServer(
                     api_app,

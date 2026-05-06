@@ -1,41 +1,169 @@
 """
-KSeF Invoice XML Parser
+KSeF Invoice XML Parser — multi-schema support.
 
-Parses KSeF FA_VAT XML invoices (FA(3) schema) into a structured dict.
-Auto-detects XML namespace. Uses defusedxml for secure XML parsing.
+Auto-detects schema type from XML namespace and dispatches to the correct
+parser.  Supported schemas (KSeF API v2.4.0):
 
-Extracted from invoice_pdf_generator.py for reuse across PDF generators
-and future multi-schema support (FA(2), PEF, FA_RR in v0.5).
+  FA(3)   — Faktura VAT (current)        crd.gov.pl/wzor/2025/…/13775/
+  FA(2)   — Faktura VAT (legacy)         crd.gov.pl/wzor/202x/…
+  FA_RR   — Faktura VAT RR (farmer)      crd.gov.pl/wzor/2024/…/12978/  v1-0E
+                                         crd.gov.pl/wzor/2025/…/13836/  v1-1E
+  PEF     — PEPPOL UBL Invoice           urn:oasis:names:spec:ubl:…:Invoice-2
+  UNKNOWN — any other namespace          → minimal extraction, no PDF
 
-Schema reference:
-  XSD: http://crd.gov.pl/wzor/2025/06/25/13775/schemat.xsd
+Public API:
+  detect_schema_type(xml_content) -> str
+  create_invoice_xml_parser(xml_content) -> BaseInvoiceXMLParser
+  InvoiceXMLParser           — FA(3) / FA(2) parser (backward-compatible)
+  FA_RRInvoiceXMLParser      — FA_RR parser (extends FA3)
+  PEFInvoiceXMLParser        — PEPPOL UBL parser
+  FallbackInvoiceXMLParser   — safe fallback for unknown schemas
+
+Schema references (XSD):
+  FA(3): http://crd.gov.pl/wzor/2025/06/25/13775/schemat.xsd
+  FA(2): http://crd.gov.pl/wzor/2023/06/29/12648/schemat.xsd
+  FA_RR v1-0E: http://crd.gov.pl/wzor/2024/02/19/12978/schemat.xsd
+  FA_RR v1-1E: http://crd.gov.pl/wzor/2025/01/23/13836/schemat.xsd
+  PEF: urn:oasis:names:specification:ubl:schema:xsd:Invoice-2
 """
 
 import logging
 import re
 from defusedxml import ElementTree as ET
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
+# ── Schema namespace registry ──────────────────────────────────────────────────
 
-class InvoiceXMLParser:
-    """Parser for KSeF FA_VAT XML invoices with auto namespace detection."""
+# FA(3) — current FA VAT schema (various publish dates, always schema ID 13775)
+_FA3_NAMESPACES = frozenset({
+    'http://crd.gov.pl/wzor/2025/06/25/13775/',
+    'http://crd.gov.pl/wzor/2025/06/25/13773/',
+})
+
+# FA(2) — older FA VAT schema versions
+_FA2_NAMESPACES = frozenset({
+    'http://crd.gov.pl/wzor/2023/06/29/12648/',
+    'http://crd.gov.pl/wzor/2022/01/05/10649/',
+    'http://crd.gov.pl/wzor/2021/10/13/9851/',
+    'http://crd.gov.pl/wzor/2022/05/17/11155/',
+    'http://crd.gov.pl/wzor/2023/03/20/12197/',
+})
+
+# FA_RR — Faktura VAT RR (farmer flat-rate VAT invoice)
+_FA_RR_NAMESPACES = frozenset({
+    'http://crd.gov.pl/wzor/2024/02/19/12978/',   # v1-0E
+    'http://crd.gov.pl/wzor/2025/01/23/13836/',   # v1-1E (mandatory from 01.04.2026)
+})
+
+# PEF — PEPPOL / UBL invoices (public procurement)
+_PEF_NAMESPACES = frozenset({
+    'urn:oasis:names:specification:ubl:schema:xsd:Invoice-2',
+    'urn:oasis:names:specification:ubl:schema:xsd:CreditNote-2',
+})
+
+SCHEMA_TYPE_FA3 = 'FA3'
+SCHEMA_TYPE_FA2 = 'FA2'
+SCHEMA_TYPE_FA_RR = 'FA_RR'
+SCHEMA_TYPE_PEF = 'PEF'
+SCHEMA_TYPE_UNKNOWN = 'UNKNOWN'
+
+
+def detect_schema_type(xml_content: str) -> str:
+    """Detect KSeF invoice schema type from XML namespace.
+
+    Returns one of: 'FA3', 'FA2', 'FA_RR', 'PEF', 'UNKNOWN'.
+    """
+    try:
+        root = ET.fromstring(xml_content)
+        ns_match = re.match(r'\{(.+?)\}', root.tag)
+        namespace = ns_match.group(1) if ns_match else ''
+    except Exception:
+        return SCHEMA_TYPE_UNKNOWN
+
+    if namespace in _FA3_NAMESPACES:
+        return SCHEMA_TYPE_FA3
+    if namespace in _FA2_NAMESPACES:
+        return SCHEMA_TYPE_FA2
+    if namespace in _FA_RR_NAMESPACES:
+        return SCHEMA_TYPE_FA_RR
+    if namespace in _PEF_NAMESPACES:
+        return SCHEMA_TYPE_PEF
+
+    # Pattern-based fallback
+    if 'crd.gov.pl' in namespace:
+        # Unknown CRD namespace → treat as FA2 (structurally compatible)
+        logger.warning("Unknown CRD namespace '%s' — treating as FA2", namespace)
+        return SCHEMA_TYPE_FA2
+    if any(kw in namespace.lower() for kw in ('peppol', 'oasis', 'ubl')):
+        return SCHEMA_TYPE_PEF
+
+    logger.warning("Unrecognised XML namespace '%s'", namespace)
+    return SCHEMA_TYPE_UNKNOWN
+
+
+def create_invoice_xml_parser(xml_content: str) -> 'BaseInvoiceXMLParser':
+    """Factory: return the appropriate parser for the given XML content."""
+    schema = detect_schema_type(xml_content)
+    if schema in (SCHEMA_TYPE_FA3, SCHEMA_TYPE_FA2):
+        parser = InvoiceXMLParser(xml_content)
+        parser._schema_type = schema  # pre-set so schema_type works before parse()
+        return parser
+    if schema == SCHEMA_TYPE_FA_RR:
+        return FA_RRInvoiceXMLParser(xml_content)
+    if schema == SCHEMA_TYPE_PEF:
+        return PEFInvoiceXMLParser(xml_content)
+    return FallbackInvoiceXMLParser(xml_content)
+
+
+class BaseInvoiceXMLParser:
+    """Shared interface for all schema parsers."""
+
+    def parse(self) -> Dict:
+        raise NotImplementedError
+
+    @property
+    def schema_type(self) -> str:
+        raise NotImplementedError
+
+
+class InvoiceXMLParser(BaseInvoiceXMLParser):
+    """Parser for KSeF FA_VAT XML invoices — handles both FA(3) and FA(2).
+
+    FA(2) and FA(3) share the same element names; only the namespace URI differs.
+    Auto-namespace detection ensures correct prefix mapping for both versions.
+    """
 
     def __init__(self, xml_content: str):
         self.xml_content = xml_content
         self.root = None
         self.NS = {}
+        self._schema_type: Optional[str] = None
+
+    @property
+    def schema_type(self) -> str:
+        return self._schema_type or SCHEMA_TYPE_FA3
 
     def parse(self) -> Dict:
         try:
             self.root = ET.fromstring(self.xml_content)
             ns_match = re.match(r'\{(.+?)\}', self.root.tag)
             if ns_match:
-                self.NS = {'fa': ns_match.group(1)}
-                logger.debug("Detected XML namespace: %s", ns_match.group(1))
+                namespace = ns_match.group(1)
+                self.NS = {'fa': namespace}
+                logger.debug("Detected XML namespace: %s", namespace)
+                # Determine exact schema type
+                if namespace in _FA2_NAMESPACES or (
+                    'crd.gov.pl' in namespace and namespace not in _FA3_NAMESPACES
+                    and namespace not in _FA_RR_NAMESPACES
+                ):
+                    self._schema_type = SCHEMA_TYPE_FA2
+                else:
+                    self._schema_type = SCHEMA_TYPE_FA3
 
             data = {
+                'schema_type': self._schema_type,
                 'ksef_metadata': {'ksef_number': ''},
                 'header': self._parse_header(),
                 'seller': self._parse_podmiot('Podmiot1'),
@@ -582,3 +710,315 @@ class InvoiceXMLParser:
             if any(v for k, v in entry.items() if k != 'naglowek'):
                 result.append(entry)
         return result
+
+
+# ── FA_RR parser ───────────────────────────────────────────────────────────────
+
+class FA_RRInvoiceXMLParser(InvoiceXMLParser):
+    """Parser for FA_RR (Faktura VAT RR) — farmer flat-rate VAT invoices.
+
+    Extends InvoiceXMLParser with FA_RR-specific sections:
+    - farmer data (Podmiot2 = farmer/supplier, Podmiot1 = buyer)
+    - declaration (OswiadczenieDostawcy)
+    - FA_RR-specific VAT fields (KwotaVatRR, StawkaVatRR)
+
+    Schema refs:
+      v1-0E: http://crd.gov.pl/wzor/2024/02/19/12978/schemat.xsd
+      v1-1E: http://crd.gov.pl/wzor/2025/01/23/13836/schemat.xsd
+    """
+
+    @property
+    def schema_type(self) -> str:
+        return SCHEMA_TYPE_FA_RR
+
+    def parse(self) -> Dict:
+        data = super().parse()
+        data['schema_type'] = SCHEMA_TYPE_FA_RR
+
+        # FA_RR: Podmiot1 = kupujący (nabywca), Podmiot2 = rolnik (dostawca)
+        # Re-label roles to match FA_RR semantics
+        data['farmer'] = data.pop('buyer', {})   # Podmiot2 = farmer
+        data['buyer'] = data.pop('seller', {})   # Podmiot1 = actual buyer
+
+        # FA_RR-specific VAT
+        data['fa_rr'] = self._parse_fa_rr_fields()
+
+        return data
+
+    def _parse_fa_rr_fields(self) -> Dict:
+        """Parse FA_RR-specific fields."""
+        result = {}
+        fa = self.root.find('.//fa:Fa', self.NS)
+        if fa is None:
+            return result
+
+        # RR-specific VAT fields
+        result['kwota_vat_rr'] = self._text(fa, 'fa:KwotaVatRR')
+        result['stawka_vat_rr'] = self._text(fa, 'fa:StawkaVatRR')
+        result['p15_rr'] = self._text(fa, 'fa:P_15RR')
+        result['data_odbioru'] = self._text(fa, 'fa:DataOdbioru')
+
+        # Farmer declaration
+        oswiad = self.root.find('.//fa:OswiadczenieDostawcy', self.NS)
+        if oswiad is not None:
+            result['oswiadczenie'] = {
+                'imie_nazwisko': self._text(oswiad, 'fa:ImieNazwiskoOsoba'),
+                'nr_dowodu': self._text(oswiad, 'fa:NrDowoduOsoba'),
+                'data': self._text(oswiad, 'fa:DataOswiadczenia'),
+                'tresc': self._text(oswiad, 'fa:OswiadczenieRolnika'),
+            }
+
+        # Farmer identification (may have PESEL instead of NIP)
+        farmer_dane = self.root.find('.//fa:Podmiot2/fa:DaneIdentyfikacyjne', self.NS)
+        if farmer_dane is not None:
+            result['farmer_pesel'] = self._text(farmer_dane, 'fa:PESEL')
+            result['farmer_nr_id'] = self._text(farmer_dane, 'fa:NrID')
+
+        return result
+
+
+# ── PEF parser ─────────────────────────────────────────────────────────────────
+
+class PEFInvoiceXMLParser(BaseInvoiceXMLParser):
+    """Parser for PEF (PEPPOL UBL) invoices used in public procurement.
+
+    Extracts basic invoice metadata from PEPPOL UBL Invoice-2 XML.
+    Maps UBL elements to the common output dict used by PDF generators.
+
+    Schema refs:
+      UBL Invoice-2: urn:oasis:names:specification:ubl:schema:xsd:Invoice-2
+      UBL CreditNote-2: urn:oasis:names:specification:ubl:schema:xsd:CreditNote-2
+    """
+
+    _UBL_NS = 'urn:oasis:names:specification:ubl:schema:xsd:Invoice-2'
+    _CBC = 'urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2'
+    _CAC = 'urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2'
+
+    def __init__(self, xml_content: str):
+        self.xml_content = xml_content
+        self.root = None
+        self._ns: Dict[str, str] = {}
+
+    @property
+    def schema_type(self) -> str:
+        return SCHEMA_TYPE_PEF
+
+    @staticmethod
+    def _sanitize(value: str) -> str:
+        return re.sub(r'<[^>]+>', '', value) if value else ''
+
+    def _cbc(self, parent, local_name: str, default: str = '') -> str:
+        if parent is None:
+            return default
+        el = parent.find(f'{{{self._CBC}}}{local_name}')
+        if el is not None and el.text:
+            return self._sanitize(el.text.strip())
+        return default
+
+    def _cac(self, parent, local_name: str):
+        if parent is None:
+            return None
+        return parent.find(f'{{{self._CAC}}}{local_name}')
+
+    def parse(self) -> Dict:
+        try:
+            self.root = ET.fromstring(self.xml_content)
+        except ET.ParseError as e:
+            logger.error("PEF XML parsing error: %s", e)
+            raise
+
+        invoice_number = self._cbc(self.root, 'ID')
+        issue_date = self._cbc(self.root, 'IssueDate')
+        due_date = self._cbc(self.root, 'DueDate')
+        currency = self._cbc(self.root, 'DocumentCurrencyCode', 'PLN')
+        note = self._cbc(self.root, 'Note')
+
+        # Supplier (AccountingSupplierParty/Party)
+        supplier_party = self._cac(self._cac(self.root, 'AccountingSupplierParty'), 'Party')
+        seller = self._parse_pef_party(supplier_party)
+
+        # Buyer (AccountingCustomerParty/Party)
+        buyer_party = self._cac(self._cac(self.root, 'AccountingCustomerParty'), 'Party')
+        buyer = self._parse_pef_party(buyer_party)
+
+        # Totals (LegalMonetaryTotal)
+        totals = self._cac(self.root, 'LegalMonetaryTotal')
+        gross_amount = self._cbc(totals, 'PayableAmount') if totals is not None else ''
+        tax_exclusive = self._cbc(totals, 'TaxExclusiveAmount') if totals is not None else ''
+
+        # Tax total
+        tax_total = self._cac(self.root, 'TaxTotal')
+        vat_amount = self._cbc(tax_total, 'TaxAmount') if tax_total is not None else ''
+
+        # Line items
+        items = self._parse_pef_lines()
+
+        logger.info("PEF invoice XML parsed successfully (ID=%s)", invoice_number)
+
+        return {
+            'schema_type': SCHEMA_TYPE_PEF,
+            'ksef_metadata': {'ksef_number': ''},
+            'header': {
+                'p2': invoice_number,
+                'p1': issue_date,
+                'p6': due_date,
+                'kod_waluty': currency,
+                'p15': gross_amount,
+                'rodzaj': 'PEF',
+                'note': note,
+            },
+            'seller': seller,
+            'buyer': buyer,
+            'items': items,
+            'vat_summary': {
+                'TaxAmount': vat_amount,
+                'TaxExclusiveAmount': tax_exclusive,
+                'PayableAmount': gross_amount,
+            },
+            'payment': {},
+            'annotations': {},
+            'dodatkowy_opis': [],
+            'dane_korygowanej': [],
+            'faktury_zaliczkowe': [],
+            'zaliczki_czesciowe': [],
+            'rozliczenie': {},
+            'zamowienie': {},
+            'zalacznik': [],
+            'footer': {},
+            'podmiot3': [],
+        }
+
+    def _parse_pef_party(self, party) -> Dict:
+        if party is None:
+            return {}
+
+        result: Dict = {}
+
+        # Name
+        party_name_el = self._cac(party, 'PartyName')
+        result['nazwa'] = self._cbc(party_name_el, 'Name') if party_name_el is not None else ''
+
+        # Tax (NIP/VAT)
+        party_tax = self._cac(party, 'PartyTaxScheme')
+        if party_tax is not None:
+            company_id = self._cbc(party_tax, 'CompanyID')
+            # Strip country prefix for NIP
+            result['nip'] = re.sub(r'^PL', '', company_id) if company_id else ''
+
+        # Legal entity registration name
+        legal = self._cac(party, 'PartyLegalEntity')
+        if legal is not None and not result.get('nazwa'):
+            result['nazwa'] = self._cbc(legal, 'RegistrationName')
+
+        # Address
+        postal = self._cac(party, 'PostalAddress')
+        if postal is not None:
+            street = self._cbc(postal, 'StreetName')
+            city = self._cbc(postal, 'CityName')
+            zip_code = self._cbc(postal, 'PostalZone')
+            country_el = self._cac(postal, 'Country')
+            country = self._cbc(country_el, 'IdentificationCode') if country_el is not None else ''
+            result['kod_kraju'] = country
+            addr_parts = [p for p in [street, f'{zip_code} {city}'.strip()] if p]
+            result['adres_l1'] = addr_parts[0] if addr_parts else ''
+            result['adres_l2'] = addr_parts[1] if len(addr_parts) > 1 else ''
+
+        # Contact
+        contact = self._cac(party, 'Contact')
+        if contact is not None:
+            result['email'] = self._cbc(contact, 'ElectronicMail')
+            result['telefon'] = self._cbc(contact, 'Telephone')
+
+        return result
+
+    def _parse_pef_lines(self) -> List[Dict]:
+        items = []
+        for line in self.root.findall(f'{{{self._CAC}}}InvoiceLine'):
+            item: Dict = {}
+            item['nr'] = self._cbc(line, 'ID')
+            item['p11'] = self._cbc(line, 'LineExtensionAmount')  # net amount
+
+            # Item details
+            item_el = self._cac(line, 'Item')
+            if item_el is not None:
+                item['p7'] = self._cbc(item_el, 'Name')  # description
+                item['p8a'] = self._cbc(item_el, 'Description')
+
+            # Price
+            price_el = self._cac(line, 'Price')
+            if price_el is not None:
+                item['p9a'] = self._cbc(price_el, 'PriceAmount')  # unit price
+
+            # Quantity
+            item['p8b'] = self._cbc(line, 'InvoicedQuantity')
+
+            # Tax
+            tax_total = self._cac(line, 'TaxTotal')
+            if tax_total is not None:
+                item['p11vat'] = self._cbc(tax_total, 'TaxAmount')
+                tax_sub = self._cac(tax_total, 'TaxSubtotal')
+                if tax_sub is not None:
+                    tax_cat = self._cac(tax_sub, 'TaxCategory')
+                    if tax_cat is not None:
+                        item['p12'] = self._cbc(tax_cat, 'Percent')  # VAT rate %
+
+            if any(v for v in item.values()):
+                items.append(item)
+        return items
+
+
+# ── Fallback parser ────────────────────────────────────────────────────────────
+
+class FallbackInvoiceXMLParser(BaseInvoiceXMLParser):
+    """Minimal parser for unrecognised XML schemas.
+
+    Attempts to extract a few common fields from arbitrary XML.
+    PDF generation will be skipped for UNKNOWN schema type.
+    """
+
+    def __init__(self, xml_content: str):
+        self.xml_content = xml_content
+
+    @property
+    def schema_type(self) -> str:
+        return SCHEMA_TYPE_UNKNOWN
+
+    def parse(self) -> Dict:
+        logger.warning("Using FallbackInvoiceXMLParser — XML schema not recognised")
+        try:
+            root = ET.fromstring(self.xml_content)
+        except ET.ParseError as e:
+            logger.error("Fallback XML parse error: %s", e)
+            return self._empty_data()
+
+        # Best-effort: grab any text from common-looking tags
+        ns_match = re.match(r'\{(.+?)\}', root.tag)
+        namespace = ns_match.group(1) if ns_match else ''
+
+        data = self._empty_data()
+        data['header']['raw_root_tag'] = root.tag
+        data['header']['raw_namespace'] = namespace
+        return data
+
+    @staticmethod
+    def _empty_data() -> Dict:
+        return {
+            'schema_type': SCHEMA_TYPE_UNKNOWN,
+            'ksef_metadata': {'ksef_number': ''},
+            'header': {'rodzaj': 'UNKNOWN', 'p2': '', 'p1': '', 'p15': '', 'kod_waluty': 'PLN'},
+            'seller': {},
+            'buyer': {},
+            'items': [],
+            'vat_summary': {},
+            'payment': {},
+            'annotations': {},
+            'dodatkowy_opis': [],
+            'dane_korygowanej': [],
+            'faktury_zaliczkowe': [],
+            'zaliczki_czesciowe': [],
+            'rozliczenie': {},
+            'zamowienie': {},
+            'zalacznik': [],
+            'footer': {},
+            'podmiot3': [],
+        }

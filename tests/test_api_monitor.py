@@ -10,6 +10,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from app import __version__
 from app.api import create_app
 from app.database import Base, Database, MonitorState
 
@@ -63,7 +64,7 @@ class TestHealthEndpoint:
         assert resp.status_code == 200
         data = resp.json()
         assert data["status"] == "ok"
-        assert data["version"] == "0.4.0"
+        assert data["version"] == __version__
         assert data["db_connected"] is False
         assert "auth_enabled" not in data  # F-09: removed
 
@@ -108,11 +109,9 @@ class TestTriggerEndpoint:
         data = resp.json()
         assert data["triggered"] is False
 
-    def test_trigger_with_scheduler(self):
+    def test_trigger_calls_monitor_trigger_check(self):
         mock_monitor = MagicMock()
-        mock_scheduler = MagicMock()
-        mock_monitor.scheduler = mock_scheduler
-        mock_scheduler.force_next_run = MagicMock()
+        mock_monitor.trigger_check = MagicMock()
 
         app = create_app(db=None, monitor_instance=mock_monitor, auth_token=None)
         client = TestClient(app)
@@ -120,13 +119,11 @@ class TestTriggerEndpoint:
         assert resp.status_code == 200
         data = resp.json()
         assert data["triggered"] is True
-        mock_scheduler.force_next_run.assert_called_once()
+        mock_monitor.trigger_check.assert_called_once()
 
-    def test_trigger_scheduler_exception(self):
+    def test_trigger_exception(self):
         mock_monitor = MagicMock()
-        mock_scheduler = MagicMock()
-        mock_monitor.scheduler = mock_scheduler
-        mock_scheduler.force_next_run.side_effect = RuntimeError("boom")
+        mock_monitor.trigger_check.side_effect = RuntimeError("boom")
 
         app = create_app(db=None, monitor_instance=mock_monitor, auth_token=None)
         client = TestClient(app)
@@ -134,3 +131,16 @@ class TestTriggerEndpoint:
         assert resp.status_code == 200
         data = resp.json()
         assert data["triggered"] is False
+
+
+@pytest.fixture
+def client_open():
+    """Open-access app client (no auth token)."""
+    app = create_app(db=None, auth_token=None)
+    return TestClient(app)
+
+
+def test_health_returns_package_version(client_open):
+    resp = client_open.get("/api/v1/monitor/health")
+    assert resp.status_code == 200
+    assert resp.json()["version"] == __version__

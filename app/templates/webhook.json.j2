@@ -1,4 +1,4 @@
-{
+{% autoescape false %}{
     "title": "{{ title | json_escape }}",
     "message": "{% if subject_type == 'Subject1' %}Do: {{ buyer_name | json_escape }} - NIP {{ buyer_nip }}{% elif subject_type == 'Subject2' %}Od: {{ seller_name | json_escape }} - NIP {{ seller_nip }}{% else %}Od: {{ seller_name | json_escape }} - NIP {{ seller_nip }}\nDo: {{ buyer_name | json_escape }} - NIP {{ buyer_nip }}{% endif %}\nNr Faktury: {{ invoice_number | json_escape }}\nData: {{ issue_date | date }}\nBrutto: {{ gross_amount | money_raw }} {{ currency }}\nNumer KSeF: {{ ksef_number | json_escape }}",
     "priority": {{ priority }},
@@ -17,9 +17,11 @@
         "seller_nip": "{{ seller_nip }}",
         "buyer_name": "{{ buyer_name | json_escape }}",
         "buyer_nip": "{{ buyer_nip }}",
-        "subject_type": "{{ subject_type }}"
+        "subject_type": "{{ subject_type }}",
+        "schema_type": "{{ schema_type | default('FA3') }}"
     }
     {% if url %}
     ,"url": "{{ url | json_escape }}"
     {% endif %}
 }
+{% endautoescape %}

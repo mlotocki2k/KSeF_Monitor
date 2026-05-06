@@ -1,13 +1,13 @@
-# KSeF Monitor v0.4
+# KSeF Monitor v0.5.3
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![Docker](https://img.shields.io/badge/Docker-ready-blue?logo=docker)](https://ghcr.io/mlotocki2k/ksef_monitor)
-[![KSeF API](https://img.shields.io/badge/KSeF_API-v2.2.0-green)](https://github.com/CIRFMF/ksef-docs)
+[![KSeF API](https://img.shields.io/badge/KSeF_API-v2.4.0-green)](https://github.com/CIRFMF/ksef-docs)
 [![Prometheus](https://img.shields.io/badge/Prometheus-metrics-orange?logo=prometheus)](docs/PROJECT_STRUCTURE.md)
 [![GitHub Actions](https://img.shields.io/github/actions/workflow/status/mlotocki2k/KSeF_Monitor/docker-publish.yml?branch=test&label=build)](https://github.com/mlotocki2k/KSeF_Monitor/actions)
 
-Monitor faktur w Krajowym Systemie e-Faktur (KSeF). Aplikacja cyklicznie pobiera metadata faktur z API KSeF v2 i wysyła powiadomienia o nowych fakturach sprzedażowych i/lub zakupowych przez **5 kanałów notyfikacji** z **konfigurowalnym systemem szablonów Jinja2**.
+Monitor faktur w Krajowym Systemie e-Faktur (KSeF). Aplikacja cyklicznie pobiera metadata faktur z API KSeF v2 i wysyła powiadomienia o nowych fakturach sprzedażowych i/lub zakupowych przez **6 kanałów notyfikacji** z **konfigurowalnym systemem szablonów Jinja2**.
 
 **Obsługiwane kanały:**
 - 📱 **Pushover** - powiadomienia mobilne
@@ -15,6 +15,7 @@ Monitor faktur w Krajowym Systemie e-Faktur (KSeF). Aplikacja cyklicznie pobiera
 - 💼 **Slack** - webhook z Block Kit
 - 📧 **Email** - SMTP z HTML formatowaniem
 - 🔗 **Webhook** - generyczny HTTP endpoint
+- 📱 **iOS Push** — natywne powiadomienia przez aplikację Monitor KSeF
 
 Bazuje na oficjalnej specyfikacji API: https://github.com/CIRFMF/ksef-docs
 
@@ -47,7 +48,7 @@ KSeF_Monitor/
 │   ├── __init__.py
 │   ├── config_manager.py        # Wczytanie i walidacja config.json
 │   ├── secrets_manager.py       # Sekretne wartości z env / Docker secrets / config
-│   ├── ksef_client.py           # Klient API KSeF v2.2.0 (autentykacja + paginacja)
+│   ├── ksef_client.py           # Klient API KSeF v2.4.0 (autentykacja + paginacja)
 │   ├── invoice_monitor.py       # Główna pętla monitorowania + kontekst szablonów
 │   ├── invoice_pdf_generator.py # XML parser + ReportLab PDF generator (fallback)
 │   ├── invoice_pdf_template.py  # HTML/CSS template PDF renderer (xhtml2pdf)
@@ -57,6 +58,7 @@ KSeF_Monitor/
 │   ├── database.py              # SQLite + SQLAlchemy 2.0 ORM (metadane, stan, logi, artefakty)
 │   ├── rate_limiter.py          # Globalny rate limiter KSeF API (sliding window, 3 okna)
 │   ├── logging_config.py        # Logging setup z timezone
+│   ├── push_manager.py          # PushManager: credentials, rejestracja, QR, wysyłka (v0.5)
 │   ├── api/                     # REST API (FastAPI, v0.4)
 │   │   ├── __init__.py          # App factory (auth, security headers, CORS)
 │   │   ├── server.py            # Uvicorn daemon thread server
@@ -65,14 +67,16 @@ KSeF_Monitor/
 │   │       ├── invoices.py      # GET /api/v1/invoices (paginacja, filtry, sortowanie)
 │   │       ├── stats.py         # GET /api/v1/stats/summary, /stats/api
 │   │       ├── monitor.py       # GET /health, /state; POST /trigger
-│   │       └── artifacts.py     # GET /api/v1/artifacts/pending
+│   │       ├── artifacts.py     # GET /api/v1/artifacts/pending
+│   │       └── push.py          # GET /api/v1/push/setup; POST /push/regenerate, /push/reset (v0.5)
 │   ├── templates/               # Wbudowane szablony Jinja2
 │   │   ├── invoice_pdf.html.j2  # Szablon PDF faktury (HTML/CSS)
 │   │   ├── pushover.txt.j2      # Plain text (Pushover)
 │   │   ├── email.html.j2        # HTML (Email)
 │   │   ├── slack.json.j2        # Block Kit JSON (Slack)
 │   │   ├── discord.json.j2      # Embed JSON (Discord)
-│   │   └── webhook.json.j2      # Payload JSON (Webhook)
+│   │   ├── webhook.json.j2      # Payload JSON (Webhook)
+│   │   └── ios_push.json.j2     # Push payload (iOS Push, v0.5)
 │   └── notifiers/               # Multi-channel notification system
 │       ├── __init__.py
 │       ├── base_notifier.py     # Abstract base + render_and_send()
@@ -81,11 +85,12 @@ KSeF_Monitor/
 │       ├── discord_notifier.py      # Webhook Discord z rich embeds
 │       ├── slack_notifier.py        # Webhook Slack z Block Kit
 │       ├── email_notifier.py        # SMTP email z HTML
-│       └── webhook_notifier.py      # Generyczny HTTP endpoint
+│       ├── webhook_notifier.py      # Generyczny HTTP endpoint
+│       └── ios_push_notifier.py     # Natywne push iOS via Monitor KSeF (v0.5)
 ├── docs/                        # Documentation
 │   ├── QUICKSTART.md            # Quick start guide
 │   ├── KSEF_TOKEN.md            # Tworzenie tokena KSeF (read-only)
-│   ├── NOTIFICATIONS.md         # Konfiguracja powiadomień (5 kanałów)
+│   ├── NOTIFICATIONS.md         # Konfiguracja powiadomień (6 kanałów)
 │   ├── TEMPLATES.md             # Szablony Jinja2 powiadomień
 │   ├── SECURITY.md              # Security best practices
 │   ├── TESTING.md               # Testing guide
@@ -96,7 +101,7 @@ KSeF_Monitor/
 │   ├── IDE_TROUBLESHOOTING.md   # IDE setup help
 │   └── INDEX.md                 # Documentation index
 ├── spec/                        # API specifications
-│   ├── openapi.json             # KSeF API v2.2.0 OpenAPI spec
+│   ├── openapi.json             # KSeF API v2.4.0 OpenAPI spec
 │   └── schemat_FA(3)_v1-0E.xsd # Schemat FA(3) faktury
 ├── examples/                    # Example configuration files
 │   ├── config.example.json      # Configuration template
@@ -129,7 +134,7 @@ Katalog `data/` powstaje w runtime i zawiera bazę danych `invoices.db` oraz leg
 
 - 📖 [QUICKSTART.md](docs/QUICKSTART.md) — Szybki start w 5 minut
 - 🔑 [KSEF_TOKEN.md](docs/KSEF_TOKEN.md) — Tworzenie tokena KSeF (krok po kroku, uprawnienia read-only)
-- 🔔 [NOTIFICATIONS.md](docs/NOTIFICATIONS.md) — Konfiguracja powiadomień (5 kanałów, tworzenie webhooków)
+- 🔔 [NOTIFICATIONS.md](docs/NOTIFICATIONS.md) — Konfiguracja powiadomień (6 kanałów, tworzenie webhooków)
 - 🎨 [TEMPLATES.md](docs/TEMPLATES.md) — Szablony Jinja2 powiadomień (zmienne, filtry, przykłady)
 - 🔒 [SECURITY.md](docs/SECURITY.md) — Najlepsze praktyki bezpieczeństwa
 - 🧪 [TESTING.md](docs/TESTING.md) — Przewodnik testowania
@@ -146,7 +151,7 @@ Katalog `data/` powstaje w runtime i zawiera bazę danych `invoices.db` oraz leg
 
 ## Wymagania
 
-- Python 3.9+ lub Docker
+- Python 3.10+ lub Docker
 - Token autoryzacyjny z portalu KSeF (https://ksef.gov.pl)
 - Co najmniej jeden kanał powiadomień (opcjonalnie — możesz wyłączyć wszystkie):
   - **Pushover** — User Key + API Token (https://pushover.net)
@@ -199,11 +204,11 @@ Base URLs przypisane automatycznie:
 
 ### Sekcja `notifications`
 
-System powiadomień obsługuje **5 kanałów** jednocześnie. Możesz włączyć jeden lub wiele.
+System powiadomień obsługuje **6 kanałów** jednocześnie. Możesz włączyć jeden lub wiele.
 
 | Pole | Opis |
 |---|---|
-| `channels` | Lista włączonych kanałów: `["pushover", "discord", "slack", "email", "webhook"]` |
+| `channels` | Lista włączonych kanałów: `["pushover", "discord", "slack", "email", "webhook", "ios_push"]` |
 | `message_priority` | Priority dla nowych faktur. `-2` cisza \| `-1` cicho \| `0` normalne \| `1` wysoka \| `2` pilne (Pushover). |
 | `test_notification` | `true` wysyła testowe powiadomienie przy starcie. |
 | `templates_dir` | Opcjonalny katalog z własnymi szablonami Jinja2 (nadpisują wbudowane). Domyślnie: brak (wbudowane szablony). Szczegóły: [TEMPLATES.md](docs/TEMPLATES.md) |
@@ -315,6 +320,35 @@ System powiadomień obsługuje **5 kanałów** jednocześnie. Możesz włączyć
   "url": null
 }
 ```
+</details>
+
+<details>
+<summary><b>iOS Push</b> — Natywne powiadomienia przez aplikację Monitor KSeF (v0.5)</summary>
+
+```json
+"ios_push": {
+  "worker_url": "https://push.monitorksef.com",
+  "instance_id": "",
+  "instance_key": "",
+  "timeout": 15
+}
+```
+
+- `worker_url` — URL Cloudflare Worker (domyślnie: `https://push.monitorksef.com`)
+- `instance_id` — UUID instancji (auto-generowany przez PushManager przy pierwszym uruchomieniu)
+- `instance_key` — 32B klucz instancji (auto-generowany; można też ustawić przez `IOS_PUSH_INSTANCE_KEY` env/Docker secret)
+- `timeout` — Timeout HTTP w sekundach (default: 15)
+
+**Parowanie z aplikacją iOS:**
+1. Uruchom monitor — PushManager auto-generuje credentials i wyświetla QR code ASCII w logach
+2. Pobierz endpoint: `GET /api/v1/push/setup` — zwraca `pairing_code` i QR code
+3. W aplikacji Monitor KSeF: Konfiguracja → Skanuj QR kod
+4. Regeneracja credentials: `POST /api/v1/push/regenerate`
+5. Reset pełny: `POST /api/v1/push/reset`
+
+> ⚠ **Status aplikacji iOS:** wersja w App Store nie obsługuje jeszcze parowania push — pełna funkcjonalność wkrótce. Po wersję testową przez TestFlight napisz na [kontakt@krzewilabs.pl](mailto:kontakt@krzewilabs.pl).
+
+Secret: `IOS_PUSH_INSTANCE_KEY` (env var / Docker secret)
 </details>
 
 **Przykładowa konfiguracja (3 kanały włączone):**
@@ -506,19 +540,53 @@ Zarządzanie: `python db_admin.py status|invoices|stats|errors|...` — szczegó
 
 ### Sekcja `api`
 
-REST API (FastAPI) do integracji z UI i zewnętrznymi systemami (v0.4).
+REST API (FastAPI) + browser UI (v0.5.3).
 
 | Pole | Default | Opis |
 |---|---|---|
 | `enabled` | `false` | Włącz/wyłącz REST API |
 | `port` | `8080` | Port HTTP dla API |
 | `bind_address` | `"127.0.0.1"` | Adres sieciowy |
-| `auth_token` | `""` | Token Bearer auth. Jeśli pusty gdy API włączone — auto-generowany i logowany (F-01). Może być ustawiony przez `API_AUTH_TOKEN` env/Docker secret. |
+| `auth_token` | `""` | Bearer dla curl/integracji/iOS pairing. Pusty gdy API on → auto-gen, logowany (F-01). Env: `API_AUTH_TOKEN`. **V5-13:** jeśli ustawiony przy świeżym uruchomieniu z pustym DB userów → automatycznie tworzy konto UI `admin` z hasłem = `auth_token`. |
 | `docs_enabled` | `true` | `/docs`, `/redoc`, `/openapi.json`. Ustaw `false` w produkcji (F-02). |
 | `cors_origins` | `[]` | Lista dozwolonych origin CORS. Wildcard `*` odrzucany gdy `auth_token` jest ustawiony (F-10). |
+| `ui_enabled` | `true` | Włącz browser UI pod `/ui` |
+| `ui_public` | `false` | Bypass auth dla `/ui` — tylko gdy zewnętrzny reverse-proxy załatwia auth |
+| `cookie_secure_mode` | `"auto"` | Cookie `Secure` flag: `auto` honoruje `X-Forwarded-Proto` (default), `always` wymusza Secure (prod za TLS-terminującym proxy), `never` wyłącza (dev). U-01. |
+| `session_strict_binding` | `false` | Opt-in: SHA-256(User-Agent) zapisany w `ui_sessions.ua_hash` przy logowaniu; mismatch → revoke + redirect. Legacy sesje bez `ua_hash` grandfathered. U-04. |
 | `rate_limit.enabled` | `true` | Włącz rate limiting (slowapi) |
 | `rate_limit.default` | `"60/minute"` | Domyślny limit requestów |
 | `rate_limit.trigger` | `"2/minute"` | Limit dla POST /trigger |
+
+**Browser UI auth (V5-13/V5-14, hardened w v0.5.2):** osobne konta user/pass
+w DB (bcrypt 12 rounds, SHA-256+b64 pre-hash dla haseł >72B → bcrypt 5.0-ready),
+HttpOnly + SameSite=strict cookie session, 7 dni rolling z absolute cap 30 dni
+(U-09). Pierwszy start: `/ui/setup` (race-safe via `BEGIN IMMEDIATE` — U-06)
+lub auto-bootstrap `admin` z `auth_token` (upgrade-friendly z v0.5.0). Bearer
+nadal działa dla curl/integracji. V5-14: session resolver niezależny od
+auth gate — `/ui/account` i navbar (username + Wyloguj) działają też gdy
+`auth_token=""` lub `ui_public=true`.
+
+**Brute-force protection (U-03):** per-username sliding-window licznik (5 fails
+w 15 min → 15 min lockout, tabela `ui_login_attempts`). Sprawdzany przed
+bcrypt — blokuje też timing-based username enumeration. Constant-time login
+przez dummy-bcrypt dla nieistniejących userów (U-07).
+
+**Password strength (U-11):** minimum 8 znaków, top-100 breach blocklist
+(rockyou, in-process — bez zewnętrznego corpus), reject jeśli zawiera username
+(≥3 chars, case-insensitive). Username case-insensitive (U-17): `admin` /
+`Admin` / `ADMIN` to ten sam wpis i ten sam licznik lockoutu.
+
+**CSP nonce (U-05):** `script-src` używa per-request nonce (`secrets.token_urlsafe(16)`)
+zamiast `'unsafe-inline'` — chroni przed XSS payload exfiltration nawet gdy
+HttpOnly cookie pozostaje niedostępny dla JS.
+
+CLI (Docker): `docker exec -it ksef-monitor python -m app.user_admin {list|add|reset-password|delete|cleanup-sessions}`.
+
+**Motyw UI (V5-15):** Dark-only, paleta 1:1 z aplikacją iOS Monitor KSeF.
+Ikona współdzielona z `AppIcon.appiconset/icon_dark_1024.png`.
+
+Patrz [docs/SECURITY.md](docs/SECURITY.md), [docs/REST_API.md](docs/REST_API.md), [docs/TODO.md](docs/TODO.md).
 
 **Przykład konfiguracji:**
 
@@ -549,6 +617,9 @@ REST API (FastAPI) do integracji z UI i zewnętrznymi systemami (v0.4).
 | `/api/v1/monitor/state` | GET | Stan monitoringu per NIP |
 | `/api/v1/monitor/trigger` | POST | Wymuszenie sprawdzenia |
 | `/api/v1/artifacts/pending` | GET | Artefakty oczekujące |
+| `/api/v1/push/setup` | GET | Informacje o parowaniu iOS Push (v0.5) |
+| `/api/v1/push/regenerate` | POST | Regeneruj credentials iOS Push (v0.5) |
+| `/api/v1/push/reset` | POST | Reset credentials i rejestracji iOS Push (v0.5) |
 
 ### Sekcja `prometheus`
 
@@ -680,6 +751,7 @@ Wrażliwe dane mogą być dostarczone na trzy sposoby. Kolejność priorytetów 
 | Slack Webhook URL | `SLACK_WEBHOOK_URL` | `slack_webhook_url` | Slack |
 | Email Password | `EMAIL_PASSWORD` | `email_password` | Email |
 | Webhook Token | `WEBHOOK_TOKEN` | `webhook_token` | Webhook |
+| iOS Push Instance Key | `IOS_PUSH_INSTANCE_KEY` | `ios_push_instance_key` | iOS Push (v0.5) |
 
 **Uwaga:** Tylko sekrety dla włączonych kanałów są wymagane. Jeśli używasz tylko Discord, nie musisz podawać credentials dla Pushover, Email, etc.
 

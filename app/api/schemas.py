@@ -101,7 +101,7 @@ class HealthResponse(BaseModel):
     """Health check response (F-09: auth_enabled removed — info disclosure)."""
 
     status: str = "ok"
-    version: str = "0.4.0"
+    version: str                    # required — set from app.__version__
     db_connected: bool = False
 
 
@@ -110,6 +110,14 @@ class TriggerResponse(BaseModel):
 
     message: str
     triggered: bool
+
+
+class PushResetResponse(BaseModel):
+    """Response after resetting push credentials."""
+
+    message: str
+    reset: bool
+    pairing_code: Optional[str] = None
 
 
 # ── Artifact schemas ─────────────────────────────────────────────────────

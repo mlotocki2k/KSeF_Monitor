@@ -3,6 +3,7 @@ Unit tests for PDF generation security: HTML/XML sanitization in InvoiceXMLParse
 """
 
 import pytest
+from unittest.mock import patch
 from app.invoice_pdf_generator import InvoiceXMLParser
 
 
@@ -126,3 +127,47 @@ class TestXMLParserSanitizesOutput:
         parser = InvoiceXMLParser(xml)
         data = parser.parse()
         assert data['seller']['nazwa'] == "Spółka ABC Sp. z o.o."
+
+
+def test_cirfmf_rejects_private_url():
+    """CIRFMF generator must refuse to POST to internal IPs."""
+    from app.invoice_pdf_generator import _try_ksef_generator
+    with patch("app._ssrf_guard.socket.getaddrinfo") as mock_gai:
+        mock_gai.return_value = [(2, 1, 6, "", ("169.254.169.254", 0))]
+        result = _try_ksef_generator(
+            "<Faktura/>", "KSEF1",
+            "http://169.254.169.254/api/generate",
+        )
+    assert result is None
+
+
+def test_cirfmf_rejects_file_scheme():
+    """CIRFMF generator must refuse non-http schemes."""
+    from app.invoice_pdf_generator import _try_ksef_generator
+    result = _try_ksef_generator("<Faktura/>", "KSEF1", "file:///etc/passwd")
+    assert result is None
+
+
+def test_xhtml2pdf_blocks_external_uri():
+    """V5-08: xhtml2pdf link_callback must refuse network/file URIs.
+
+    Allowed: data: URIs (QR codes) + bundled fonts under /app/app/templates/.
+    Blocked: http(s), file://, anything else.
+    """
+    from app.invoice_pdf_template import _pdf_link_callback
+
+    # External URIs blocked
+    assert _pdf_link_callback("http://evil.com/x.css", None) == ""
+    assert _pdf_link_callback("https://cdn.example.com/font.woff2", None) == ""
+    assert _pdf_link_callback("file:///etc/passwd", None) == ""
+    assert _pdf_link_callback("ftp://example.com/evil", None) == ""
+    # Empty / None
+    assert _pdf_link_callback("", None) == ""
+    assert _pdf_link_callback(None, None) == ""
+    # data: URIs allowed (QR code is data:image/png;base64,...)
+    assert _pdf_link_callback("data:image/png;base64,AAAA", None).startswith("data:")
+    # Bundled app templates allowed
+    assert (
+        _pdf_link_callback("/app/app/templates/fonts/DejaVu.ttf", None)
+        .startswith("/app/")
+    )

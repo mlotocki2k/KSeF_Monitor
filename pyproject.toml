@@ -1,16 +1,15 @@
 [project]
 name = "ksef-monitor"
-version = "0.4.0"
+version = "0.5.3"
 description = "Monitor faktur w Krajowym Systemie e-Faktur (KSeF) — polling API, powiadomienia multi-kanałowe, generowanie PDF"
 license = "MIT"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 keywords = ["ksef", "e-faktura", "invoice", "poland", "monitoring", "prometheus"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: System Administrators",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
@@ -18,9 +17,10 @@ classifiers = [
 ]
 
 dependencies = [
-    "requests==2.32.5",
+    "requests>=2.32.5,<3.0.0",
+    "urllib3>=2.6.3,<3.0.0",            # CVE-2025-66418, CVE-2025-66471, CVE-2026-21441 (fix in 2.6.3)
     "python-dateutil==2.9.0.post0",
-    "cryptography==46.0.5",
+    "cryptography==47.0.0",             # major bump (47.x): drops OpenSSL 1.1.x + LibreSSL <4.1; only symmetric AES + RSA-OAEP used here, no SECT*
     "prometheus-client==0.24.1",
     "pytz==2026.1.post1",
     "Jinja2>=3.1.6,<4.0.0",
@@ -30,6 +30,11 @@ dependencies = [
     "xhtml2pdf>=0.2.16,<1.0.0",
     "SQLAlchemy>=2.0.0,<3.0.0",
     "alembic>=1.13.0,<2.0.0",
+    "fastapi>=0.115.0,<1.0.0",
+    "starlette>=0.49.1,<1.0.0",         # CVE-2025-62727 — cap below 1.0 for stability
+    "uvicorn[standard]>=0.34.0,<1.0.0",
+    "slowapi>=0.1.9,<1.0.0",
+    "python-multipart>=0.0.26,<1.0.0",  # CVE-2024-53981, CVE-2026-40347 (fix in 0.0.26), CVE-2026-24486
 ]
 
 [project.optional-dependencies]
@@ -37,6 +42,7 @@ test = [
     "pytest>=7.0",
     "pytest-mock>=3.10",
     "httpx>=0.24.0",
+    "tomli>=2.0; python_version<'3.11'",
 ]
 
 [project.urls]
