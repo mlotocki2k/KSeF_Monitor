@@ -92,6 +92,14 @@
     .border-amber-200 { border-color: #fde68a !important; }
     .text-amber-700 { color: #b45309 !important; }
     .text-amber-800 { color: #92400e !important; }
+    /* Tailwind's `divide-y` only sets border-top on the 2nd+ child, so the
+       first <tr> in a tbody had no light separator — but row-to-row used
+       divide-gray-100 (rgb 243 244 246, near-white) AND the thead's
+       border-gray-200 above it was clobbered to --card-border by the dark
+       overrides. Result: row 1 sat under a dim line while rows 2+ sat under
+       bright ones. Mirror the divide-y color on tr:first-child for a
+       consistent "white underline" between header and every row. */
+    table tbody > tr:first-child { border-top: 1px solid rgb(243 244 246); }
 
     /* Soft global overrides to blend Tailwind utility classes with dark palette */
     .bg-white { background-color: var(--card-bg) !important; }
