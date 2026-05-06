@@ -88,6 +88,73 @@ class TestCountWindows:
         assert _count_windows(start, start, ["Subject1"]) == 0
 
 
+class TestInitialLoadWindowLog:
+    """Phase 8: per-window log surfaces success/failure to the GUI."""
+
+    def test_record_and_list_window(self, db):
+        session = db.get_session()
+        try:
+            job = db.create_initial_load_job(
+                session, ["Subject1"],
+                datetime(2024, 1, 1), datetime(2024, 4, 1),
+            )
+            session.commit()
+            db.record_initial_load_window(
+                session,
+                job_id=job.id,
+                subject_type="Subject1",
+                window_start=datetime(2024, 1, 1),
+                window_end=datetime(2024, 3, 30),
+                status="success",
+                imported=12,
+                skipped=3,
+                duration_ms=4321,
+            )
+            db.record_initial_load_window(
+                session,
+                job_id=job.id,
+                subject_type="Subject1",
+                window_start=datetime(2024, 3, 31),
+                window_end=datetime(2024, 4, 1),
+                status="failed",
+                error_message="KSeF 21405: dateRange must not …",
+                duration_ms=120,
+            )
+            session.commit()
+            rows = db.list_initial_load_windows(session, job.id)
+            assert len(rows) == 2
+            assert rows[0].status == "success"
+            assert rows[0].imported == 12
+            assert rows[1].status == "failed"
+            assert "21405" in rows[1].error_message
+            assert rows[1].duration_ms == 120
+        finally:
+            session.close()
+
+    def test_error_message_truncated_to_1000(self, db):
+        session = db.get_session()
+        try:
+            job = db.create_initial_load_job(
+                session, ["Subject1"],
+                datetime(2024, 1, 1), datetime(2024, 1, 31),
+            )
+            session.commit()
+            db.record_initial_load_window(
+                session,
+                job_id=job.id,
+                subject_type="Subject1",
+                window_start=datetime(2024, 1, 1),
+                window_end=datetime(2024, 1, 31),
+                status="failed",
+                error_message="x" * 5000,
+            )
+            session.commit()
+            rows = db.list_initial_load_windows(session, job.id)
+            assert len(rows[0].error_message) == 1000
+        finally:
+            session.close()
+
+
 # ── Unit tests: DB CRUD ───────────────────────────────────────────────────────
 
 class TestInitialLoadJobCRUD:

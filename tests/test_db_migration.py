@@ -32,6 +32,7 @@ class TestDBMigration:
         "invoice_artifacts",
         "push_instances",
         "initial_load_jobs",
+        "initial_load_windows",
         "alembic_version",
     }
 
@@ -68,9 +69,9 @@ class TestDBMigration:
                     text("SELECT version_num FROM alembic_version")
                 ).first()
                 assert row is not None, "alembic_version table has no row"
-                # g2b3c4d56789 is the head (phase7_session_ua_hash)
-                assert row[0] == "g2b3c4d56789", (
-                    f"expected head revision 'g2b3c4d56789', got {row[0]!r}"
+                # h3c4d5e67890 is the head (phase8_initial_load_windows)
+                assert row[0] == "h3c4d5e67890", (
+                    f"expected head revision 'h3c4d5e67890', got {row[0]!r}"
                 )
         finally:
             engine.dispose()
@@ -82,7 +83,7 @@ class TestDBMigration:
         every table for the *current* model BUT alembic_version is pinned at
         d9e0f1g2h345 (phase4) — and the existing ui_sessions row is missing
         the ua_hash column that phase7 introduces. `alembic upgrade head`
-        must reach g2b3c4d56789 without fighting CREATE TABLE collisions
+        must reach h3c4d5e67890 without fighting CREATE TABLE collisions
         and must add the missing column.
         """
         from sqlalchemy import create_engine, text, inspect as sa_inspect
@@ -136,7 +137,7 @@ class TestDBMigration:
                 ver = conn.execute(
                     text("SELECT version_num FROM alembic_version")
                 ).scalar()
-                assert ver == "g2b3c4d56789", (
+                assert ver == "h3c4d5e67890", (
                     f"upgrade did not reach head; got {ver!r}"
                 )
             cols = [c["name"] for c in sa_inspect(engine).get_columns("ui_sessions")]

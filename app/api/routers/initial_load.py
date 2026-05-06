@@ -141,6 +141,24 @@ def get_initial_load_status(request: Request, job_id: Optional[JobIdPath] = None
     return status
 
 
+@router.get("/initial-load/windows")
+def list_initial_load_windows(request: Request, job_id: JobIdPath):
+    """Per-window log for one job: success/failure, counts, error, duration."""
+    mgr = getattr(request.app.state, "initial_load_manager", None)
+    if not mgr:
+        return JSONResponse(
+            status_code=503,
+            content={"detail": "Initial load not configured"},
+        )
+    windows = mgr.list_windows(job_id=job_id)
+    if windows is None:
+        return JSONResponse(
+            status_code=404,
+            content={"detail": "Job not found"},
+        )
+    return {"job_id": job_id, "windows": windows}
+
+
 @router.post("/initial-load/cancel")
 def cancel_initial_load(request: Request, job_id: JobIdPath):
     """

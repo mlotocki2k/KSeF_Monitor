@@ -377,6 +377,46 @@ class InitialLoadJob(Base):
         return f"<InitialLoadJob id={self.id!r} status={self.status!r}>"
 
 
+# Phase 8 (v0.5.2 hotfix): per-window log for initial load jobs.
+# Surfaces success/failure of each date-range chunk to the GUI so the
+# operator no longer has to grep stderr to diagnose partial imports.
+
+
+class InitialLoadWindow(Base):
+    """One row per processed window of an InitialLoadJob."""
+
+    __tablename__ = "initial_load_windows"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    job_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("initial_load_jobs.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    subject_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    window_start: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    window_end: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    status: Mapped[str] = mapped_column(String(24), nullable=False)  # success | failed
+    imported: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    skipped: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    error_message: Mapped[Optional[str]] = mapped_column(Text)
+    duration_ms: Mapped[Optional[int]] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(timezone.utc), nullable=False
+    )
+
+    __table_args__ = (
+        Index("ix_initial_load_windows_job_created", "job_id", "created_at"),
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<InitialLoadWindow job={self.job_id[:8]} {self.subject_type} "
+            f"[{self.window_start.date()}→{self.window_end.date()}] {self.status}>"
+        )
+
+
 # Phase 5 (v0.5.1): UI user accounts + sessions (V5-13).
 # Self-hosted-style auth — no SSH/CLI needed for first-run, web setup wizard.
 
@@ -994,6 +1034,49 @@ class Database:
         session.flush()
         logger.info("Cancelled initial load job %s", job_id)
         return job
+
+    # ── Initial-load window log (phase 8) ───────────────────────────────
+
+    def record_initial_load_window(
+        self,
+        session: Session,
+        job_id: str,
+        subject_type: str,
+        window_start: datetime,
+        window_end: datetime,
+        status: str,
+        imported: int = 0,
+        skipped: int = 0,
+        error_message: Optional[str] = None,
+        duration_ms: Optional[int] = None,
+    ) -> "InitialLoadWindow":
+        """Append a row to initial_load_windows. status is 'success' | 'failed'."""
+        row = InitialLoadWindow(
+            job_id=job_id,
+            subject_type=subject_type,
+            window_start=window_start,
+            window_end=window_end,
+            status=status,
+            imported=imported,
+            skipped=skipped,
+            error_message=str(error_message)[:1000] if error_message else None,
+            duration_ms=duration_ms,
+        )
+        session.add(row)
+        session.flush()
+        return row
+
+    def list_initial_load_windows(
+        self, session: Session, job_id: str, limit: int = 500,
+    ) -> List["InitialLoadWindow"]:
+        """Return windows for a job, oldest first."""
+        return (
+            session.query(InitialLoadWindow)
+            .filter(InitialLoadWindow.job_id == job_id)
+            .order_by(InitialLoadWindow.created_at.asc())
+            .limit(limit)
+            .all()
+        )
 
     # ── State Migration ─────────────────────────────────────────────────
 

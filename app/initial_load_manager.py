@@ -18,6 +18,7 @@ Design notes:
 import json
 import logging
 import threading
+import time
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
@@ -165,6 +166,18 @@ class InitialLoadManager:
                 return None
 
             return self._job_to_dict(job)
+        finally:
+            session.close()
+
+    def list_windows(self, job_id: str) -> Optional[List[Dict[str, Any]]]:
+        """Per-window log for a job. Returns None if job doesn't exist."""
+        session = self.db.get_session()
+        try:
+            job = self.db.get_initial_load_job(session, job_id)
+            if not job:
+                return None
+            rows = self.db.list_initial_load_windows(session, job_id)
+            return [self._window_to_dict(r) for r in rows]
         finally:
             session.close()
 
@@ -355,6 +368,7 @@ class InitialLoadManager:
 
             window_start = cursor
             window_end = min(cursor + _WINDOW_SPAN, end_date)
+            window_t0 = time.monotonic()
 
             logger.info(
                 "Processing window %s [%s → %s]",
@@ -401,6 +415,16 @@ class InitialLoadManager:
                     self.db.update_initial_load_progress(
                         session, job_id, windows_completed_delta=1,
                     )
+                    self.db.record_initial_load_window(
+                        session,
+                        job_id=job_id,
+                        subject_type=subject_type,
+                        window_start=window_start,
+                        window_end=window_end,
+                        status="failed",
+                        error_message=result.error or "unknown",
+                        duration_ms=int((time.monotonic() - window_t0) * 1000),
+                    )
                     session.commit()
                 except Exception:
                     session.rollback()
@@ -422,6 +446,17 @@ class InitialLoadManager:
                     windows_completed_delta=1,
                     invoices_imported_delta=win_imported,
                     invoices_skipped_delta=win_skipped,
+                )
+                self.db.record_initial_load_window(
+                    session,
+                    job_id=job_id,
+                    subject_type=subject_type,
+                    window_start=window_start,
+                    window_end=window_end,
+                    status="success",
+                    imported=win_imported,
+                    skipped=win_skipped,
+                    duration_ms=int((time.monotonic() - window_t0) * 1000),
                 )
                 session.commit()
             except Exception:
@@ -578,6 +613,22 @@ class InitialLoadManager:
             return float(str(value).replace(",", "."))
         except (ValueError, TypeError):
             return None
+
+    @staticmethod
+    def _window_to_dict(w) -> Dict[str, Any]:
+        """Serialize InitialLoadWindow row to an API-friendly dict."""
+        return {
+            "id": w.id,
+            "subject_type": w.subject_type,
+            "window_start": w.window_start.isoformat() if w.window_start else None,
+            "window_end": w.window_end.isoformat() if w.window_end else None,
+            "status": w.status,
+            "imported": w.imported or 0,
+            "skipped": w.skipped or 0,
+            "error_message": w.error_message,
+            "duration_ms": w.duration_ms,
+            "created_at": w.created_at.isoformat() if w.created_at else None,
+        }
 
     @staticmethod
     def _job_to_dict(job: "InitialLoadJob") -> Dict[str, Any]:

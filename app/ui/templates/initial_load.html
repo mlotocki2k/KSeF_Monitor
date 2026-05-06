@@ -88,6 +88,16 @@
         {% endif %}
       {% endif %}
 
+      <!-- Per-window history (phase 8) -->
+      <div class="mt-4">
+        <button type="button" id="btn-toggle-windows"
+          class="text-xs underline" data-job-id="{{ il_status.id }}"
+          style="color: var(--accent);">
+          Pokaż historię okien
+        </button>
+        <div id="windows-list" class="hidden mt-3 overflow-x-auto"></div>
+      </div>
+
       {% if st == "running" %}
       <div class="mt-4 flex gap-2">
         <button type="button" class="btn-danger text-xs js-cancel-job"
@@ -217,6 +227,86 @@ async function cancelJob(jobId) {
 document.getElementById('btn-start-job')?.addEventListener('click', startJob);
 document.querySelectorAll('.js-cancel-job').forEach(btn => {
   btn.addEventListener('click', () => cancelJob(btn.dataset.jobId));
+});
+
+function fmtDate(iso) {
+  if (!iso) return '—';
+  return iso.slice(0, 10);
+}
+function fmtDur(ms) {
+  if (ms == null) return '—';
+  if (ms < 1000) return `${ms}ms`;
+  if (ms < 60000) return `${(ms/1000).toFixed(1)}s`;
+  return `${Math.round(ms/1000/60)}min`;
+}
+function escapeHtml(s) {
+  if (s == null) return '';
+  return String(s).replace(/[&<>"']/g, c => ({
+    '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+  }[c]));
+}
+
+async function loadWindows(jobId, container) {
+  container.innerHTML = '<div class="text-xs text-gray-400 px-1 py-2">Ładowanie…</div>';
+  try {
+    const r = await apiCall('GET', `/api/v1/initial-load/windows?job_id=${encodeURIComponent(jobId)}`);
+    const windows = r.windows || [];
+    if (!windows.length) {
+      container.innerHTML = '<div class="text-xs text-gray-400 px-1 py-2">Brak okien.</div>';
+      return;
+    }
+    const rows = windows.map(w => {
+      const okBadge = w.status === 'success'
+        ? '<span class="badge-ok text-xs">OK</span>'
+        : '<span class="badge-err text-xs">FAIL</span>';
+      const err = w.error_message
+        ? `<div class="text-xs text-red-600 mt-1 break-words">${escapeHtml(w.error_message)}</div>`
+        : '';
+      return `
+        <tr class="border-t" style="border-color: var(--card-border);">
+          <td class="px-2 py-1.5 text-xs whitespace-nowrap">${escapeHtml(w.subject_type)}</td>
+          <td class="px-2 py-1.5 text-xs whitespace-nowrap">${fmtDate(w.window_start)} → ${fmtDate(w.window_end)}</td>
+          <td class="px-2 py-1.5 text-xs">${okBadge}${err}</td>
+          <td class="px-2 py-1.5 text-xs text-right">${w.imported}</td>
+          <td class="px-2 py-1.5 text-xs text-right">${w.skipped}</td>
+          <td class="px-2 py-1.5 text-xs text-right text-gray-500">${fmtDur(w.duration_ms)}</td>
+        </tr>`;
+    }).join('');
+    container.innerHTML = `
+      <table class="min-w-full text-xs">
+        <thead style="color: var(--text-muted);">
+          <tr>
+            <th class="px-2 py-1.5 text-left">Typ</th>
+            <th class="px-2 py-1.5 text-left">Okno</th>
+            <th class="px-2 py-1.5 text-left">Status</th>
+            <th class="px-2 py-1.5 text-right">Import.</th>
+            <th class="px-2 py-1.5 text-right">Pomin.</th>
+            <th class="px-2 py-1.5 text-right">Czas</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>`;
+  } catch (e) {
+    container.innerHTML = `<div class="text-xs text-red-600 px-1 py-2">Błąd: ${escapeHtml(e.message)}</div>`;
+  }
+}
+
+const toggleBtn = document.getElementById('btn-toggle-windows');
+const windowsList = document.getElementById('windows-list');
+let windowsLoaded = false;
+toggleBtn?.addEventListener('click', () => {
+  const hidden = windowsList.classList.contains('hidden');
+  if (hidden) {
+    windowsList.classList.remove('hidden');
+    toggleBtn.textContent = 'Ukryj historię okien';
+    if (!windowsLoaded) {
+      loadWindows(toggleBtn.dataset.jobId, windowsList);
+      windowsLoaded = true;
+    }
+  } else {
+    windowsList.classList.add('hidden');
+    toggleBtn.textContent = 'Pokaż historię okien';
+  }
 });
 
 // Auto-refresh when job is running
