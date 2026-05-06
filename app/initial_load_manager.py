@@ -26,8 +26,11 @@ from .invoice_export_manager import InvoiceExportManager
 
 logger = logging.getLogger(__name__)
 
-# KSeF API hard limit: dateRange ≤ 90 days
+# KSeF API hard limit: dateRange ≤ 90 days, treated inclusive on both ends.
+# 90 days inclusive = (end - start) days difference of 89 — i.e. timedelta(days=89).
 MAX_WINDOW_DAYS = 90
+_WINDOW_SPAN = timedelta(days=MAX_WINDOW_DAYS - 1)
+_ONE_DAY = timedelta(days=1)
 
 
 def _count_windows(start: datetime, end: datetime, subject_types: List[str]) -> int:
@@ -35,8 +38,8 @@ def _count_windows(start: datetime, end: datetime, subject_types: List[str]) -> 
     total = 0
     cursor = start
     while cursor < end:
-        window_end = min(cursor + timedelta(days=MAX_WINDOW_DAYS), end)
-        cursor = window_end
+        window_end = min(cursor + _WINDOW_SPAN, end)
+        cursor = window_end + _ONE_DAY
         total += 1
     return total * len(subject_types)
 
@@ -323,7 +326,7 @@ class InitialLoadManager:
                 break
 
             window_start = cursor
-            window_end = min(cursor + timedelta(days=MAX_WINDOW_DAYS), end_date)
+            window_end = min(cursor + _WINDOW_SPAN, end_date)
 
             logger.info(
                 "Processing window %s [%s → %s]",
@@ -359,8 +362,20 @@ class InitialLoadManager:
                     "Export failed for %s [%s → %s]: %s",
                     subject_type, window_start.date(), window_end.date(), result.error,
                 )
-                # Non-fatal: continue to next window
-                cursor = window_end
+                # Non-fatal: still bump windows_completed so progress UI reaches
+                # 100% even if some windows errored (otherwise the job shows
+                # "Ukończony 50%" which is just confusing).
+                session = self.db.get_session()
+                try:
+                    self.db.update_initial_load_progress(
+                        session, job_id, windows_completed_delta=1,
+                    )
+                    session.commit()
+                except Exception:
+                    session.rollback()
+                finally:
+                    session.close()
+                cursor = window_end + _ONE_DAY
                 continue
 
             # Save invoices to DB
@@ -401,9 +416,9 @@ class InitialLoadManager:
                     cursor = next_from
                     logger.debug("Truncated window: advancing cursor to %s", cursor)
                 except ValueError:
-                    cursor = window_end
+                    cursor = window_end + _ONE_DAY
             else:
-                cursor = window_end
+                cursor = window_end + _ONE_DAY
 
         return imported, skipped
 
@@ -437,56 +452,88 @@ class InitialLoadManager:
         return imported, skipped
 
     def _map_export_invoice(self, inv: Dict, subject_type: str) -> Dict:
-        """Map invoice dict from _metadata.json format to DB Invoice fields."""
-        # Parse dates
-        invoicing_date = None
-        raw_invoicing = inv.get("invoicingDate") or inv.get("acquisitionTimestamp")
-        if raw_invoicing:
+        """Map invoice dict from _metadata.json (KSeF InvoiceMetadata schema) to
+        DB Invoice fields. Field names follow OpenAPI v2.4 spec example payload —
+        previous mapping used pre-v2.x names (ksefReferenceNumber, grossValue,
+        subjectBy/subjectTo, invoiceHash.hashSHA…) that no longer match prod.
+        """
+        # Parse datetimes (ISO 8601 with timezone)
+        def _parse_dt(raw):
+            if not raw:
+                return None
             try:
-                dt = datetime.fromisoformat(raw_invoicing.replace("Z", "+00:00"))
-                invoicing_date = dt.replace(tzinfo=None)
-            except ValueError:
-                pass
+                dt = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+                return dt.replace(tzinfo=None)
+            except (ValueError, AttributeError):
+                return None
 
-        acquisition_date = None
-        raw_acq = inv.get("acquisitionTimestamp")
-        if raw_acq:
-            try:
-                dt = datetime.fromisoformat(raw_acq.replace("Z", "+00:00"))
-                acquisition_date = dt.replace(tzinfo=None)
-            except ValueError:
-                pass
+        invoicing_date = _parse_dt(inv.get("invoicingDate"))
+        acquisition_date = _parse_dt(inv.get("acquisitionDate"))
+
+        # ksef_number: primary v2.x field, fallback to legacy alias
+        ksef_number = inv.get("ksefNumber") or inv.get("ksefReferenceNumber") or ""
+
+        # invoiceHash is a base64 SHA256 string in v2.x (was nested object pre-v2)
+        raw_hash = inv.get("invoiceHash")
+        invoice_hash = raw_hash if isinstance(raw_hash, str) else (
+            raw_hash.get("hashSHA", {}).get("value")
+            if isinstance(raw_hash, dict)
+            else None
+        )
+
+        # formCode: dict with systemCode/schemaVersion/value
+        raw_form = inv.get("formCode")
+        form_code = (
+            raw_form.get("systemCode") if isinstance(raw_form, dict) else raw_form
+        )
+
+        # seller / buyer: nested objects per InvoiceMetadataSeller / InvoiceMetadataBuyer
+        seller = inv.get("seller") or {}
+        if not isinstance(seller, dict):
+            seller = {}
+        buyer = inv.get("buyer") or {}
+        if not isinstance(buyer, dict):
+            buyer = {}
+        buyer_id = buyer.get("identifier") or {}
+        if not isinstance(buyer_id, dict):
+            buyer_id = {}
 
         return {
-            "ksef_number": inv.get("ksefReferenceNumber", ""),
-            "invoice_number": inv.get("invoiceReferenceNumber"),
-            "invoice_hash": inv.get("invoiceHash", {}).get("hashSHA", {}).get("value")
-            if isinstance(inv.get("invoiceHash"), dict)
-            else None,
-            "invoice_type": inv.get("subjectType") or inv.get("invoiceType"),
+            "ksef_number": ksef_number,
+            "invoice_number": inv.get("invoiceNumber") or inv.get("invoiceReferenceNumber"),
+            "invoice_hash": invoice_hash,
+            "invoice_type": inv.get("invoiceType") or inv.get("subjectType"),
             "subject_type": subject_type,
-            "form_code": inv.get("formCode", {}).get("systemCode")
-            if isinstance(inv.get("formCode"), dict)
-            else inv.get("formCode"),
-            "issue_date": inv.get("invoiceReferenceDate"),
+            "form_code": form_code,
+            "issue_date": inv.get("issueDate") or inv.get("invoiceReferenceDate"),
             "invoicing_date": invoicing_date,
             "acquisition_date": acquisition_date,
-            "gross_amount": self._parse_amount(inv.get("grossValue")),
-            "net_amount": self._parse_amount(inv.get("netValue")),
-            "vat_amount": self._parse_amount(inv.get("vatValue")),
+            "gross_amount": self._parse_amount(inv.get("grossAmount") or inv.get("grossValue")),
+            "net_amount": self._parse_amount(inv.get("netAmount") or inv.get("netValue")),
+            "vat_amount": self._parse_amount(inv.get("vatAmount") or inv.get("vatValue")),
             "currency": inv.get("currency", "PLN"),
-            "seller_nip": inv.get("subjectBy", {}).get("issuedByIdentifier", {}).get("identifier", "")
-            if isinstance(inv.get("subjectBy"), dict)
-            else "",
-            "seller_name": inv.get("subjectBy", {}).get("issuedByName", {}).get("fullName")
-            if isinstance(inv.get("subjectBy"), dict)
-            else None,
-            "buyer_nip": inv.get("subjectTo", {}).get("issuedToIdentifier", {}).get("identifier")
-            if isinstance(inv.get("subjectTo"), dict)
-            else None,
-            "buyer_name": inv.get("subjectTo", {}).get("issuedToName", {}).get("fullName")
-            if isinstance(inv.get("subjectTo"), dict)
-            else None,
+            "seller_nip": seller.get("nip") or (
+                inv.get("subjectBy", {}).get("issuedByIdentifier", {}).get("identifier", "")
+                if isinstance(inv.get("subjectBy"), dict)
+                else ""
+            ),
+            "seller_name": seller.get("name") or (
+                inv.get("subjectBy", {}).get("issuedByName", {}).get("fullName")
+                if isinstance(inv.get("subjectBy"), dict)
+                else None
+            ),
+            "buyer_nip": buyer_id.get("value") or (
+                inv.get("subjectTo", {}).get("issuedToIdentifier", {}).get("identifier")
+                if isinstance(inv.get("subjectTo"), dict)
+                else None
+            ),
+            "buyer_name": buyer.get("name") or (
+                inv.get("subjectTo", {}).get("issuedToName", {}).get("fullName")
+                if isinstance(inv.get("subjectTo"), dict)
+                else None
+            ),
+            "is_self_invoicing": bool(inv.get("isSelfInvoicing", False)),
+            "has_attachment": bool(inv.get("hasAttachment", False)),
             "source": "initial_load",
             "raw_metadata": json.dumps(inv, ensure_ascii=False),
         }

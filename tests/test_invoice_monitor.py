@@ -240,11 +240,12 @@ class TestInvoiceMonitorCapDateFrom:
         assert result == date_from
 
     def test_exceeds_range(self, monitor):
-        """Date older than 90 days is capped."""
+        """Date older than 90 days is capped to (now - 89 days) so the
+        inclusive [date_from, now] range stays at 90 days, not 91."""
         now = datetime(2026, 3, 7, 12, 0, tzinfo=timezone.utc)
         date_from = now - timedelta(days=120)
         result = monitor._cap_date_from(date_from, now)
-        expected = now - timedelta(days=90)
+        expected = now - timedelta(days=89)
         assert result == expected
 
 

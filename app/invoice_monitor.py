@@ -152,8 +152,11 @@ class InvoiceMonitor:
 
         KSeF API v2.2.0/v2.3.0 limits dateRange to 3 months. If date_from is older,
         cap it and log a warning about the skipped period.
+
+        Range is inclusive on both ends, so 90 days = (now - date_from).days + 1.
+        Subtract MAX-1 to keep the window at the limit, not 1 day past it.
         """
-        max_lookback = now - timedelta(days=self.MAX_DATE_RANGE_DAYS)
+        max_lookback = now - timedelta(days=self.MAX_DATE_RANGE_DAYS - 1)
 
         if date_from < max_lookback:
             skipped_days = (max_lookback - date_from).days
