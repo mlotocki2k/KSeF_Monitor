@@ -126,7 +126,18 @@ class TestNoConsoleErrorsOnLogin:
         assert not errors, f"Console errors: {errors}"
 
     def test_no_failed_requests_on_login(self, page: Page, network_capture: list):
+        from urllib.parse import urlparse
         page.goto("/ui/login")
         page.wait_for_load_state("networkidle")
-        ours = [r for r in network_capture if "test.krzewiny.net" in r["url"] or "/ui/" in r["url"]]
+        # Match by exact host via urlparse (not substring — `in` would let
+        # test.krzewiny.net.evil.example pass) or, for relative URLs with
+        # no host, by /ui/ path. Closes CodeQL "Incomplete URL substring
+        # sanitization" (#9).
+        ours = []
+        for r in network_capture:
+            parsed = urlparse(r["url"])
+            if parsed.hostname == "test.krzewiny.net":
+                ours.append(r)
+            elif not parsed.hostname and parsed.path.startswith("/ui/"):
+                ours.append(r)
         assert not ours, f"Failed requests: {ours}"

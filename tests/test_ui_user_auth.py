@@ -630,10 +630,27 @@ class TestCspNonce:
         assert resp.status_code == 200
         # Each <script ...> tag in the rendered HTML must carry nonce="…".
         # Bare "<script>" (no attrs) would block under our CSP.
-        import re
-        bare_scripts = re.findall(r"<script(?![^>]*\bnonce=)[^>]*>", resp.text)
-        assert not bare_scripts, (
-            f"unsafe inline scripts (no nonce) found: {bare_scripts!r}"
+        # Use html.parser (proper tokeniser) instead of regex — closes CodeQL
+        # "Bad HTML filtering regexp" (#8) and is robust against weirdly-
+        # formatted attributes that a regex can't reliably match.
+        from html.parser import HTMLParser
+
+        class _ScriptNonceCheck(HTMLParser):
+            def __init__(self):
+                super().__init__()
+                self.bare = []
+
+            def handle_starttag(self, tag, attrs):
+                if tag != "script":
+                    return
+                attr_keys = {k.lower() for k, _ in attrs}
+                if "nonce" not in attr_keys:
+                    self.bare.append((tag, attrs))
+
+        checker = _ScriptNonceCheck()
+        checker.feed(resp.text)
+        assert not checker.bare, (
+            f"unsafe inline scripts (no nonce) found: {checker.bare!r}"
         )
 
     def test_no_inline_event_handlers_in_rendered_pages(self, db, app_auth):
