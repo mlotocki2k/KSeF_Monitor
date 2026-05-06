@@ -377,7 +377,7 @@ class InitialLoadJob(Base):
         return f"<InitialLoadJob id={self.id!r} status={self.status!r}>"
 
 
-# Phase 8 (v0.5.2 hotfix): per-window log for initial load jobs.
+# Phase 8 (v0.5.3 hotfix): per-window log for initial load jobs.
 # Surfaces success/failure of each date-range chunk to the GUI so the
 # operator no longer has to grep stderr to diagnose partial imports.
 

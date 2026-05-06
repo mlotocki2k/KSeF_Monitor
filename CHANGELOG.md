@@ -2,6 +2,101 @@
 
 All notable changes to KSeF Monitor are documented here.
 
+## [0.5.3] — 2026-05-06 (post-0.5.2 hotfix bundle)
+
+Seven defects surfaced during pre-merge user testing of the 0.5.2 build.
+None were caught by the audit cycle — a few were latent bugs from earlier
+versions that only became visible once the UI auth path went live.
+
+### Showstoppers
+
+- **Fresh-install lockout (UI):** when `api.enabled=true` and `auth_token`
+  was empty, F-01 auto-generated a 48-char random token AND `main.py`
+  used that token as the bootstrap admin's password. The operator only
+  saw the first 8 chars in WARNING logs (R-01 truncation), so the UI
+  was effectively locked: `/ui/login` rejected every guess and
+  `/ui/setup` short-circuited because `count_users()==1`.
+  `ConfigManager` now sets `api["_auth_token_auto_generated"]` and
+  `main.py` skips bootstrap on that marker — the wizard is the only
+  sane entry point for a fresh install. Bootstrap still runs when the
+  operator supplies `auth_token` themselves (v0.5.0 → v0.5.x upgrade).
+- **Initial load: every invoice rejected.** `_map_export_invoice` was
+  written against pre-v2.x KSeF field names — `ksefReferenceNumber`,
+  `grossValue`, `subjectBy.…`, `invoiceHash.hashSHA.value`. Real
+  `_metadata.json` from `/invoices/exports` follows the v2.4
+  `InvoiceMetadata` schema (`ksefNumber`, `grossAmount`, `seller.nip`,
+  `invoiceHash` as a base64 string). Every lookup returned `None` and
+  `db.save_invoice` rejected each row with "Cannot save invoice without
+  ksef_number". Re-mapped against the spec example, kept legacy keys as
+  fallbacks, also picks up `isSelfInvoicing` / `hasAttachment`.
+- **Initial load: KSeF 21405 on every other window.** Both
+  `InitialLoadManager` and `InvoiceMonitor._cap_date_from` produced
+  91-day windows. KSeF treats `dateRange` as inclusive, max 90 days.
+  Fixed via a 89-day `_WINDOW_SPAN` plus a +1-day cursor advance — now
+  consecutive windows are non-overlapping and each one is exactly 90
+  days inclusive.
+
+### Logging
+
+- **U-12 audit log silently dropped (ALL `logger.info`).**
+  `alembic.ini` had `[logger_root] level = WARNING`. `fileConfig()` in
+  `alembic/env.py` runs on every boot and clobbered the `INFO` root
+  level set by `app.logging_config`. Five of the seven U-12 audit-trail
+  events claimed by 0.5.2 — session create / revoke, password change,
+  user create, absolute-cap eviction — were therefore invisible in
+  production. Bumped alembic root to `INFO`; `[logger_alembic]` and
+  `[logger_sqlalchemy]` unchanged.
+
+### GUI
+
+- **Initial load progress stuck at 50% under "Ukończony".**
+  `windows_completed` only incremented on a successful export, but the
+  job ended in `status=completed` regardless. With the dateRange bug
+  above, half the windows failed and the bar never moved past 50%.
+  Now bumps the counter on the non-fatal failure path too. Also
+  introduces a new `completed_with_errors` job status, an amber
+  "Ukończony z błędami" badge, and an inline "Niepowodzenia okien"
+  callout populated from `error_message`.
+- **Per-window history view (phase 8 migration).** New
+  `initial_load_windows` table with FK CASCADE to `initial_load_jobs`
+  records every processed window: type, range, status (success/failed),
+  imported, skipped, error message, duration. Surfaced via
+  `GET /api/v1/initial-load/windows?job_id=…` and a
+  "Pokaż historię okien" toggle on the status card — lazy-loaded
+  table, no inline event handlers (CSP nonce stays clean).
+- **Logo / nav spacing.** The active nav-link's blue background
+  visually merged with the "Monitor KSeF" brand text. Added
+  `ml-2 sm:ml-4` on the `<nav>` element so only the logo→menu gap
+  widens; right-side action spacing is unchanged.
+
+### Documentation
+
+- **iOS App Store status notice.** The published App Store build
+  (v1.0.2) predates the push pairing flow. `/ui/push` now shows an
+  amber callout under the App Store CTA pointing at
+  `kontakt@krzewilabs.pl` for a TestFlight v1.1.x build until that
+  release reaches the App Store. Same blockquote added to the iOS Push
+  section in `README.md`.
+
+### Migrations
+
+- `h3c4d5e67890` — phase 8: `initial_load_windows`. Idempotent against
+  `Base.metadata.create_all`, head-revision check in
+  `tests/test_db_migration.py` updated.
+
+### Tests
+
+- `tests/test_security_controls.py`: 2 new in `TestAuthTokenAutoGeneration`
+  (`test_auto_gen_sets_marker`, `test_user_token_no_marker`).
+- `tests/test_initial_load_manager.py`: 2 new in
+  `TestInitialLoadWindowLog` (success+failed roundtrip, error_message
+  truncation).
+- `tests/test_invoice_monitor.py`: `test_exceeds_range` expectation
+  updated (90 days → 89 days) to match the inclusive dateRange semantic.
+- Suite: **743 passed, 2 skipped** (was 739).
+
+---
+
 ## [0.5.2] — 2026-05-04 (UI auth security audit remediation)
 
 Closes 14 findings from `audit/20260504_security_audit_v0_5_1_ui_auth.md`

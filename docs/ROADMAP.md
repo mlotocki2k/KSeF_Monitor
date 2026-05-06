@@ -344,6 +344,36 @@ Audyt dał 0 CRITICAL, 0 HIGH, 6 MEDIUM, 6 LOW, 5 INFO. Wszystkie 14 punktów za
 
 ---
 
+## v0.5.3 (post-0.5.2 hotfix bundle) ✅
+_Pełna lista zmian: `CHANGELOG.md` [0.5.3]. Siedem defektów wykrytych w pre-merge user-test 0.5.2 — żaden nie był złapany przez cykl audytu._
+
+### Showstoppery
+- [x] **Fresh-install lockout (UI)** — auto-gen `auth_token` + bootstrap admin = ten sam token blokował GUI. `ConfigManager` ustawia `api["_auth_token_auto_generated"]`, `main.py` skipuje bootstrap przy markerze. Wizard `/ui/setup` jedynym entry point dla fresh install. Bootstrap zostaje przy operator-supplied token (upgrade v0.5.0).
+- [x] **Initial load: każda faktura odrzucona** — `_map_export_invoice` używał pre-v2.x nazw pól. Re-mapped do v2.4 `InvoiceMetadata` schema (`ksefNumber`, `grossAmount`, `seller.nip`, `invoiceHash` jako string), legacy keys jako fallback. Bonus: `isSelfInvoicing`, `hasAttachment`.
+- [x] **Initial load: KSeF 21405 co drugie okno** — `cursor + timedelta(days=90)` daje 91-day inclusive window. Fix: `_WINDOW_SPAN = 89` + cursor advance `+1day`. To samo w `InvoiceMonitor._cap_date_from`.
+
+### Logowanie
+- [x] **U-12 audit log silently dropped (wszystkie `logger.info`)** — `alembic.ini` `[logger_root] level = WARNING` nadpisywało app config przez `fileConfig()`. Fix: WARNING → INFO. 5 z 7 zdarzeń U-12 (session create/revoke, password change, user create, absolute-cap eviction) niewidocznych w prod aż do tego fixa.
+
+### GUI
+- [x] **Progress bar 50% pod "Ukończony"** — `windows_completed_delta=1` tylko przy success. Bump też na non-fatal failure path. Nowy status `completed_with_errors` + amber badge "Ukończony z błędami" + callout "Niepowodzenia okien" z `error_message` (top 5).
+- [x] **Per-window history (phase 8)** — nowa tabela `initial_load_windows` (FK CASCADE, idx `(job_id, created_at)`) zapisuje każde okno: typ, range, status, imported, skipped, error, duration_ms. Endpoint `GET /api/v1/initial-load/windows?job_id=…` + toggle "Pokaż historię okien" w karcie status (lazy-loaded tabelka, brak inline event handlers — CSP nonce intact).
+- [x] **Logo↔menu spacing** — active nav-link niebieskie tło zlewało się z brand text. `ml-2 sm:ml-4` na `<nav>`, prawa strona spacing bez zmian.
+
+### Dokumentacja
+- [x] **iOS App Store status notice** — App Store v1.0.2 nie obsługuje parowania push. Amber callout w `/ui/push` pod CTA + blockquote w `README.md` iOS Push, oba pointujące na `kontakt@krzewilabs.pl` po TestFlight v1.1.x.
+
+### Migracje
+- [x] `h3c4d5e67890` — phase 8 `initial_load_windows`. Idempotent, head-revision check w `tests/test_db_migration.py` zaktualizowany.
+
+### Testy
+- [x] `tests/test_security_controls.py` — `TestAuthTokenAutoGeneration`: `test_auto_gen_sets_marker`, `test_user_token_no_marker`.
+- [x] `tests/test_initial_load_manager.py` — `TestInitialLoadWindowLog`: success+failed roundtrip, error_message truncation.
+- [x] `tests/test_invoice_monitor.py::test_exceeds_range` zaktualizowany (90 → 89 dni inclusive).
+- Suite: **743 passed, 2 skipped** (był 739).
+
+---
+
 ## v0.6 (Lightweight Polling)
 **Cel:** rozdzielenie detekcji nowych faktur od pobierania artefaktów — oszczędność API calls, szybsze push notifications
 

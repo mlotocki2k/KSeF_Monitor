@@ -3,7 +3,7 @@ KSeF Monitor Application Package
 Contains core modules for monitoring KSeF invoices
 """
 
-__version__ = "0.5.2"
+__version__ = "0.5.3"
 __author__ = "KSeF Monitor"
 
 # pylint: disable=wrong-import-position
