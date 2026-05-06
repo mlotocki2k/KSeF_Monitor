@@ -100,6 +100,12 @@
        bright ones. Mirror the divide-y color on tr:first-child for a
        consistent "white underline" between header and every row. */
     table tbody > tr:first-child { border-top: 1px solid rgb(243 244 246); }
+    /* sr-only — accessibility-only labels. Missing from the bundled subset,
+       so <span class="sr-only">Zaznaczanie</span> in the invoice table thead
+       was rendering as a visible "ZAZNACZANIE" column heading next to the
+       checkbox. Also catches the duplicate <h1 class="sr-only">Faktury</h1>
+       on /ui/invoices. */
+    .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border-width: 0; }
 
     /* Soft global overrides to blend Tailwind utility classes with dark palette */
     .bg-white { background-color: var(--card-bg) !important; }
