@@ -78,14 +78,26 @@ class TestCountWindows:
         end = datetime(2024, 2, 1)
         assert _count_windows(start, end, ["Subject1", "Subject2"]) == 2
 
-    def test_exact_90_days_is_one_window(self):
+    def test_max_one_window_span(self):
+        # end - start = 88 days → effective_end = start + 89d → fits one
+        # window (89-day span). 89 calendar days inclusive.
         start = datetime(2024, 1, 1)
-        end = start + timedelta(days=90)
+        end = start + timedelta(days=88)
         assert _count_windows(start, end, ["Subject1"]) == 1
 
-    def test_zero_length_range(self):
+    def test_one_day_past_window_span_splits(self):
+        # end - start = 89 days (90 calendar days inclusive). Effective
+        # range overflows the 89-day span → 2 windows; the boundary day
+        # gets captured by the second window's `from`.
         start = datetime(2024, 1, 1)
-        assert _count_windows(start, start, ["Subject1"]) == 0
+        end = start + timedelta(days=89)
+        assert _count_windows(start, end, ["Subject1"]) == 2
+
+    def test_same_day_range_is_one_window(self):
+        # User picking start = end means "import this single day". Effective
+        # range is 1 day → still 1 window.
+        start = datetime(2024, 1, 1)
+        assert _count_windows(start, start, ["Subject1"]) == 1
 
 
 class TestInitialLoadWindowLog:
@@ -470,9 +482,10 @@ class TestIsTruncatedHandling:
                 date_type="Invoicing",
             )
 
-        # Single window: 2024-01-01 → 2024-02-01 (31 days < 90).
-        # date_to is pushed to end-of-day so KSeF includes invoices from any
-        # hour of the boundary day (raw midnight would clip them).
+        # Single window. effective_end = end_date + 1day, so date_to passed
+        # to run_export is 2024-02-02T00:00 (next-day midnight). KSeF treats
+        # `to` as inclusive at the instant — invoices issued anywhere on
+        # 2024-02-01 are captured (timestamps < 2024-02-02T00:00).
         assert len(dates_used) == 1
         assert dates_used[0][0] == datetime(2024, 1, 1)
-        assert dates_used[0][1] == datetime(2024, 2, 1, 23, 59, 59, 999999)
+        assert dates_used[0][1] == datetime(2024, 2, 2)

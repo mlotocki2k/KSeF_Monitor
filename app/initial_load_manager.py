@@ -19,7 +19,7 @@ import json
 import logging
 import threading
 import time
-from datetime import datetime, time as dt_time, timedelta, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 from .database import Database, InitialLoadJob
@@ -27,25 +27,33 @@ from .invoice_export_manager import InvoiceExportManager
 
 logger = logging.getLogger(__name__)
 
-# KSeF API hard limit: dateRange ≤ 90 days, treated inclusive on both ends.
-# 90 days inclusive = (end - start) days difference of 89 — i.e. timedelta(days=89).
+# KSeF API caps dateRange (to - from) at exactly 89 days — anything beyond
+# (incl. end-of-day microseconds) returns 21405 "dateRange must not exceed".
+# Each window queries [cursor, cursor + 89d] in midnight-to-midnight form.
+# Coverage of the boundary instant: KSeF includes invoices with timestamp
+# ≤ to. So Day N's full activity (issued any time of day) is captured by
+# the window whose `from` is Day N midnight, NOT the one whose `to` is
+# Day N midnight. Consecutive windows therefore overlap on a single instant
+# (Window K's to == Window K+1's from); the unique ksef_number constraint
+# makes that idempotent.
 MAX_WINDOW_DAYS = 90
 _WINDOW_SPAN = timedelta(days=MAX_WINDOW_DAYS - 1)
 _ONE_DAY = timedelta(days=1)
-# KSeF treats dateRange.to as a datetime, not a date. A window_end of
-# 2026-05-01T00:00:00 only covers the very first instant of May 1, so an
-# invoice issued at e.g. 15:30 that day is excluded. Push window_end to the
-# last microsecond of the day before sending to /invoices/exports.
-_END_OF_DAY = dt_time(23, 59, 59, 999999)
 
 
 def _count_windows(start: datetime, end: datetime, subject_types: List[str]) -> int:
-    """Estimate total window count for progress display."""
+    """Estimate total window count for progress display.
+
+    Uses the same cursor/loop mechanic as `_process_subject_type` so the
+    progress bar denominator matches reality. `end` is pushed forward by
+    one day to mirror the inclusive-last-day semantic the loop applies.
+    """
     total = 0
     cursor = start
-    while cursor < end:
-        window_end = min(cursor + _WINDOW_SPAN, end)
-        cursor = window_end + _ONE_DAY
+    effective_end = end + _ONE_DAY
+    while cursor < effective_end:
+        window_end = min(cursor + _WINDOW_SPAN, effective_end)
+        cursor = window_end
         total += 1
     return total * len(subject_types)
 
@@ -367,17 +375,29 @@ class InitialLoadManager:
         finally:
             session.close()
 
-        while cursor < end_date:
+        # Treat user-supplied end_date as the inclusive last day to cover.
+        # KSeF's `to` boundary is treated inclusive at the instant, so to
+        # capture invoices issued anywhere on end_date.date() we must run a
+        # query whose `to` is end_date + 1 day midnight. The loop boundary
+        # uses this pushed value; the displayed range stays user-friendly.
+        effective_end = end_date + _ONE_DAY
+
+        while cursor < effective_end:
             if self._cancel_event.is_set():
                 break
 
             window_start = cursor
-            window_end = min(cursor + _WINDOW_SPAN, end_date)
+            window_end = min(cursor + _WINDOW_SPAN, effective_end)
             window_t0 = time.monotonic()
+
+            # Display range = the calendar days actually covered by this
+            # window. window_end is the next-instant boundary (next window's
+            # `from`), so the last covered date is one day earlier.
+            display_end = (window_end - _ONE_DAY).date()
 
             logger.info(
                 "Processing window %s [%s → %s]",
-                subject_type, window_start.date(), window_end.date(),
+                subject_type, window_start.date(), display_end,
             )
 
             # Update resume state before processing
@@ -395,14 +415,14 @@ class InitialLoadManager:
             finally:
                 session.close()
 
-            # Run export for this window. Push date_to to end-of-day so
-            # invoices issued anywhere on `window_end`'s date are included
-            # (KSeF interprets dateRange.to as a precise datetime).
-            window_end_query = datetime.combine(window_end.date(), _END_OF_DAY)
+            # date_to = window_end is midnight, treated as inclusive instant
+            # by KSeF. Day-of(window_end) coverage continues in the next
+            # window (whose `from` is the same instant); unique ksef_number
+            # makes the 1-instant overlap idempotent.
             result = self.export_manager.run_export(
                 subject_type=subject_type,
                 date_from=window_start,
-                date_to=window_end_query,
+                date_to=window_end,
                 date_type=date_type,
                 only_metadata=True,
             )
@@ -410,10 +430,10 @@ class InitialLoadManager:
             if not result.success:
                 logger.warning(
                     "Export failed for %s [%s → %s]: %s",
-                    subject_type, window_start.date(), window_end.date(), result.error,
+                    subject_type, window_start.date(), display_end, result.error,
                 )
                 failures.append(
-                    (window_start.date(), window_end.date(), result.error or "unknown")
+                    (window_start.date(), display_end, result.error or "unknown")
                 )
                 # Non-fatal: still bump windows_completed so progress UI reaches
                 # 100% even if some windows errored (otherwise the job shows
@@ -438,7 +458,7 @@ class InitialLoadManager:
                     session.rollback()
                 finally:
                     session.close()
-                cursor = window_end + _ONE_DAY
+                cursor = window_end
                 continue
 
             # Save invoices to DB
@@ -474,12 +494,15 @@ class InitialLoadManager:
 
             logger.info(
                 "Window done: %s [%s → %s] imported=%d skipped=%d%s",
-                subject_type, window_start.date(), window_end.date(),
+                subject_type, window_start.date(), display_end,
                 win_imported, win_skipped,
                 " (truncated)" if result.is_truncated else "",
             )
 
-            # Advance cursor: use lastInvoicingDate if truncated
+            # Advance cursor to window_end (= next window's from, sharing
+            # the boundary instant). lastInvoicingDate from a truncated
+            # response still wins so we don't re-fetch already-paginated
+            # rows.
             if result.is_truncated and result.last_invoicing_date:
                 try:
                     next_from = datetime.fromisoformat(
@@ -490,9 +513,9 @@ class InitialLoadManager:
                     cursor = next_from
                     logger.debug("Truncated window: advancing cursor to %s", cursor)
                 except ValueError:
-                    cursor = window_end + _ONE_DAY
+                    cursor = window_end
             else:
-                cursor = window_end + _ONE_DAY
+                cursor = window_end
 
         return imported, skipped, failures
 
