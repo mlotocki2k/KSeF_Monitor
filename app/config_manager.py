@@ -482,6 +482,9 @@ class ConfigManager:
         if api["enabled"] and not api["auth_token"]:
             generated_token = secrets.token_urlsafe(48)
             api["auth_token"] = generated_token
+            # Marker for main.py: auto-gen means fresh install — skip bootstrap admin
+            # and let /ui/setup wizard create the first user instead.
+            api["_auth_token_auto_generated"] = True
             # Write full token to file so user can retrieve it without it appearing in logs
             token_file = Path("/data/api_token.txt")
             try:

@@ -9,6 +9,25 @@ Closes 14 findings from `audit/20260504_security_audit_v0_5_1_ui_auth.md`
 hadn't gone through the v0.5.0 audit cycle). 0 CRITICAL, 0 HIGH originally;
 6 MEDIUM, 6 LOW, 5 INFO. All addressed.
 
+### Pre-release fixes (post-audit)
+
+- **Logging:** `alembic.ini` `[logger_root] level` was `WARNING` — the
+  `fileConfig()` call in `alembic/env.py` clobbered the `INFO` level set
+  by `app.logging_config` at startup, silently dropping every
+  `logger.info` after migrations ran. Five of the seven U-12 audit-trail
+  events (session create/revoke, password change, user create,
+  absolute-cap eviction) were therefore invisible in production. Bumped
+  alembic root to `INFO`; `[logger_alembic]` and `[logger_sqlalchemy]`
+  unchanged.
+- **Fresh-install UX:** when `api.auth_token` is auto-generated (F-01
+  fallback), `main.py` no longer bootstraps an `admin` user with that
+  random token as the password. The wizard at `/ui/setup` is the only
+  sensible entry point for a fresh install — bootstrapping with an
+  unknowable password just locked the operator out of the UI. Bootstrap
+  still runs when the operator supplies `auth_token` themselves
+  (config / env), preserving the v0.5.0 → v0.5.2 upgrade flow. Marker:
+  `api["_auth_token_auto_generated"]`.
+
 ### Session security
 
 - **U-01** Cookie `Secure` flag now honors `X-Forwarded-Proto` and

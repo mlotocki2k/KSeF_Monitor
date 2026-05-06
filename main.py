@@ -226,11 +226,20 @@ def main():
                 # user with password = auth_token. Lets v0.5.0 deployments
                 # upgrade without touching the API key — login as 'admin' with
                 # the existing token, then change password via /ui/account.
+                #
+                # Skipped when token was auto-generated this run (fresh install):
+                # /ui/login redirects to /ui/setup wizard so the user picks their
+                # own credentials instead of fishing the auto-gen token out of
+                # /data/api_token.txt.
                 bootstrap_token = (api_config.get("auth_token") or "").strip()
+                token_auto_generated = bool(
+                    api_config.get("_auth_token_auto_generated")
+                )
                 if (
                     database is not None
                     and bootstrap_token
                     and len(bootstrap_token) >= 8
+                    and not token_auto_generated
                 ):
                     try:
                         from app.ui_auth import (
@@ -248,6 +257,19 @@ def main():
                                 )
                     except Exception as _e:
                         logger.warning(f"UI bootstrap admin skipped: {_e}")
+                elif token_auto_generated and database is not None:
+                    try:
+                        from app.ui_auth import count_users as _count_users
+
+                        with database.get_session() as _s:
+                            if _count_users(_s) == 0:
+                                logger.warning(
+                                    "Fresh install detected (auto-generated auth_token, "
+                                    "no UI users) — open /ui/setup to create the first "
+                                    "admin account."
+                                )
+                    except Exception:
+                        pass
 
                 api_app = create_app(
                     db=database,
