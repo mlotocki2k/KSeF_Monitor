@@ -527,10 +527,14 @@ def ui_login_submit(
     )
 
     target = _safe_next(next)
-    # _safe_next already whitelists `target` to "/ui" or "/ui/...", but when
-    # we embed it as a query-string value below the URL parser can still be
-    # tripped by stray characters. Encode for the query-string contexts so
-    # CodeQL "URL redirection from remote source" rule sees a sanitized sink.
+    # `target` is whitelisted by _safe_next to literally "/ui" or a string
+    # starting with "/ui/", but CodeQL's url-redirection rule doesn't model
+    # _safe_next as a sanitizer. Re-assert the prefix here at the sink AND
+    # url-encode the query-string copy. The local re-check is what convinces
+    # CodeQL the value is constant-prefixed; quote() is hygiene for the
+    # query-string embedding.
+    if target != "/ui" and not target.startswith("/ui/"):
+        target = "/ui"
     target_qs = quote(target, safe="/")
     db = _get_db(request)
     if db is None:
