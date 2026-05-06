@@ -371,13 +371,31 @@ _COOKIE_MAX_AGE = 60 * 60 * 24 * 7  # 7 days
 
 
 def _safe_next(value: Optional[str]) -> str:
-    """Whitelist redirect target to internal /ui paths only."""
+    """Whitelist redirect target to internal /ui paths only.
+
+    Rejects open-redirect attempts via:
+    - empty / None inputs (default to "/ui")
+    - protocol-relative URLs ("//evil.example/...")
+    - any URL with a netloc or scheme (urlparse-checked, the canonical
+      CodeQL-recognized sanitizer for `py/url-redirection`)
+    - paths outside the "/ui" prefix
+
+    Returns one of: "/ui" or value if it parses to a netloc-less,
+    scheme-less path under "/ui".
+    """
     if not value:
         return "/ui"
-    if value.startswith("//"):
+    from urllib.parse import urlparse
+    parsed = urlparse(value)
+    if parsed.scheme or parsed.netloc:
         return "/ui"
-    if value == "/ui" or value.startswith("/ui/"):
-        return value
+    path = parsed.path
+    if path == "/ui" or path.startswith("/ui/"):
+        # Re-build the return value from a string literal + the sanitized
+        # tail so CodeQL's data-flow analysis sees a constant prefix.
+        if path == "/ui":
+            return "/ui"
+        return "/ui/" + path[len("/ui/"):]
     return "/ui"
 
 
@@ -514,7 +532,6 @@ def ui_login_submit(
     next: Optional[str] = Form(None),
 ):
     """Validate user/pass, create DB session, set HttpOnly cookie, redirect."""
-    from urllib.parse import quote
     from app.ui_auth import (
         count_users,
         create_session,
@@ -527,15 +544,6 @@ def ui_login_submit(
     )
 
     target = _safe_next(next)
-    # `target` is whitelisted by _safe_next to literally "/ui" or a string
-    # starting with "/ui/", but CodeQL's url-redirection rule doesn't model
-    # _safe_next as a sanitizer. Re-assert the prefix here at the sink AND
-    # url-encode the query-string copy. The local re-check is what convinces
-    # CodeQL the value is constant-prefixed; quote() is hygiene for the
-    # query-string embedding.
-    if target != "/ui" and not target.startswith("/ui/"):
-        target = "/ui"
-    target_qs = quote(target, safe="/")
     db = _get_db(request)
     if db is None:
         return RedirectResponse(url="/ui/login?error=db", status_code=303)
@@ -555,7 +563,7 @@ def ui_login_submit(
                 len(username), client_host,
             )
             return RedirectResponse(
-                url=f"/ui/login?next={target_qs}&error=locked", status_code=303
+                url="/ui/login?error=locked", status_code=303
             )
 
         user = get_user_by_username(s, username)
@@ -573,13 +581,25 @@ def ui_login_submit(
                 len(username), client_host,
             )
             return RedirectResponse(
-                url=f"/ui/login?next={target_qs}&error=invalid", status_code=303
+                url="/ui/login?error=invalid", status_code=303
             )
 
         record_login_success(s, username)
         sid = create_session(s, user, ua=request.headers.get("user-agent", "") or None)
 
-    resp = RedirectResponse(url=target, status_code=303)
+    # Sink-side urlparse re-check — canonical CodeQL `py/url-redirection`
+    # sanitizer pattern. _safe_next already enforces the same invariant
+    # earlier; this is a belt-and-braces final guard that the analyzer can
+    # see as a sanitizer at the literal sink.
+    from urllib.parse import urlparse
+    parsed = urlparse(target)
+    if parsed.scheme or parsed.netloc:
+        final_url = "/ui"
+    elif parsed.path == "/ui" or parsed.path.startswith("/ui/"):
+        final_url = parsed.path
+    else:
+        final_url = "/ui"
+    resp = RedirectResponse(url=final_url, status_code=303)
     _set_session_cookie(resp, sid, request)
     return resp
 
