@@ -67,7 +67,31 @@
 
     .input { display: block; width: 100%; border-radius: .375rem; border: 1px solid var(--input-border); background: var(--input-bg); color: var(--text-primary); padding: .375rem .75rem; font-size: .875rem; box-shadow: none; }
     .input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+    /* w-auto utility wasn't winning over .input (same specificity, .input loaded
+       later from <style>); use !important so .input.w-auto sizes to content. */
+    .input.w-auto { width: auto !important; }
+    /* .hidden IS in tailwind.min.css but loses the cascade to .btn-* / .input
+       rules in this <style> block (same specificity, .style block loads later).
+       Result: btn-secondary.hidden / input.hidden render visible. !important
+       puts .hidden back on top. Affected: "Pobierz PDF (0)" bulk button at 0
+       selected, QR-pairing reveal block before auth, per-window history
+       toggle target. */
+    .hidden { display: none !important; }
     .label { display: block; font-size: .75rem; font-weight: 500; color: var(--text-muted); margin-bottom: .25rem; }
+    /* Utilities not present in the bundled tailwind subset but used in
+       templates — added inline so the dark UI renders correctly without
+       rebuilding the CSS bundle. */
+    .whitespace-pre-line { white-space: pre-line; }
+    .break-words { overflow-wrap: break-word; word-wrap: break-word; }
+    .font-sans { font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+    .min-w-full { min-width: 100%; }
+    /* Amber callout palette used by initial_load + push templates — tailwind
+       v3 hex values, applied with !important so the dark-theme overrides
+       above (which clobber bg-white / bg-gray-* under :root) don't clash. */
+    .bg-amber-50 { background-color: #fffbeb !important; }
+    .border-amber-200 { border-color: #fde68a !important; }
+    .text-amber-700 { color: #b45309 !important; }
+    .text-amber-800 { color: #92400e !important; }
 
     /* Soft global overrides to blend Tailwind utility classes with dark palette */
     .bg-white { background-color: var(--card-bg) !important; }
@@ -106,7 +130,7 @@
            style="border-radius: 6px;">
       Monitor KSeF
     </a>
-    <nav class="flex items-center gap-1 flex-wrap ml-2 sm:ml-4" aria-label="Główna nawigacja">
+    <nav class="flex items-center gap-1 flex-wrap" style="margin-left: 1rem;" aria-label="Główna nawigacja">
       {% for item in nav %}
       <a href="{{ item.href }}"
          class="nav-link {% if request.url.path == item.href or (item.href != '/ui' and request.url.path.startswith(item.href)) %}nav-link-active{% else %}nav-link-idle{% endif %}">
