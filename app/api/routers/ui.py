@@ -514,6 +514,7 @@ def ui_login_submit(
     next: Optional[str] = Form(None),
 ):
     """Validate user/pass, create DB session, set HttpOnly cookie, redirect."""
+    from urllib.parse import quote
     from app.ui_auth import (
         count_users,
         create_session,
@@ -526,6 +527,11 @@ def ui_login_submit(
     )
 
     target = _safe_next(next)
+    # _safe_next already whitelists `target` to "/ui" or "/ui/...", but when
+    # we embed it as a query-string value below the URL parser can still be
+    # tripped by stray characters. Encode for the query-string contexts so
+    # CodeQL "URL redirection from remote source" rule sees a sanitized sink.
+    target_qs = quote(target, safe="/")
     db = _get_db(request)
     if db is None:
         return RedirectResponse(url="/ui/login?error=db", status_code=303)
@@ -545,7 +551,7 @@ def ui_login_submit(
                 len(username), client_host,
             )
             return RedirectResponse(
-                url=f"/ui/login?next={target}&error=locked", status_code=303
+                url=f"/ui/login?next={target_qs}&error=locked", status_code=303
             )
 
         user = get_user_by_username(s, username)
@@ -563,7 +569,7 @@ def ui_login_submit(
                 len(username), client_host,
             )
             return RedirectResponse(
-                url=f"/ui/login?next={target}&error=invalid", status_code=303
+                url=f"/ui/login?next={target_qs}&error=invalid", status_code=303
             )
 
         record_login_success(s, username)
