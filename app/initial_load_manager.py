@@ -19,7 +19,7 @@ import json
 import logging
 import threading
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, time as dt_time, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 from .database import Database, InitialLoadJob
@@ -32,6 +32,11 @@ logger = logging.getLogger(__name__)
 MAX_WINDOW_DAYS = 90
 _WINDOW_SPAN = timedelta(days=MAX_WINDOW_DAYS - 1)
 _ONE_DAY = timedelta(days=1)
+# KSeF treats dateRange.to as a datetime, not a date. A window_end of
+# 2026-05-01T00:00:00 only covers the very first instant of May 1, so an
+# invoice issued at e.g. 15:30 that day is excluded. Push window_end to the
+# last microsecond of the day before sending to /invoices/exports.
+_END_OF_DAY = dt_time(23, 59, 59, 999999)
 
 
 def _count_windows(start: datetime, end: datetime, subject_types: List[str]) -> int:
@@ -390,11 +395,14 @@ class InitialLoadManager:
             finally:
                 session.close()
 
-            # Run export for this window
+            # Run export for this window. Push date_to to end-of-day so
+            # invoices issued anywhere on `window_end`'s date are included
+            # (KSeF interprets dateRange.to as a precise datetime).
+            window_end_query = datetime.combine(window_end.date(), _END_OF_DAY)
             result = self.export_manager.run_export(
                 subject_type=subject_type,
                 date_from=window_start,
-                date_to=window_end,
+                date_to=window_end_query,
                 date_type=date_type,
                 only_metadata=True,
             )

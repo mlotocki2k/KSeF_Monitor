@@ -470,7 +470,9 @@ class TestIsTruncatedHandling:
                 date_type="Invoicing",
             )
 
-        # Single window: 2024-01-01 → 2024-02-01 (31 days < 90)
+        # Single window: 2024-01-01 → 2024-02-01 (31 days < 90).
+        # date_to is pushed to end-of-day so KSeF includes invoices from any
+        # hour of the boundary day (raw midnight would clip them).
         assert len(dates_used) == 1
         assert dates_used[0][0] == datetime(2024, 1, 1)
-        assert dates_used[0][1] == datetime(2024, 2, 1)
+        assert dates_used[0][1] == datetime(2024, 2, 1, 23, 59, 59, 999999)
