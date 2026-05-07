@@ -422,8 +422,29 @@ _Pełna lista zmian: `CHANGELOG.md` [0.5.3]. Siedem defektów wykrytych w pre-me
 - [ ] Token wymaga uprawnienia `Introspection` (lub `InvoiceWrite` — ograniczone do sesji własnych) — udokumentować w [KSEF_TOKEN.md](KSEF_TOKEN.md)
 - [ ] Testy: mock `/sessions` + `/sessions/{ref}/invoices/ksef/{ksefNumber}/upo`, weryfikacja SHA256 mismatch handling, 21178
 
+### 5) Adaptacja KSeF API v2.5.0
+**Cel:** forward-compat z rotacją kluczy publicznych KSeF; zaktualizowane spec'i dla wszystkich środowisk.
+
+**Harmonogram wdrożenia (z [api-changelog.md](https://github.com/CIRFMF/ksef-docs/blob/main/api-changelog.md)):**
+- TEST: 06.05.2026 ✅ (spec zaktualizowany — `spec/openapi-test.json` SHA `ea05626e…`)
+- DEMO: 07.05.2026 — pending (issue auto-otworzy się przy zmianie hash)
+- PRD: 11.05.2026 — pending (issue auto-otworzy się przy zmianie hash)
+
+**Smoke test (2026-05-07, env=test):** auth flow 6/6 OK przeciw `api-test.ksef.mf.gov.pl` — backward compat potwierdzony, klient działa **bez** wysyłania `publicKeyId`.
+
+- [x] `spec/openapi-test.json` → v2.5.0 (TEST)
+- [ ] `spec/openapi-demo.json` → v2.5.0 (po wdrożeniu DEMO 07.05)
+- [ ] `spec/openapi.json` → v2.5.0 (po wdrożeniu PRD 11.05)
+- [ ] **Forward-compat dla rotacji kluczy** (przed PRD):
+  - `KSeFClient._fetch_public_key` — zachować `cert["publicKeyId"]` obok `_ksef_public_key`
+  - `KSeFClient._authenticate_with_token` — wysyłać `publicKeyId` w body `POST /auth/ksef-token` (pole opcjonalne, nullable, ale zalecane jako selektor klucza przy rotacji)
+- [ ] Limity TEST API zrównane z PRD (ten sam profil) — zweryfikować że `_request_with_retry` + 429 backoff radzi sobie pod nowym budżetem; rozważyć wyrównanie defaultowego `check_interval` jeśli polling poprzednio bazował na luźniejszych limitach test
+- [ ] (Opcjonalnie) Endpointy `/testdata/rate-limits` — wrapper do testów integracyjnych pod customowy profil limitów
+- [ ] (Opcjonalnie) Wsparcie `X-Error-Format: problem-details` dla 400/429 — dziś `_extract_api_error_details` parsuje `application/json`; nowy header daje spójny `application/problem+json` wszędzie
+- [ ] Test `tests/test_ksef_client.py` — snapshot nowego `PublicKeyCertificate` schema (pola `certificateId`, `publicKeyId` jako wymagane w response)
+
 **Zależności:** v0.5
-**DoD:** monitor wykrywa nowe faktury i wysyła push w jednym tanim API call; artefakty pobierane niezależnie; konfigurowalny interwał pollingu; UPO faktur sprzedażowych pobierane i zapisywane gdy `fetch_upo=true`; testy aktualne.
+**DoD:** monitor wykrywa nowe faktury i wysyła push w jednym tanim API call; artefakty pobierane niezależnie; konfigurowalny interwał pollingu; UPO faktur sprzedażowych pobierane i zapisywane gdy `fetch_upo=true`; klient wysyła `publicKeyId` w `/auth/ksef-token` przed PRD 11.05.2026; specy demo i prod zaktualizowane; testy aktualne.
 
 ---
 
