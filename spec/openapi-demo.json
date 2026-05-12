@@ -2,7 +2,7 @@
   "openapi": "3.0.4",
   "info": {
     "title": "KSeF API TR",
-    "description": "**Wersja API:** 2.4.0 (build 2.4.0-tr-20260421.1+ab5d2a476a52cbc91484af264b0022c8f9571c23)<br>\n**Klucze publiczne** Ministerstwa Finansów (dla danego środowiska): [Pobierz klucze](#tag/Certyfikaty-klucza-publicznego)<br>\n**Historia zmian:** [Changelog](https://github.com/CIRFMF/ksef-docs/blob/main/api-changelog.md)<br>\n**Rozszerzona dokumentacja API:** [ksef-docs](https://github.com/CIRFMF/ksef-docs/tree/main)\n\n**Adres serwera API:**\n- Środowisko DEMO: `https://api-demo.ksef.mf.gov.pl/v2`\n",
+    "description": "**Wersja API:** 2.5.0 (build 2.5.0-tr-20260507.3+6c7390a3ca0283bd7c201b81a37eb671d8d72473)<br>\n**Klucze publiczne** Ministerstwa Finansów (dla danego środowiska): [Pobierz klucze](#tag/Certyfikaty-klucza-publicznego)<br>\n**Historia zmian:** [Changelog](https://github.com/CIRFMF/ksef-docs/blob/main/api-changelog.md)<br>\n**Rozszerzona dokumentacja API:** [ksef-docs](https://github.com/CIRFMF/ksef-docs/tree/main)\n\n**Adres serwera API:**\n- Środowisko DEMO: `https://api-demo.ksef.mf.gov.pl/v2`\n",
     "version": "v2"
   },
   "servers": [
@@ -1176,10 +1176,21 @@
                 "example": [
                   {
                     "certificate": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAwocTwdNgt2+PXJ2fcB7k1kn5eFUTXBeep9pH...",
+                    "certificateId": "35k6IVMTxUPZKQdg4Fbx36T5/v3aoJK5hIY7sS7mt3U=",
+                    "publicKeyId": "QIoAK/Yc3s27Z4t3SZY4Mhp8JNLH7Vl4N3lNlJAEig8=",
                     "validFrom": "2024-07-11T12:23:56.0154302+00:00",
                     "validTo": "2028-07-11T12:23:56.0154302+00:00",
                     "usage": [
-                      "KsefTokenEncryption",
+                      "KsefTokenEncryption"
+                    ]
+                  },
+                  {
+                    "certificate": "MIIGWDCCBECgAwIBAgIQe4NvS/i3yyDCcnaXiiC6BTANBgkqhkiG9w0BAQsFADBOMQswCQYDVQQGEwJa...",
+                    "certificateId": "sivtxip78UcnFLzXVsAz2FE1XIpLpySOZsn/f99fDmI=",
+                    "publicKeyId": "tmtCidSRzR4fvNpLU5hMOM6FzamxJf0BBR8IkXIAwsY=",
+                    "validFrom": "2024-07-11T12:23:56.0154302+00:00",
+                    "validTo": "2028-07-11T12:23:56.0154302+00:00",
+                    "usage": [
                       "SymmetricKeyEncryption"
                     ]
                   }
@@ -3374,7 +3385,8 @@
               "example": {
                 "encryption": {
                   "encryptedSymmetricKey": "bdUVjqLj+y2q6aBUuLxxXYAMqeDuIBRTyr+hB96DaWKaGzuVHw9p+Nk9vhzgF/Q5cavK2k6eCh6SdsrWI0s9mFFj4A4UJtsyD8Dn3esLfUZ5A1juuG3q3SBi/XOC/+9W+0T/KdwdE393mbiUNyx1K/0bw31vKJL0COeJIDP7usAMDl42/H1TNvkjk+8iZ80V0qW7D+RZdz+tdiY1xV0f2mfgwJ46V0CpZ+sB9UAssRj+eVffavJ0TOg2b5JaBxE8MCAvrF6rO5K4KBjUmoy7PP7g1qIbm8xI2GO0KnfPOO5OWj8rsotRwBgu7x19Ine3qYUvuvCZlXRGGZ5NHIzWPM4O74+gNalaMgFCsmv8mMhETSU4SfAGmJr9edxPjQSbgD5i2X4eDRDMwvyaAa7CP1b2oICju+0L7Fywd2ZtUcr6El++eTVoi8HYsTArntET++gULT7XXjmb8e3O0nxrYiYsE9GMJ7HBGv3NOoJ1NTm3a7U6+c0ZJiBVLvn6xXw10LQX243xH+ehsKo6djQJKYtqcNPaXtCwM1c9RrsOx/wRXyWCtTffqLiaR0LbYvfMJAcEWceG+RaeAx4p37OiQqdJypd6LAv9/0ECWK8Bip8yyoA+0EYiAJb9YuDz2YlQX9Mx9E9FzFIAsgEQ2w723HZYWgPywLb+dlsum4lTZKQ=",
-                  "initializationVector": "c29tZUluaXRWZWN0b3I="
+                  "initializationVector": "c29tZUluaXRWZWN0b3I=",
+                  "publicKeyId": "tmtCidSRzR4fvNpLU5hMOM6FzamxJf0BBR8IkXIAwsY="
                 },
                 "onlyMetadata": false,
                 "filters": {
@@ -3405,7 +3417,7 @@
             }
           },
           "400": {
-            "description": "| ExceptionCode       | ExceptionDescription                                | Details                                                       | \n|---------------------|-----------------------------------------------------|---------------------------------------------------------------|\n| 21181               | Nieprawidłowe żądanie eksportu faktur.              | Nie można wyeksportować paczki faktur dla wybranego podmiotu ({subjecttype}) i zalogowanego identyfikatora kontekstu ({type}). |\n| 21182               | Osiągnięto limit trwających eksportów.              | Dla uwierzytelnionego podmiotu w bieżącym kontekście osiągnięto maksymalny limit {count} równoczesnych eksportów faktur. Spróbuj ponownie później. |\n| 21405 | Błąd walidacji danych wejściowych. | {treść błędu z walidatora} |",
+            "description": "| ExceptionCode       | ExceptionDescription                                | Details                                                       | \n|---------------------|-----------------------------------------------------|---------------------------------------------------------------|\n| 21181               | Nieprawidłowe żądanie eksportu faktur.              | Nie można wyeksportować paczki faktur dla wybranego podmiotu ({subjecttype}) i zalogowanego identyfikatora kontekstu ({type}). |\n| 21182               | Osiągnięto limit trwających eksportów.              | Dla uwierzytelnionego podmiotu w bieżącym kontekście osiągnięto maksymalny limit {count} równoczesnych eksportów faktur. Spróbuj ponownie później. |\n| 21470               | Przesłany identyfikator klucza jest nieznany lub wskazuje na wycofany klucz. | Klucz o identyfikatorze {keyId} nie jest wspierany. |\n| 21405 | Błąd walidacji danych wejściowych. | {treść błędu z walidatora} |",
             "content": {
               "application/json": {
                 "schema": {
@@ -5529,7 +5541,7 @@
           "Uzyskiwanie dostępu"
         ],
         "summary": "Uwierzytelnienie z wykorzystaniem podpisu XAdES",
-        "description": "Rozpoczyna operację uwierzytelniania za pomocą dokumentu XML podpisanego podpisem elektronicznym XAdES.\n\n> Więcej informacji:\n> - [Przygotowanie dokumentu XML](https://github.com/CIRFMF/ksef-docs/blob/main/uwierzytelnianie.md#1-przygotowanie-dokumentu-xml-authtokenrequest)\n> - [Podpis dokumentu XML](https://github.com/CIRFMF/ksef-docs/blob/main/uwierzytelnianie.md#2-podpisanie-dokumentu-xades)\n> - [Schemat XSD](/docs/v2/schemas/authv2.xsd)\n\n**Headers:**\n\n`X-Error-Format: problem-details` - ustawienie tego nagłówka powoduje zwracanie błędów w formacie **Problem Details** (`application/problem+json`).",
+        "description": "Rozpoczyna operację uwierzytelniania za pomocą dokumentu XML podpisanego podpisem elektronicznym XAdES.\n\n> Więcej informacji:\n> - [Przygotowanie dokumentu XML](https://github.com/CIRFMF/ksef-docs/blob/main/uwierzytelnianie.md#1-przygotowanie-dokumentu-xml-authtokenrequest)\n> - [Podpis dokumentu XML](https://github.com/CIRFMF/ksef-docs/blob/main/uwierzytelnianie.md#2-podpisanie-dokumentu-xades)\n> - Obsługiwane schematy:\n>   - [auth v2.0](https://github.com/CIRFMF/ksef-docs/blob/main/auth/schemy/schemat_auth_v2-0.xsd)\n>   - [auth v2.1](https://github.com/CIRFMF/ksef-docs/blob/main/auth/schemy/schemat_auth_v2-1.xsd)\n\n**Headers:**\n\n`X-Error-Format: problem-details` - ustawienie tego nagłówka powoduje zwracanie błędów w formacie **Problem Details** (`application/problem+json`).",
         "parameters": [
           {
             "name": "verifyCertificateChain",
@@ -5642,7 +5654,8 @@
                   "type": "Nip",
                   "value": "5265877635"
                 },
-                "encryptedToken": "..."
+                "encryptedToken": "...",
+                "publicKeyId": "QIoAK/Yc3s27Z4t3SZY4Mhp8JNLH7Vl4N3lNlJAEig8="
               }
             }
           }
@@ -5666,7 +5679,7 @@
             }
           },
           "400": {
-            "description": "| ExceptionCode       | ExceptionDescription                           | Details                                                                     | \n|---------------------|------------------------------------------------|-----------------------------------------------------------------------------|\n| 21111               | Nieprawidłowe wyzwanie autoryzacyjne.          |  |\n| 21405 | Błąd walidacji danych wejściowych. | {treść błędu z walidatora} |",
+            "description": "| ExceptionCode       | ExceptionDescription                                                         | Details                                             | \n|---------------------|------------------------------------------------------------------------------|-----------------------------------------------------|\n| 21111               | Nieprawidłowe wyzwanie autoryzacyjne.                                        |                                                     |\n| 21470               | Przesłany identyfikator klucza jest nieznany lub wskazuje na wycofany klucz. | Klucz o identyfikatorze {keyId} nie jest wspierany. |\n| 21405 | Błąd walidacji danych wejściowych. | {treść błędu z walidatora} |",
             "content": {
               "application/json": {
                 "schema": {
@@ -6145,7 +6158,8 @@
                 },
                 "encryption": {
                   "encryptedSymmetricKey": "bdUVjqLj+y2q6aBUuLxxXYAMqeDuIBRTyr+hB96DaWKaGzuVHw9p+Nk9vhzgF/Q5cavK2k6eCh6SdsrWI0s9mFFj4A4UJtsyD8Dn3esLfUZ5A1juuG3q3SBi/XOC/+9W+0T/KdwdE393mbiUNyx1K/0bw31vKJL0COeJIDP7usAMDl42/H1TNvkjk+8iZ80V0qW7D+RZdz+tdiY1xV0f2mfgwJ46V0CpZ+sB9UAssRj+eVffavJ0TOg2b5JaBxE8MCAvrF6rO5K4KBjUmoy7PP7g1qIbm8xI2GO0KnfPOO5OWj8rsotRwBgu7x19Ine3qYUvuvCZlXRGGZ5NHIzWPM4O74+gNalaMgFCsmv8mMhETSU4SfAGmJr9edxPjQSbgD5i2X4eDRDMwvyaAa7CP1b2oICju+0L7Fywd2ZtUcr6El++eTVoi8HYsTArntET++gULT7XXjmb8e3O0nxrYiYsE9GMJ7HBGv3NOoJ1NTm3a7U6+c0ZJiBVLvn6xXw10LQX243xH+ehsKo6djQJKYtqcNPaXtCwM1c9RrsOx/wRXyWCtTffqLiaR0LbYvfMJAcEWceG+RaeAx4p37OiQqdJypd6LAv9/0ECWK8Bip8yyoA+0EYiAJb9YuDz2YlQX9Mx9E9FzFIAsgEQ2w723HZYWgPywLb+dlsum4lTZKQ=",
-                  "initializationVector": "OmtDQdl6vkOI1GLKZSjgEg=="
+                  "initializationVector": "OmtDQdl6vkOI1GLKZSjgEg==",
+                  "publicKeyId": "tmtCidSRzR4fvNpLU5hMOM6FzamxJf0BBR8IkXIAwsY="
                 }
               }
             }
@@ -6167,7 +6181,7 @@
             }
           },
           "400": {
-            "description": "| ExceptionCode | ExceptionDescription | Details |\n|-|-|-|\n| 21405 | Błąd walidacji danych wejściowych. | {treść błędu z walidatora} |",
+            "description": "| ExceptionCode       | ExceptionDescription                                                         | Details                                                | \n|---------------------|------------------------------------------------------------------------------|--------------------------------------------------------|\n| 21470               | Przesłany identyfikator klucza jest nieznany lub wskazuje na wycofany klucz. | Klucz o identyfikatorze {keyId} nie jest wspierany.    |\n| 21405 | Błąd walidacji danych wejściowych. | {treść błędu z walidatora} |",
             "content": {
               "application/json": {
                 "schema": {
@@ -6521,7 +6535,8 @@
                 },
                 "encryption": {
                   "encryptedSymmetricKey": "bYqmPAglF01AxZim4oNa+1NerhZYfFgLMnvksBprUur1aesQ0Y5jsmOIfCrozfMkF2tjdO+uOsBg4FPlDgjChwN2/tz2Hqwtxq3RkTr1SjY4x8jxJFpPedcS7EI+XO8C+i9mLj7TFx9p/bg07yM9vHtMAk5b88Ay9Qc3+T5Ch1DM2ClR3sVu2DqdlKzmbINY+rhfGtXn58Qo0XRyESGgc6M0iTZVBRPuPXLnD8a1KpOneCpNzLwxgT6Ei3ivLOpPWT53PxkRTaQ8puj6CIiCKo4FHQzHuI/NmrAhYU7TkNm2kymP/OxBgWdg3XB74tqNFfT8RZN1bZXuPhBidDOqa+xsqY3E871FSDmQwZf58HmoNl31XNvpnryiRGfnAISt+m+ELqgksAresVu6E9poUL1yiff+IOHSZABoYpNiqwnbT8qyW1uk8lKLyFVFu+kOsbzBk1OWWHqSkNFDaznDa2MKjHonOXI0uyKaKWvoBFC4dWN1PVumfpSSFAeYgNpAyVrZdcVOuiliEWepTDjGzJoOafTvwr5za2S6B5bPECDpX7JXazV7Olkq7ezG0w8y3olx+0C+NHoCk8B5/cm4gtVHTgKjiLSGpKJVOJABLXFkOyIOjbQsVe4ryX0Qy+SfL7JIQvTWvM5xkCoOMbzLdMo9tNo5qE34sguFI+lIevY=",
-                  "initializationVector": "jWpJLNBHJ5pQEGCBglmIAw=="
+                  "initializationVector": "jWpJLNBHJ5pQEGCBglmIAw==",
+                  "publicKeyId": "tmtCidSRzR4fvNpLU5hMOM6FzamxJf0BBR8IkXIAwsY="
                 },
                 "offlineMode": false
               }
@@ -6553,7 +6568,7 @@
             }
           },
           "400": {
-            "description": "| ExceptionCode       | ExceptionDescription                                | Details                                                                   | \n|---------------------|-----------------------------------------------------|---------------------------------------------------------------------------|\n| 21157               | Nieprawidłowy rozmiar części pakietu.               | {treść błędu walidacji}                                                   | \n| 21161               | Przekroczono dozwoloną liczbę części pakietu.       | {treść błędu walidacji}                                                   |\n| 21405 | Błąd walidacji danych wejściowych. | {treść błędu z walidatora} |",
+            "description": "| ExceptionCode       | ExceptionDescription                                                         | Details                                             | \n|---------------------|------------------------------------------------------------------------------|-----------------------------------------------------|\n| 21157               | Nieprawidłowy rozmiar części pakietu.                                        | {treść błędu walidacji}                             | \n| 21161               | Przekroczono dozwoloną liczbę części pakietu.                                | {treść błędu walidacji}                             |\n| 21470               | Przesłany identyfikator klucza jest nieznany lub wskazuje na wycofany klucz. | Klucz o identyfikatorze {keyId} nie jest wspierany. |\n| 21405 | Błąd walidacji danych wejściowych. | {treść błędu z walidatora} |",
             "content": {
               "application/json": {
                 "schema": {
@@ -9456,6 +9471,14 @@
             "type": "string",
             "description": "Wektor inicjalizujący (IV) o długości 16 bajtów, używany do szyfrowania symetrycznego, zakodowany w formacie Base64.",
             "format": "byte"
+          },
+          "publicKeyId": {
+            "maxLength": 44,
+            "minLength": 44,
+            "type": "string",
+            "description": "Identyfikator klucza publicznego użytego do szyfrowania.",
+            "format": "byte",
+            "nullable": true
           }
         }
       },
@@ -11176,6 +11199,14 @@
             "type": "string",
             "description": "Zaszyfrowany token wraz z timestampem z challenge'a, w postaci `token|timestamp`, zakodowany w formacie Base64.",
             "format": "byte"
+          },
+          "publicKeyId": {
+            "maxLength": 44,
+            "minLength": 44,
+            "type": "string",
+            "description": "Identyfikator klucza publicznego użytego do szyfrowania tokena.",
+            "format": "byte",
+            "nullable": true
           },
           "authorizationPolicy": {
             "allOf": [
@@ -13506,6 +13537,8 @@
       "PublicKeyCertificate": {
         "required": [
           "certificate",
+          "certificateId",
+          "publicKeyId",
           "usage",
           "validFrom",
           "validTo"
@@ -13515,6 +13548,16 @@
           "certificate": {
             "type": "string",
             "description": "Certyfikat klucza publicznego w formacie DER, zakodowany w formacie Base64.",
+            "format": "byte"
+          },
+          "certificateId": {
+            "type": "string",
+            "description": "Identyfikator certyfikatu.",
+            "format": "byte"
+          },
+          "publicKeyId": {
+            "type": "string",
+            "description": "Identyfikator klucza, używany jako selektor w wywołaniach, w których klient wskazuje, jakiego klucza publicznego użył do szyfrowania.",
             "format": "byte"
           },
           "validFrom": {
