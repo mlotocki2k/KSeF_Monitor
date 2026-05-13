@@ -53,6 +53,12 @@ jobs:
           echo "fetch_ok=true" >> "$GITHUB_OUTPUT"
           echo "remote_sha=$(sha256sum remote-openapi.json | awk '{print $1}')" >> "$GITHUB_OUTPUT"
 
+          # Canonical hash ignores info.description (KSeF embeds a redeploy build tag
+          # there — e.g. "2.5.0-te-20260512.2+0beff2cf..." — which churns on every deploy
+          # even when the API surface is unchanged, triggering false-positive drift alerts).
+          # Sorting keys makes the hash order-independent.
+          echo "remote_canonical_sha=$(jq -cS 'del(.info.description)' remote-openapi.json | sha256sum | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+
           # Extract version info if available
           VERSION=$(python3 -c "import json; d=json.load(open('remote-openapi.json')); print(d.get('info',{}).get('version','unknown'))" 2>/dev/null || echo "unknown")
           echo "remote_version=$VERSION" >> "$GITHUB_OUTPUT"
@@ -67,11 +73,13 @@ jobs:
           if [ ! -f "$FILE" ]; then
             echo "local_exists=false" >> "$GITHUB_OUTPUT"
             echo "local_sha=" >> "$GITHUB_OUTPUT"
+            echo "local_canonical_sha=" >> "$GITHUB_OUTPUT"
             echo "local_version=" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           echo "local_exists=true" >> "$GITHUB_OUTPUT"
           echo "local_sha=$(sha256sum "$FILE" | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+          echo "local_canonical_sha=$(jq -cS 'del(.info.description)' "$FILE" | sha256sum | awk '{print $1}')" >> "$GITHUB_OUTPUT"
 
           VERSION=$(python3 -c "import json; d=json.load(open('$FILE')); print(d.get('info',{}).get('version','unknown'))" 2>/dev/null || echo "unknown")
           echo "local_version=$VERSION" >> "$GITHUB_OUTPUT"
@@ -82,9 +90,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          REMOTE="${{ steps.fetch.outputs.remote_sha }}"
+          REMOTE="${{ steps.fetch.outputs.remote_canonical_sha }}"
           LOCAL_EXISTS="${{ steps.local.outputs.local_exists }}"
-          LOCAL="${{ steps.local.outputs.local_sha }}"
+          LOCAL="${{ steps.local.outputs.local_canonical_sha }}"
 
           if [ "$LOCAL_EXISTS" != "true" ]; then
             echo "changed=true" >> "$GITHUB_OUTPUT"
