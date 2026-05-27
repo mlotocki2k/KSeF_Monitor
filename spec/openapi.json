@@ -2,7 +2,7 @@
   "openapi": "3.0.4",
   "info": {
     "title": "KSeF API PR",
-    "description": "**Wersja API:** 2.5.0 (build 2.5.0-pr-20260511.1+85e95abf3c30143c7ad9d26f8a403856d86228c1)<br>\n**Klucze publiczne** Ministerstwa Finansów (dla danego środowiska): [Pobierz klucze](#tag/Certyfikaty-klucza-publicznego)<br>\n**Historia zmian:** [Changelog](https://github.com/CIRFMF/ksef-docs/blob/main/api-changelog.md)<br>\n**Rozszerzona dokumentacja API:** [ksef-docs](https://github.com/CIRFMF/ksef-docs/tree/main)\n\n**Adres serwera API:**\n- Środowisko PRODUKCYJNE: `https://api.ksef.mf.gov.pl/v2`\n",
+    "description": "**Wersja API:** 2.6.0 (build 2.6.0-pr-20260526.5+00f93b861850e2f47d78ef98a13275f254b960f8)<br>\n**Klucze publiczne** Ministerstwa Finansów (dla danego środowiska): [Pobierz klucze](#tag/Certyfikaty-klucza-publicznego)<br>\n**Historia zmian:** [Changelog](https://github.com/CIRFMF/ksef-docs/blob/main/api-changelog.md)<br>\n**Rozszerzona dokumentacja API:** [ksef-docs](https://github.com/CIRFMF/ksef-docs/tree/main)\n\n**Adres serwera API:**\n- Środowisko PRODUKCYJNE: `https://api.ksef.mf.gov.pl/v2`\n",
     "version": "v2"
   },
   "servers": [
@@ -44,6 +44,13 @@
         "responses": {
           "200": {
             "description": "OK",
+            "headers": {
+              "X-System-Warning": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemWarning"
+                }
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -161,7 +168,14 @@
         "description": "Unieważnia sesję powiązaną z tokenem użytym do wywołania tej operacji.\n\nUnieważnienie sesji sprawia, że powiązany z nią refresh token przestaje działać i nie można już za jego pomocą uzyskać kolejnych access tokenów.\n**Aktywne access tokeny działają do czasu minięcia ich termin ważności.**\n\nSposób uwierzytelnienia: `RefreshToken` lub `AccessToken`.\n\n**Headers:**\n\n`X-Error-Format: problem-details` - ustawienie tego nagłówka powoduje zwracanie błędów w formacie **Problem Details** (`application/problem+json`).",
         "responses": {
           "204": {
-            "description": "No Content"
+            "description": "No Content",
+            "headers": {
+              "X-System-Warning": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemWarning"
+                }
+              }
+            }
           },
           "400": {
             "description": "| ExceptionCode | ExceptionDescription | Details |\n|-|-|-|\n| 21405 | Błąd walidacji danych wejściowych. | {treść błędu z walidatora} |",
@@ -255,7 +269,14 @@
         ],
         "responses": {
           "204": {
-            "description": "No Content"
+            "description": "No Content",
+            "headers": {
+              "X-System-Warning": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemWarning"
+                }
+              }
+            }
           },
           "400": {
             "description": "| ExceptionCode | ExceptionDescription | Details |\n|-|-|-|\n| 21405 | Błąd walidacji danych wejściowych. | {treść błędu z walidatora} |",
@@ -339,6 +360,13 @@
         "responses": {
           "200": {
             "description": "OK",
+            "headers": {
+              "X-System-Warning": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemWarning"
+                }
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -429,6 +457,13 @@
         "responses": {
           "200": {
             "description": "OK",
+            "headers": {
+              "X-System-Warning": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemWarning"
+                }
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -552,6 +587,13 @@
         "responses": {
           "202": {
             "description": "Accepted",
+            "headers": {
+              "X-System-Warning": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemWarning"
+                }
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -657,6 +699,13 @@
         "responses": {
           "200": {
             "description": "OK",
+            "headers": {
+              "X-System-Warning": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemWarning"
+                }
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -795,6 +844,13 @@
         "responses": {
           "200": {
             "description": "OK",
+            "headers": {
+              "X-System-Warning": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemWarning"
+                }
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -922,7 +978,14 @@
         },
         "responses": {
           "204": {
-            "description": "No Content"
+            "description": "No Content",
+            "headers": {
+              "X-System-Warning": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemWarning"
+                }
+              }
+            }
           },
           "400": {
             "description": "| ExceptionCode       | ExceptionDescription                                                                           | Details |\n|---------------------|------------------------------------------------------------------------------------------------|---------|\n| 25008               | Certyfikat o podanym numerze seryjnym nie istnieje.                                            |         |\n| 25009               | Nie można odwołać wskazanego certyfikatu, ponieważ jest już odwołany, zablokowany lub nieważny.|         |\n| 21405 | Błąd walidacji danych wejściowych. | {treść błędu z walidatora} |",
@@ -1049,6 +1112,13 @@
         "responses": {
           "200": {
             "description": "OK",
+            "headers": {
+              "X-System-Warning": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemWarning"
+                }
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -1165,6 +1235,13 @@
         "responses": {
           "200": {
             "description": "OK",
+            "headers": {
+              "X-System-Warning": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemWarning"
+                }
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -1253,6 +1330,13 @@
         "responses": {
           "200": {
             "description": "OK",
+            "headers": {
+              "X-System-Warning": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemWarning"
+                }
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -1355,6 +1439,13 @@
         "responses": {
           "200": {
             "description": "OK",
+            "headers": {
+              "X-System-Warning": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemWarning"
+                }
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -1453,6 +1544,13 @@
         "responses": {
           "200": {
             "description": "OK",
+            "headers": {
+              "X-System-Warning": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemWarning"
+                }
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -1644,6 +1742,13 @@
         "responses": {
           "202": {
             "description": "Accepted",
+            "headers": {
+              "X-System-Warning": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemWarning"
+                }
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -1779,6 +1884,13 @@
         "responses": {
           "202": {
             "description": "Accepted",
+            "headers": {
+              "X-System-Warning": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemWarning"
+                }
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -1905,6 +2017,13 @@
         "responses": {
           "202": {
             "description": "Accepted",
+            "headers": {
+              "X-System-Warning": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemWarning"
+                }
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -2042,6 +2161,13 @@
         "responses": {
           "202": {
             "description": "Accepted",
+            "headers": {
+              "X-System-Warning": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemWarning"
+                }
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -2176,6 +2302,13 @@
         "responses": {
           "202": {
             "description": "Accepted",
+            "headers": {
+              "X-System-Warning": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemWarning"
+                }
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -2320,6 +2453,13 @@
         "responses": {
           "202": {
             "description": "Accepted",
+            "headers": {
+              "X-System-Warning": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemWarning"
+                }
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -2457,6 +2597,13 @@
         "responses": {
           "202": {
             "description": "Accepted",
+            "headers": {
+              "X-System-Warning": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemWarning"
+                }
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -2564,6 +2711,13 @@
         "responses": {
           "202": {
             "description": "Accepted",
+            "headers": {
+              "X-System-Warning": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemWarning"
+                }
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -2673,6 +2827,13 @@
         "responses": {
           "202": {
             "description": "Accepted",
+            "headers": {
+              "X-System-Warning": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemWarning"
+                }
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -2780,6 +2941,13 @@
         "responses": {
           "200": {
             "description": "OK",
+            "headers": {
+              "X-System-Warning": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemWarning"
+                }
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -2894,6 +3062,13 @@
         "responses": {
           "200": {
             "description": "OK",
+            "headers": {
+              "X-System-Warning": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemWarning"
+                }
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -3000,6 +3175,11 @@
           "200": {
             "description": "OK",
             "headers": {
+              "X-System-Warning": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemWarning"
+                }
+              },
               "x-ms-meta-hash": {
                 "description": "Skrót SHA-256 faktury, zakodowany w formacie Base64",
                 "schema": {
@@ -3180,6 +3360,13 @@
         "responses": {
           "200": {
             "description": "OK",
+            "headers": {
+              "X-System-Warning": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemWarning"
+                }
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -3405,6 +3592,13 @@
         "responses": {
           "201": {
             "description": "Created",
+            "headers": {
+              "X-System-Warning": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemWarning"
+                }
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -3522,6 +3716,13 @@
         "responses": {
           "200": {
             "description": "OK",
+            "headers": {
+              "X-System-Warning": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemWarning"
+                }
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -3778,6 +3979,13 @@
         "responses": {
           "200": {
             "description": "OK",
+            "headers": {
+              "X-System-Warning": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemWarning"
+                }
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -3921,6 +4129,13 @@
         "responses": {
           "200": {
             "description": "OK",
+            "headers": {
+              "X-System-Warning": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemWarning"
+                }
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -4068,6 +4283,13 @@
         "responses": {
           "200": {
             "description": "OK",
+            "headers": {
+              "X-System-Warning": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemWarning"
+                }
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -4222,6 +4444,13 @@
         "responses": {
           "200": {
             "description": "OK",
+            "headers": {
+              "X-System-Warning": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemWarning"
+                }
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -4365,6 +4594,13 @@
         "responses": {
           "200": {
             "description": "OK",
+            "headers": {
+              "X-System-Warning": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemWarning"
+                }
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -4505,6 +4741,11 @@
           "200": {
             "description": "OK",
             "headers": {
+              "X-System-Warning": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemWarning"
+                }
+              },
               "x-ms-meta-hash": {
                 "description": "Skrót SHA-256 dokumentu UPO, zakodowany w formacie Base64",
                 "schema": {
@@ -4629,6 +4870,11 @@
           "200": {
             "description": "OK",
             "headers": {
+              "X-System-Warning": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemWarning"
+                }
+              },
               "x-ms-meta-hash": {
                 "description": "Skrót SHA-256 dokumentu UPO, zakodowany w formacie Base64",
                 "schema": {
@@ -4753,6 +4999,11 @@
           "200": {
             "description": "OK",
             "headers": {
+              "X-System-Warning": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemWarning"
+                }
+              },
               "x-ms-meta-hash": {
                 "description": "Skrót SHA-256 dokumentu UPO, zakodowany w formacie Base64",
                 "schema": {
@@ -4880,6 +5131,13 @@
         "responses": {
           "202": {
             "description": "Accepted",
+            "headers": {
+              "X-System-Warning": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemWarning"
+                }
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -5035,6 +5293,13 @@
         "responses": {
           "200": {
             "description": "OK",
+            "headers": {
+              "X-System-Warning": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemWarning"
+                }
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -5166,6 +5431,13 @@
         "responses": {
           "200": {
             "description": "OK",
+            "headers": {
+              "X-System-Warning": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemWarning"
+                }
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -5284,7 +5556,14 @@
         ],
         "responses": {
           "204": {
-            "description": "No Content"
+            "description": "No Content",
+            "headers": {
+              "X-System-Warning": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemWarning"
+                }
+              }
+            }
           },
           "400": {
             "description": "| ExceptionCode | ExceptionDescription | Details |\n|-|-|-|\n| 21405 | Błąd walidacji danych wejściowych. | {treść błędu z walidatora} |",
@@ -5393,6 +5672,13 @@
         "responses": {
           "200": {
             "description": "OK",
+            "headers": {
+              "X-System-Warning": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemWarning"
+                }
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -5476,6 +5762,13 @@
         "responses": {
           "200": {
             "description": "OK",
+            "headers": {
+              "X-System-Warning": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemWarning"
+                }
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -5566,6 +5859,13 @@
         "responses": {
           "202": {
             "description": "Accepted",
+            "headers": {
+              "X-System-Warning": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemWarning"
+                }
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -5663,6 +5963,13 @@
         "responses": {
           "202": {
             "description": "Accepted",
+            "headers": {
+              "X-System-Warning": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemWarning"
+                }
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -5744,6 +6051,13 @@
         "responses": {
           "200": {
             "description": "OK",
+            "headers": {
+              "X-System-Warning": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemWarning"
+                }
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -5947,6 +6261,13 @@
         "responses": {
           "200": {
             "description": "OK",
+            "headers": {
+              "X-System-Warning": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemWarning"
+                }
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -6045,6 +6366,13 @@
         "responses": {
           "200": {
             "description": "OK",
+            "headers": {
+              "X-System-Warning": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemWarning"
+                }
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -6168,6 +6496,13 @@
         "responses": {
           "201": {
             "description": "Created",
+            "headers": {
+              "X-System-Warning": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemWarning"
+                }
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -6307,6 +6642,13 @@
         "responses": {
           "202": {
             "description": "Accepted",
+            "headers": {
+              "X-System-Warning": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemWarning"
+                }
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -6415,7 +6757,14 @@
         ],
         "responses": {
           "204": {
-            "description": "No Content"
+            "description": "No Content",
+            "headers": {
+              "X-System-Warning": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemWarning"
+                }
+              }
+            }
           },
           "400": {
             "description": "| ExceptionCode       | ExceptionDescription                                | Details                                                                    | \n|---------------------|-----------------------------------------------------|----------------------------------------------------------------------------|\n| 21173               | Brak sesji o wskazanym numerze referencyjnym.       | Sesja o numerze referencyjnym {referenceNumber} nie została odnaleziona.   |\n| 21180               | Status sesji nie pozwala na wykonanie operacji.     | Status sesji {code} uniemożliwia jej zamknięcie.                           |\n| 21405 | Błąd walidacji danych wejściowych. | {treść błędu z walidatora} |",
@@ -6546,6 +6895,13 @@
         "responses": {
           "201": {
             "description": "Created",
+            "headers": {
+              "X-System-Warning": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemWarning"
+                }
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -6663,7 +7019,14 @@
         ],
         "responses": {
           "204": {
-            "description": "No Content"
+            "description": "No Content",
+            "headers": {
+              "X-System-Warning": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemWarning"
+                }
+              }
+            }
           },
           "400": {
             "description": "| ExceptionCode       | ExceptionDescription                                                 | Details                                                                        | \n|---------------------|----------------------------------------------------------------------|--------------------------------------------------------------------------------|\n| 21157               | Nieprawidłowy rozmiar części pakietu.                                | Zadeklarowany rozmiar części '{ordinalNumber}' nie zgadza się z rzeczywistym.  | \n| 21173               | Brak sesji o wskazanym numerze referencyjnym.                        | Sesja o numerze referencyjnym {referenceNumber} nie została znaleziona.        |\n| 21180               | Status sesji nie pozwala na wykonanie operacji.                      | Status sesji {code} uniemożliwia jej zamknięcie.                               |\n| 21205               | Pakiet nie może być pusty.                                           | Nie przesłano zadeklarowanej '{ordinalNumber}' części pliku.                   | \n| 21208               | Czas oczekiwania na requesty upload lub finish został przekroczony.  | Sesja anulowana, przekroczony czas wysyłki.                                    |\n| 21405 | Błąd walidacji danych wejściowych. | {treść błędu z walidatora} |",
@@ -6799,6 +7162,13 @@
         "responses": {
           "200": {
             "description": "OK",
+            "headers": {
+              "X-System-Warning": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemWarning"
+                }
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -6974,6 +7344,13 @@
         "responses": {
           "200": {
             "description": "OK",
+            "headers": {
+              "X-System-Warning": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemWarning"
+                }
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -7148,6 +7525,13 @@
         "responses": {
           "200": {
             "description": "OK",
+            "headers": {
+              "X-System-Warning": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemWarning"
+                }
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -7320,6 +7704,13 @@
         "responses": {
           "200": {
             "description": "OK",
+            "headers": {
+              "X-System-Warning": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemWarning"
+                }
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -7465,6 +7856,13 @@
         "responses": {
           "200": {
             "description": "OK",
+            "headers": {
+              "X-System-Warning": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemWarning"
+                }
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -7623,6 +8021,13 @@
         "responses": {
           "200": {
             "description": "OK",
+            "headers": {
+              "X-System-Warning": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemWarning"
+                }
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -7795,6 +8200,13 @@
         "responses": {
           "200": {
             "description": "OK",
+            "headers": {
+              "X-System-Warning": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemWarning"
+                }
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -7968,6 +8380,13 @@
         "responses": {
           "200": {
             "description": "OK",
+            "headers": {
+              "X-System-Warning": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemWarning"
+                }
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -8092,7 +8511,7 @@
             "minimum": 0,
             "type": "array",
             "items": {
-              "pattern": "^((25[0-5]|(2[0-4]|1\\d|[1-9]|)\\d)\\.?\\b){4}$",
+              "pattern": "^((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9][0-9]|[0-9])\\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9][0-9]|[0-9])$",
               "type": "string"
             },
             "description": "Lista adresów IPv4 w notacji dziesiętnej kropkowanej, np. `192.168.0.10`.",
@@ -8103,7 +8522,7 @@
             "minimum": 0,
             "type": "array",
             "items": {
-              "pattern": "^((25[0-5]|(2[0-4]|1\\d|[1-9]|)\\d)\\.?\\b){4}-((25[0-5]|(2[0-4]|1\\d|[1-9]|)\\d)\\.?\\b){4}$",
+              "pattern": "^((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9][0-9]|[0-9])\\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9][0-9]|[0-9])-((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9][0-9]|[0-9])\\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9][0-9]|[0-9])$",
               "type": "string"
             },
             "description": "Lista adresów IPv4 podana w formie zakresu początek–koniec, oddzielonego pojedynczym myślnikiem, np. `10.0.0.1–10.0.0.254`.",
@@ -8114,7 +8533,7 @@
             "minimum": 0,
             "type": "array",
             "items": {
-              "pattern": "^((25[0-5]|(2[0-4]|1\\d|[1-9]|)\\d)\\.?\\b){4}\\/(0|[1-9]|1[0-9]|2[0-9]|3[0-2])$",
+              "pattern": "^((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9][0-9]|[0-9])\\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9][0-9]|[0-9])/(0|[1-9]|[12][0-9]|3[0-2])$",
               "type": "string"
             },
             "description": "Lista adresów IPv4 w notacji CIDR, np. `172.16.0.0/16`.",
@@ -8625,6 +9044,15 @@
             ],
             "description": "Skrót SHA256 pliku paczki, zakodowany w formacie Base64."
           },
+          "compressionType": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CompressionType"
+              }
+            ],
+            "description": "Typ kompresji pliku paczki. Obsługiwane typy: Zip oraz TarGz. Domyślna kompresja to Zip.",
+            "nullable": true
+          },
           "fileParts": {
             "maxItems": 50,
             "minItems": 1,
@@ -9011,6 +9439,13 @@
         ],
         "type": "string",
         "description": "| Wartość | Opis |\n| --- | --- |\n| InProgress | Sesja aktywna. |\n| Succeeded | Sesja przetworzona poprawnie.            W trakcie przetwarzania sesji nie wystąpiły żadne błędy, ale część faktur nadal mogła zostać odrzucona. |\n| Failed | Sesja nie przetworzona z powodu błędów.            Na etapie rozpoczynania lub kończenia sesji wystąpiły błędy, które nie pozwoliły na jej poprawne przetworzenie. |\n| Cancelled | Sesja anulowania.            Został przekroczony czas na wysyłkę w sesji wsadowej, lub nie przesłano żadnych faktur w sesji interaktywnej. |\n"
+      },
+      "CompressionType": {
+        "enum": [
+          "Zip",
+          "TarGz"
+        ],
+        "type": "string"
       },
       "CurrencyCode": {
         "enum": [
@@ -11261,6 +11696,15 @@
               }
             ],
             "description": "Zestaw filtrów do wyszukiwania faktur."
+          },
+          "compressionType": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CompressionType"
+              }
+            ],
+            "description": "Typ kompresji. Obsługiwane typy: Zip oraz TarGz. Domyślna kompresja to Zip.",
+            "nullable": true
           }
         }
       },
@@ -11592,7 +12036,8 @@
               {
                 "$ref": "#/components/schemas/InvoiceMetadataThirdSubjectIdentifier"
               }
-            ]
+            ],
+            "description": "Identyfikator podmiotu trzeciego.\n| Type | Value |\n| --- | --- |\n| Nip | 10 cyfrowy numer NIP |\n| InternalId | Identyfikator wewnętrzny, składający się z numeru NIP i 5 cyfr. |\n| VatUe | Identyfikator VAT UE podmiotu unijnego. |\n| Other | Inny identyfikator|\n| None  | Brak identyfikatora podmiotu trzeciego |"
           },
           "name": {
             "maxLength": 512,
@@ -11627,7 +12072,8 @@
             "description": "Wartość identyfikatora podmiotu trzeciego.",
             "nullable": true
           }
-        }
+        },
+        "description": "Identyfikator podmiotu trzeciego.\n| Type | Value |\n| --- | --- |\n| Nip | 10 cyfrowy numer NIP |\n| InternalId | Identyfikator wewnętrzny, składający się z numeru NIP i 5 cyfr |\n| VatUe | Identyfikator VAT UE podmiotu unijnego |\n| Other | Inny identyfikator |\n| None  | Brak identyfikatora podmiotu trzeciego |"
       },
       "InvoicePackage": {
         "required": [
@@ -14894,6 +15340,10 @@
           "Nip"
         ],
         "type": "string"
+      },
+      "SystemWarning": {
+        "type": "string",
+        "description": "Ostrzeżenie techniczne dla systemu integratora. Ostrzeżenie nie wpływa na bieżący wynik operacji. Wartość nagłówka jest normalizowana z użyciem ASCII folding.\n\nFormat:\n`[code]: message | [code]: message`\n\nRegex pojedynczego ostrzeżenia: `\\[(?<code>[^\\]]+)\\]: (?<message>[^|]+)`"
       },
       "ThirdSubjectIdentifierType": {
         "enum": [
