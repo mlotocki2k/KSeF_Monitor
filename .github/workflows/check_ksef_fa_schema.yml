@@ -24,6 +24,14 @@ jobs:
             source_url: "http://crd.gov.pl/wzor/2025/06/25/13775/schemat.xsd"
             github_url: "https://raw.githubusercontent.com/CIRFMF/ksef-docs/main/faktury/schemy/FA/schemat_FA(3)_v1-0E.xsd"
             local_file: "spec/schemat_FA(3)_v1-0E.xsd"
+          - schema_name: "FA(2)_v1-0E"
+            source_url: "http://crd.gov.pl/wzor/2023/06/29/12648/schemat.xsd"
+            github_url: "https://raw.githubusercontent.com/CIRFMF/ksef-docs/main/faktury/schemy/FA/schemat_FA(2)_v1-0E.xsd"
+            local_file: "spec/schemat_FA(2)_v1-0E.xsd"
+          - schema_name: "FA_RR(1)_v1-1E"
+            source_url: "http://crd.gov.pl/wzor/2026/03/06/14189/schemat.xsd"
+            github_url: "https://raw.githubusercontent.com/CIRFMF/ksef-docs/main/faktury/schemy/RR/schemat_FA_RR(1)_v1-1E.xsd"
+            local_file: "spec/schemat_FA_RR(1)_v1-1E.xsd"
 
     steps:
       - name: Checkout test branch
@@ -226,17 +234,21 @@ jobs:
         run: |
           set -euo pipefail
 
-          # List all FA schemas in CIRFMF/ksef-docs
-          SCHEMAS=$(curl -fsSL "https://api.github.com/repos/CIRFMF/ksef-docs/contents/faktury/schemy/FA" 2>/dev/null \
-            | python3 -c "
+          # List all FA + RR schemas in CIRFMF/ksef-docs
+          SCHEMAS=""
+          for dir in "faktury/schemy/FA" "faktury/schemy/RR"; do
+            DIR_SCHEMAS=$(curl -fsSL "https://api.github.com/repos/CIRFMF/ksef-docs/contents/${dir}" 2>/dev/null \
+              | python3 -c "
           import sys, json
           items = json.load(sys.stdin)
           for item in items:
               if item['name'].endswith('.xsd'):
                   print(item['name'])
           " 2>/dev/null || echo "")
+            SCHEMAS="${SCHEMAS} ${DIR_SCHEMAS}"
+          done
 
-          KNOWN_SCHEMAS="schemat_FA(3)_v1-0E.xsd schemat_FA(2)_v1-0E.xsd"
+          KNOWN_SCHEMAS="schemat_FA(3)_v1-0E.xsd schemat_FA(2)_v1-0E.xsd schemat_FA_RR(1)_v1-1E.xsd"
           NEW_FOUND=""
 
           for schema in $SCHEMAS; do

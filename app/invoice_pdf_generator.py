@@ -182,6 +182,7 @@ class InvoicePDFGenerator:
         story.append(Spacer(1, 6*mm))
         story.extend(self._parties(data))
         story.extend(self._podmiot3_section(data))
+        story.extend(self._podmiot_upowazniony_section(data))
         story.extend(self._correction_info(data))
         story.append(Spacer(1, 6*mm))
         story.extend(self._items_table(data))
@@ -315,10 +316,26 @@ class InvoicePDFGenerator:
             if p.get('adres_l2'):
                 h += f' {e(p["adres_l2"])}'
             h += '<br/>'
+        koresp = p.get('adres_koresp') or {}
+        if koresp.get('adres_l1'):
+            h += f'Adres koresp.: {e(koresp["adres_l1"])}'
+            if koresp.get('adres_l2'):
+                h += f' {e(koresp["adres_l2"])}'
+            h += '<br/>'
         if p.get('nr_eori'):
             h += f'EORI: {e(p["nr_eori"])}<br/>'
+        if p.get('id_wew'):
+            h += f'ID wewn.: {e(p["id_wew"])}<br/>'
+        if p.get('brak_id') == '1':
+            h += 'Brak identyfikatora podatkowego<br/>'
         if p.get('gln'):
             h += f'GLN: {e(p["gln"])}<br/>'
+        if p.get('gv') == '1':
+            h += 'Członek grupy VAT<br/>'
+        if p.get('jst') == '1':
+            h += 'Jednostka podrzędna JST<br/>'
+        if p.get('id_nabywcy'):
+            h += f'ID nabywcy: {e(p["id_nabywcy"])}<br/>'
         if p.get('email'):
             h += f'Email: {e(p["email"])}<br/>'
         if p.get('telefon'):
@@ -519,12 +536,19 @@ class InvoicePDFGenerator:
         for termin in pay.get('terminy', []):
             add('Termin p\u0142atno\u015bci:', termin.get('termin', ''))
 
+        # KSeF payment id / payment link
+        if pay.get('ipksef'):
+            add('Identyfikator płatności KSeF:', pay['ipksef'])
+        if pay.get('link_do_platnosci'):
+            add('Link do płatności:', pay['link_do_platnosci'])
+
         # Bank accounts
         for r in pay.get('rachunki', []):
             nr = r.get('nr_rb', '')
             if r.get('swift'):
                 nr += f' (SWIFT: {r["swift"]})'
-            add('Rachunek bankowy:', nr)
+            label = 'Rachunek bankowy (własny banku):' if r.get('wlasny') == '1' else 'Rachunek bankowy:'
+            add(label, nr)
             if r.get('nazwa_banku'):
                 add('Bank:', r['nazwa_banku'])
             if r.get('opis'):
@@ -590,6 +614,16 @@ class InvoicePDFGenerator:
                     Paragraph(txt, self.styles['Small'])
                 ])
 
+        # Negation markers (explicit "brak ...")
+        for key, label in (('p19n', 'Brak zwolnienia od podatku'),
+                            ('p_pmarzyn', 'Brak procedury marży'),
+                            ('p22n', 'Brak dostawy nowych środków transportu')):
+            if ann.get(key) == '1':
+                rows.append([
+                    Paragraph(f'{label}:', self.styles['SmallBold']),
+                    Paragraph('Tak', self.styles['Small'])
+                ])
+
         # Exemption
         if ann.get('p19') == '1':
             rows.append([
@@ -649,6 +683,12 @@ class InvoicePDFGenerator:
                     parts.append(f'Poj.: {veh["pojemnosc"]} cm³')
                 if veh.get('przebieg'):
                     parts.append(f'Przebieg: {veh["przebieg"]} km')
+                if veh.get('moc'):
+                    parts.append(f'Moc: {veh["moc"]}')
+                if veh.get('liczba_miejsc'):
+                    parts.append(f'Miejsca: {veh["liczba_miejsc"]}')
+                if veh.get('ladownosc'):
+                    parts.append(f'Ładowność: {veh["ladownosc"]}')
                 if parts:
                     rows.append([
                         Paragraph('  Pojazd:', self.styles['Small']),
@@ -684,11 +724,24 @@ class InvoicePDFGenerator:
                     f'Udział: {self._rl_escape(p["udzial"])}%', self.styles['Small']))
         return elements
 
+    def _podmiot_upowazniony_section(self, data: Dict) -> List:
+        """Render PodmiotUpowazniony (authorized entity)."""
+        pu = data.get('podmiot_upowazniony', {})
+        if not pu or not pu.get('nazwa'):
+            return []
+        rola_map = {'1': 'Organ egzekucyjny', '2': 'Komornik sądowy',
+                    '3': 'Przedstawiciel podatkowy'}
+        rola = rola_map.get(pu.get('rola_pu', ''), '')
+        title = f'<b>PODMIOT UPOWAŻNIONY</b>{f" — {rola}" if rola else ""}'
+        return [Spacer(1, 3*mm), self._party_html(title, pu)]
+
     def _correction_info(self, data: Dict) -> List:
         """Render correction invoice details."""
         h = data.get('header', {})
         dane = data.get('dane_korygowanej', [])
-        if not h.get('przyczyna_korekty') and not dane:
+        pk = data.get('podmiot_korekty', {})
+        if (not h.get('przyczyna_korekty') and not dane
+                and not h.get('nr_fa_korygowany') and not pk):
             return []
         elements = [Spacer(1, 3*mm),
                      Paragraph('Dane korekty', self.styles['Section'])]
@@ -706,14 +759,38 @@ class InvoicePDFGenerator:
                 Paragraph(self._rl_escape(typ_map.get(h['typ_korekty'], h['typ_korekty'])),
                            self.styles['Small'])
             ])
+        if h.get('nr_fa_korygowany'):
+            rows.append([
+                Paragraph('Poprawny nr faktury korygowanej:', self.styles['SmallBold']),
+                Paragraph(self._rl_escape(h['nr_fa_korygowany']), self.styles['Small'])
+            ])
+        if h.get('okres_fa_korygowanej'):
+            rows.append([
+                Paragraph('Okres faktury korygowanej:', self.styles['SmallBold']),
+                Paragraph(self._rl_escape(h['okres_fa_korygowanej']), self.styles['Small'])
+            ])
         for d in dane:
             nr = self._rl_escape(d.get('nr_ksef') or d.get('nr_faktury', ''))
             data_txt = self._rl_escape(d.get('data_wyst', ''))
+            suffix = ' — wystawiona poza KSeF' if d.get('nr_ksef_n') == '1' else ''
             rows.append([
                 Paragraph('Faktura korygowana:', self.styles['SmallBold']),
-                Paragraph(f'{nr} ({data_txt})' if data_txt else nr,
+                Paragraph(f'{nr} ({data_txt}){suffix}' if data_txt else f'{nr}{suffix}',
                            self.styles['Small'])
             ])
+        for key, label in (('seller_k', 'Sprzedawca przed korektą:'),
+                            ('buyer_k', 'Nabywca przed korektą:')):
+            pkd = pk.get(key)
+            if pkd:
+                txt = self._rl_escape(pkd.get('nazwa', ''))
+                if pkd.get('nip'):
+                    txt += f' (NIP: {self._rl_escape(pkd["nip"])})'
+                if pkd.get('adres_l1'):
+                    txt += f', {self._rl_escape(pkd["adres_l1"])}'
+                rows.append([
+                    Paragraph(label, self.styles['SmallBold']),
+                    Paragraph(txt, self.styles['Small'])
+                ])
         if rows:
             t = Table(rows, colWidths=[50*mm, 136*mm])
             t.setStyle(TableStyle([
@@ -935,6 +1012,14 @@ class InvoicePDFGenerator:
                 add('  Rozpoczęcie:', tr['data_rozp'])
             if tr.get('data_zak'):
                 add('  Zakończenie:', tr['data_zak'])
+            for akey, alabel in (('wysylka_z', '  Wysyłka z:'),
+                                  ('wysylka_przez', '  Wysyłka przez:'),
+                                  ('wysylka_do', '  Wysyłka do:'),
+                                  ('adres_przewoznika', '  Adres przewoźnika:')):
+                adr = tr.get(akey) or {}
+                if adr.get('adres_l1'):
+                    kraj = f' ({adr["kod_kraju"]})' if adr.get('kod_kraju') else ''
+                    add(alabel, f'{adr["adres_l1"]}{kraj}')
         if wt.get('podmiot_posredniczacy') == '1':
             add('Podmiot pośredniczący:', 'Tak (art. 22 ust. 2d)')
 
@@ -974,6 +1059,19 @@ class InvoicePDFGenerator:
                     parts.append(f'BDO: {r["bdo"]}')
                 if parts:
                     elements.append(Paragraph(self._rl_escape(' | '.join(parts)), self.styles['Small']))
+
+        # Warehouse docs / excise refund / software system
+        extras = []
+        if h.get('wz'):
+            extras.append(f'Dokumenty magazynowe (WZ): {", ".join(h["wz"])}')
+        if h.get('zwrot_akcyzy') == '1':
+            extras.append('Informacja dla rolników ubiegających się o zwrot podatku akcyzowego')
+        if h.get('system_info'):
+            extras.append(f'System: {h["system_info"]}')
+        if extras:
+            elements.append(Spacer(1, 2*mm))
+            for line in extras:
+                elements.append(Paragraph(self._rl_escape(line), self.styles['Small']))
 
         # Creation timestamp
         if h.get('data_wytworzenia'):

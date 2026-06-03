@@ -102,7 +102,7 @@ chmod +x setup.sh && ./setup.sh
 - ✅ Multi-schema parsing: FA(3), FA(2), FA_RR, PEF (PEPPOL UBL), UNKNOWN fallback (v0.5)
 - ✅ Generate PDF with QR code, Polish characters
 - ✅ Three rendering engines: CIRFMF microservice (v0.5) → xhtml2pdf → ReportLab fallback
-- ✅ FA_RR dedicated PDF template (rolnik, PESEL, oświadczenie, KwotaVatRR) (v0.5)
+- ✅ FA_RR(1) v1-1E dedicated PDF template (rolnik ryczałtowy: FakturaRRWiersz, zryczałtowany zwrot podatku, dokumenty zapłaty) — przepisany wg realnego schematu (v0.6)
 - ✅ Integrated with main app (config: `storage.save_pdf`)
 - ✅ Configurable output directory with folder structure patterns (v0.3)
 - ✅ Safe file writing: skip/rename/overwrite strategy (v0.3)
@@ -222,9 +222,9 @@ KSeF_Monitor/
 │   ├── spec/openapi.json           # KSeF API v2.2.0 OpenAPI spec (production)
 │   ├── spec/openapi-test.json      # KSeF API OpenAPI spec (test)
 │   ├── spec/openapi-demo.json      # KSeF API OpenAPI spec (demo)
-│   ├── spec/schemat_FA(3)_v1-0E.xsd  # FA(3) invoice XSD schema
-│   ├── spec/schemat_FA(2)_v1-0E.xsd  # FA(2) XSD stub (v0.5)
-│   └── spec/schemat_FA_RR_v1-0E.xsd  # FA_RR XSD stub (v0.5)
+│   ├── spec/schemat_FA(3)_v1-0E.xsd  # FA(3) invoice XSD (real)
+│   ├── spec/schemat_FA(2)_v1-0E.xsd  # FA(2) invoice XSD (real, v0.6)
+│   └── spec/schemat_FA_RR(1)_v1-1E.xsd  # FA_RR(1) v1-1E invoice XSD (real, v0.6)
 │
 ├── 🐳 Docker
 │   ├── Dockerfile                  # Image definition (OCI labels, healthcheck)
@@ -372,7 +372,7 @@ Before running in production:
 - ✅ Web UI: dashboard, invoice list (filters/sort/pagination/bulk PDF), invoice detail, initial load view (v0.5)
 - ✅ KSeF API status widget in dashboard (real-time availability + latency probe) (v0.5)
 - ✅ Multi-schema XML parser: FA(3), FA(2), FA_RR, PEF (PEPPOL UBL), UNKNOWN fallback (v0.5)
-- ✅ FA_RR PDF template (Faktura VAT RR — rolnik ryczałtowy, PESEL, oświadczenie) (v0.5)
+- ✅ FA_RR(1) v1-1E PDF template (Faktura VAT RR — rolnik ryczałtowy, zryczałtowany zwrot podatku) — przepisany wg realnego schematu (v0.6)
 - ✅ Optional CIRFMF ksef-pdf-generator microservice integration (v0.5)
 - ✅ **581 unit tests** (v0.5)
 

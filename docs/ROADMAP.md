@@ -234,10 +234,10 @@ Cel: uniwersalny monitor i generator PDF dla każdego typu faktury w KSeF — ni
 - [x] Auto-detekcja schematu z namespace XML (bez konfiguracji — `detect_schema_type()`)
 - [x] Parser FA(2) — mapowanie pól na wspólny model danych (obsługa obu namespace URI)
 - [x] Parser PEF(3) / PEF_KOR(3) — `PEFInvoiceXMLParser` (UBL CBC/CAC namespaces)
-- [x] Parser FA_RR(1) — `FA_RRInvoiceXMLParser` (rolnik PESEL, KwotaVatRR, oświadczenie)
+- [x] Parser FA_RR(1) — `FA_RRInvoiceXMLParser` (⚠️ w v0.5 niefunkcjonalny: zły namespace + zmyślone pola; przepisany w v0.6 — patrz niżej)
 - [x] Template PDF per schemat — `invoice_pdf_fa_rr.html.j2` dla FA_RR, PEF → ReportLab minimal
 - [x] Fallback: nieznany schemat → zapis XML bez PDF + warning w logu i powiadomieniu
-- [x] Specyfikacje XSD stubs: `spec/schemat_FA(2)_v1-0E.xsd`, `spec/schemat_FA_RR_v1-0E.xsd`
+- [x] Specyfikacje XSD stubs: `spec/schemat_FA(2)_v1-0E.xsd`, `spec/schemat_FA_RR_v1-0E.xsd` (zastąpione realnymi XSD w v0.6)
 - [x] Aktualizacja szablonów powiadomień — pole `schema_type` w webhook.json.j2 i ios_push.json.j2
 - [x] Dokumentacja: rozszerzenie `PDF_TEMPLATES.md` o nowe schematy i CIRFMF integrację
 - [x] 50 nowych testów (`test_multi_schema_parser.py`)
@@ -442,6 +442,29 @@ _Pełna lista zmian: `CHANGELOG.md` [0.5.3]. Siedem defektów wykrytych w pre-me
 - [ ] (Opcjonalnie) Endpointy `/testdata/rate-limits` — wrapper do testów integracyjnych pod customowy profil limitów
 - [ ] (Opcjonalnie) Wsparcie `X-Error-Format: problem-details` dla 400/429 — dziś `_extract_api_error_details` parsuje `application/json`; nowy header daje spójny `application/problem+json` wszędzie
 - [ ] Test `tests/test_ksef_client.py` — snapshot nowego `PublicKeyCertificate` schema (pola `certificateId`, `publicKeyId` jako wymagane w response)
+
+### 6) Pełne pokrycie schematów faktur + FA_RR rewrite ✅
+**Cel:** audyt pokrycia pól FA(3) względem opublikowanego XSD, przepisanie FA_RR wg realnego schematu, realne pliki XSD zamiast stubów. _Pełna lista zmian: `CHANGELOG.md` [0.6.0]._
+
+**Schematy (`spec/`):**
+| Schema | Wersja | Namespace | Status |
+|---|---|---|---|
+| FA(3) | v1-0E | `…/2025/06/25/13775/` | aktualny (sha `b646b6b…`), bez zmian |
+| FA(2) | v1-0E | `…/2023/06/29/12648/` | stub → realny XSD |
+| FA_RR(1) | v1-1E | `…/2026/03/06/14189/` | stub → realny XSD; stary `FA_RR_v1-0E` usunięty |
+
+- [x] **FA_RR rewrite** — stary parser niefunkcjonalny: zarejestrowane namespace'y (`…/12978/`, `…/13836/`) nie istnieją na CRD, a wszystkie pola RR (`KwotaVatRR`, `P_15RR`, `OswiadczenieDostawcy`…) były zmyślone. `FA_RRInvoiceXMLParser` przepisany wg realnej struktury: `FakturaRR` / `FakturaRRWiersz`, pola `P_4A-C`/`P_5`/`P_6A-C`/`P_7-11`/`P_11_1/2`/`P_12_1/2`, `DokumentZaplaty`, `NrKontrahenta`, korekty (`Podmiot1K/2K`, `NrFaKorygowany`, `NrKSeF/N`). Role: Podmiot1 = nabywca (skupujący), Podmiot2 = rolnik. Template `invoice_pdf_fa_rr.html.j2` przepisany.
+- [x] **FA(3) — rozszerzone pokrycie** (55 dotąd pomijanych elementów; render w jinja + ReportLab fallback):
+  - korekty: `Podmiot1K`/`Podmiot2K`, `NrFaKorygowany`, `OkresFaKorygowanej`, `NrKSeF`/`NrKSeFN`
+  - znaczniki: `GV`, `JST`, `StatusInfoPodatnika`, `SystemInfo`, `BrakID`, `IDWew`, `IDNabywcy`, `AdresKoresp`
+  - `PodmiotUpowazniony` (+`RolaPU`/`EmailPU`/`TelefonPU`)
+  - płatność: `IPKSeF`, `LinkDoPlatnosci`, `RachunekWlasnyBanku`; `WZ`, `ZwrotAkcyzy`
+  - transport: `WysylkaZ`/`Przez`/`Do`, `AdresPrzewoznika`
+  - negacje: `P_19N`, `P_PMarzyN`, `P_22N`; pełne pola pojazdów `P_22B2-4`/`P_22BT`/`P_22C1`/`P_22D1`/`P_NrWierszaNST`
+  - `ZamowienieWiersz` warianty Z (`UU_IDZ`, `P_12Z_XII`, `GTINZ`…), `Zalacznik/Tabela`
+  - render gap: flagi `FP`/`TP` dodane do szablonu
+- [x] **Drift detection** — `check_ksef_fa_schema.yml` matryca rozszerzona o FA(2) v1-0E i FA_RR(1) v1-1E (CRD + CIRFMF); skan nowych wersji obejmuje `faktury/schemy/FA` + `faktury/schemy/RR`
+- [x] Testy — `test_multi_schema_parser.py`: FA_RR przepisane na realny schemat + `TestFA3ExtendedFields` (61 passed)
 
 **Zależności:** v0.5
 **DoD:** monitor wykrywa nowe faktury i wysyła push w jednym tanim API call; artefakty pobierane niezależnie; konfigurowalny interwał pollingu; UPO faktur sprzedażowych pobierane i zapisywane gdy `fetch_upo=true`; klient wysyła `publicKeyId` w `/auth/ksef-token` przed PRD 11.05.2026; specy demo i prod zaktualizowane; testy aktualne.

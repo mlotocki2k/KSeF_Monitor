@@ -1,4 +1,4 @@
-# KSeF Monitor v0.5.3
+# KSeF Monitor v0.6.0
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
@@ -540,7 +540,7 @@ Zarządzanie: `python db_admin.py status|invoices|stats|errors|...` — szczegó
 
 ### Sekcja `api`
 
-REST API (FastAPI) + browser UI (v0.5.3).
+REST API (FastAPI) + browser UI (v0.6.0).
 
 | Pole | Default | Opis |
 |---|---|---|

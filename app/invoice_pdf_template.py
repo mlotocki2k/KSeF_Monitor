@@ -284,6 +284,7 @@ class InvoicePDFTemplateRenderer:
             'header': header,
             'seller': invoice_data.get('seller', {}),
             'buyer': invoice_data.get('buyer', {}),
+            'farmer': invoice_data.get('farmer', {}),  # FA_RR: Podmiot2 (rolnik)
             'items': items,
             'vat_summary': vat_summary,
             'vat_rows': vat_rows,
@@ -291,6 +292,8 @@ class InvoicePDFTemplateRenderer:
             'payment': invoice_data.get('payment', {}),
             'annotations': invoice_data.get('annotations', {}),
             'podmiot3': invoice_data.get('podmiot3', []),
+            'podmiot_upowazniony': invoice_data.get('podmiot_upowazniony', {}),
+            'podmiot_korekty': invoice_data.get('podmiot_korekty', {}),
             'dodatkowy_opis': invoice_data.get('dodatkowy_opis', []),
             'dane_korygowanej': invoice_data.get('dane_korygowanej', []),
             'faktury_zaliczkowe': invoice_data.get('faktury_zaliczkowe', []),

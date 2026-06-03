@@ -2,6 +2,66 @@
 
 All notable changes to KSeF Monitor are documented here.
 
+## [0.6.0] — 2026-06-03 (invoice schema coverage + FA_RR rewrite)
+
+Full audit of FA(3) v1-0E field coverage against the published XSD, a ground-up
+rewrite of the FA_RR parser/template against the real schema, and real XSD files
+replacing the previous reference stubs. All schema sources verified against
+`crd.gov.pl` (CRD) and `CIRFMF/ksef-docs`.
+
+### Schemas (`spec/`)
+- **FA(3) v1-0E** — confirmed current; local copy identical to CRD + CIRFMF
+  (`sha256 b646b6b…`). No change.
+- **FA(2) v1-0E** — reference stub replaced with the real published XSD
+  (namespace `…/2023/06/29/12648/`).
+- **FA_RR** — the old `schemat_FA_RR_v1-0E.xsd` stub described a schema that does
+  not exist. Replaced with the real **FA_RR(1) v1-1E** XSD
+  (`spec/schemat_FA_RR(1)_v1-1E.xsd`, namespace `…/2026/03/06/14189/`).
+
+### FA_RR parser — full rewrite (was non-functional)
+- The registered FA_RR namespaces (`…/12978/`, `…/13836/`) do not exist on CRD,
+  so real RR invoices never reached `FA_RRInvoiceXMLParser` (they fell through to
+  the FA2 path). All FA_RR-specific field names in the old parser were invented
+  (`KwotaVatRR`, `StawkaVatRR`, `P_15RR`, `OswiadczenieDostawcy`, …) — none exist
+  in the real schema.
+- `_FA_RR_NAMESPACES` now includes the real `…/14189/` (old IDs kept only as
+  historical aliases). Parser rebuilt around the real structure: `FakturaRR`
+  body, `FakturaRRWiersz` line items, fields `P_4A/P_4B/P_4C`, `P_5`, `P_6A-C`,
+  `P_7-P_11`, `P_11_1/2`, `P_12_1/2`, `DokumentZaplaty`, `NrKontrahenta`,
+  correction (`Podmiot1K/2K`, `NrFaKorygowany`, `NrKSeF/N`). Roles: Podmiot1 =
+  nabywca (skupujący/issuer), Podmiot2 = rolnik (dostawca).
+- `invoice_pdf_fa_rr.html.j2` rewritten to match (items, totals, payment
+  documents, correction, rozliczenie).
+
+### FA(3) — expanded field coverage
+Parser (`invoice_xml_parser.py`) now extracts the previously-dropped elements,
+rendered in both the xhtml2pdf template and the ReportLab fallback:
+- **Corrections:** `Podmiot1K`/`Podmiot2K` (party data before correction),
+  `NrFaKorygowany`, `OkresFaKorygowanej`, `NrKSeF`/`NrKSeFN` markers.
+- **Markers:** `GV` (VAT group), `JST`, `StatusInfoPodatnika`, `SystemInfo`,
+  `BrakID`, `IDWew`, `IDNabywcy`, `AdresKoresp`.
+- **Authorized entity:** `PodmiotUpowazniony` (+ `RolaPU`, `EmailPU`, `TelefonPU`).
+- **Payment:** `IPKSeF`, `LinkDoPlatnosci`, `RachunekWlasnyBanku`; `WZ`,
+  `ZwrotAkcyzy` in header.
+- **Transport:** `WysylkaZ`/`WysylkaPrzez`/`WysylkaDo`, `AdresPrzewoznika`.
+- **Negations:** `P_19N`, `P_PMarzyN`, `P_22N`.
+- **New means of transport:** `P_22B2-B4`, `P_22BT`, `P_22C1`, `P_22D1`,
+  `P_NrWierszaNST`.
+- **Order lines (advance corrections):** `UU_IDZ`, `P_12Z_XII`, `P_12Z_Zal_15`,
+  `GTINZ`, `PKWiUZ`, `CNZ`, `PKOBZ`, `GTUZ`, `ProceduraZ`, `KwotaAkcyzyZ`,
+  `StanPrzedZ`.
+- **Attachments:** `Zalacznik/Tabela` (column headers, rows, totals).
+- Render gap closed: `FP` and `TP` flags now shown in the template.
+
+### Spec drift detection
+- `.github/workflows/check_ksef_fa_schema.yml` matrix extended from FA(3)-only to
+  also cover **FA(2) v1-0E** and **FA_RR(1) v1-1E** (CRD + CIRFMF cross-check).
+  New-version scan now walks both `faktury/schemy/FA` and `faktury/schemy/RR`.
+
+### Tests
+- `test_multi_schema_parser.py`: FA_RR tests rewritten against the real schema;
+  new `TestFA3ExtendedFields` class covering the added fields. 61 passed.
+
 ## [0.5.3] — 2026-05-06 (post-0.5.2 hotfix bundle)
 
 Seven defects surfaced during pre-merge user testing of the 0.5.2 build.

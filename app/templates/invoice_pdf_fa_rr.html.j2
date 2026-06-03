@@ -180,10 +180,10 @@
         <td class="info-value">{{ header.p1m }}</td>
     </tr>
     {% endif %}
-    {% if fa_rr.data_odbioru %}
+    {% if header.p4a %}
     <tr>
-        <td class="info-label">Data odbioru produktów:</td>
-        <td class="info-value">{{ fa_rr.data_odbioru }}</td>
+        <td class="info-label">Data dokonania nabycia:</td>
+        <td class="info-value">{{ header.p4a }}</td>
     </tr>
     {% endif %}
     {% if header.kod_waluty %}
@@ -194,34 +194,52 @@
     {% endif %}
 </table>
 
-<!-- Parties: skupujący | rolnik -->
+<!-- Parties: nabywca (skupujący) | rolnik (dostawca) -->
+{% macro rr_party(p, title) %}
+<p class="party-title">{{ title }}</p>
+<p class="party-name">{{ p.nazwa or "—" }}</p>
+{% if p.nip %}<p class="party-detail">NIP: <strong>{{ p.nip }}</strong></p>{% endif %}
+{% if p.nr_id %}<p class="party-detail">ID: {{ p.nr_id }}</p>{% endif %}
+{% if p.kod_kraju %}<p class="party-detail">Kraj: {{ p.kod_kraju }}</p>{% endif %}
+{% if p.adres_l1 %}<p class="party-detail">{{ p.adres_l1 }}{% if p.adres_l2 %}, {{ p.adres_l2 }}{% endif %}</p>{% endif %}
+{% if p.nr_klienta %}<p class="party-detail">Nr kontrahenta: {{ p.nr_klienta }}</p>{% endif %}
+{% if p.email %}<p class="party-detail">Email: {{ p.email }}</p>{% endif %}
+{% if p.telefon %}<p class="party-detail">Tel: {{ p.telefon }}</p>{% endif %}
+{% endmacro %}
 <table class="parties-table">
     <tr>
-        <td class="party-cell">
-            <p class="party-title">Skupujący (nabywca)</p>
-            <p class="party-name">{{ buyer.nazwa or "—" }}</p>
-            {% if buyer.nip %}<p class="party-detail">NIP: <strong>{{ buyer.nip }}</strong></p>{% endif %}
-            {% if buyer.kod_kraju %}<p class="party-detail">Kraj: {{ buyer.kod_kraju }}</p>{% endif %}
-            {% if buyer.adres_l1 %}
-            <p class="party-detail">
-                {{ buyer.adres_l1 }}{% if buyer.adres_l2 %}, {{ buyer.adres_l2 }}{% endif %}
-            </p>
-            {% endif %}
-        </td>
-        <td class="party-cell">
-            <p class="party-title">Rolnik ryczałtowy (dostawca)</p>
-            <p class="party-name">{{ seller.nazwa or "—" }}</p>
-            {% if seller.nip %}<p class="party-detail">NIP: <strong>{{ seller.nip }}</strong></p>{% endif %}
-            {% if fa_rr.farmer_pesel %}<p class="party-detail">PESEL: <strong>{{ fa_rr.farmer_pesel }}</strong></p>{% endif %}
-            {% if seller.kod_kraju %}<p class="party-detail">Kraj: {{ seller.kod_kraju }}</p>{% endif %}
-            {% if seller.adres_l1 %}
-            <p class="party-detail">
-                {{ seller.adres_l1 }}{% if seller.adres_l2 %}, {{ seller.adres_l2 }}{% endif %}
-            </p>
-            {% endif %}
-        </td>
+        <td class="party-cell">{{ rr_party(buyer, 'Nabywca (skupujący)') }}</td>
+        <td class="party-cell">{{ rr_party(farmer, 'Rolnik ryczałtowy (dostawca)') }}</td>
     </tr>
 </table>
+
+<!-- Correction info -->
+{% if header.przyczyna_korekty or dane_korygowanej or header.nr_fa_korygowany or podmiot_korekty %}
+<div class="rr-section">
+    <p class="rr-section-title">Dane korekty</p>
+    <table class="rr-table">
+        {% if header.przyczyna_korekty %}
+        <tr><td class="rr-label">Przyczyna korekty:</td><td class="rr-value">{{ header.przyczyna_korekty }}</td></tr>
+        {% endif %}
+        {% if header.typ_korekty %}
+        {% set typ_map = {'1': 'Korekta wartości', '2': 'Korekta danych', '3': 'Korekta wartości i danych'} %}
+        <tr><td class="rr-label">Typ korekty:</td><td class="rr-value">{{ typ_map.get(header.typ_korekty, header.typ_korekty) }}</td></tr>
+        {% endif %}
+        {% if header.nr_fa_korygowany %}
+        <tr><td class="rr-label">Poprawny nr faktury korygowanej:</td><td class="rr-value">{{ header.nr_fa_korygowany }}</td></tr>
+        {% endif %}
+        {% for d in dane_korygowanej %}
+        <tr><td class="rr-label">Faktura korygowana:</td><td class="rr-value">{{ d.nr_ksef or d.nr_faktury }}{% if d.data_wyst %} ({{ d.data_wyst }}){% endif %}{% if d.nr_ksef_n == '1' %} — poza KSeF{% endif %}</td></tr>
+        {% endfor %}
+        {% if podmiot_korekty.seller_k %}
+        <tr><td class="rr-label">Nabywca przed korektą:</td><td class="rr-value">{{ podmiot_korekty.seller_k.nazwa }}{% if podmiot_korekty.seller_k.nip %} (NIP: {{ podmiot_korekty.seller_k.nip }}){% endif %}</td></tr>
+        {% endif %}
+        {% if podmiot_korekty.buyer_k %}
+        <tr><td class="rr-label">Rolnik przed korektą:</td><td class="rr-value">{{ podmiot_korekty.buyer_k.nazwa }}{% if podmiot_korekty.buyer_k.nip %} (NIP: {{ podmiot_korekty.buyer_k.nip }}){% endif %}</td></tr>
+        {% endif %}
+    </table>
+</div>
+{% endif %}
 
 <!-- Items table -->
 {% if items %}
@@ -231,24 +249,28 @@
         <thead>
             <tr>
                 <th class="col-no">Lp.</th>
-                <th class="col-name">Nazwa (rodzaj) produktu rolnego</th>
-                {% if has_col.p8a %}<th class="col-unit">J.m.</th>{% endif %}
-                {% if has_col.p8b %}<th class="col-qty">Ilość</th>{% endif %}
-                {% if has_col.p9a %}<th class="col-price">Cena jedn. netto</th>{% endif %}
-                {% if has_col.p11 %}<th class="col-net">Wart. netto</th>{% endif %}
-                {% if has_col.p12 %}<th class="col-vat">Stawka VAT RR</th>{% endif %}
+                <th class="col-name">Nazwa (rodzaj) produktu rolnego / usługi</th>
+                <th class="col-unit">J.m.</th>
+                <th class="col-qty">Ilość</th>
+                <th class="col-price">Cena jedn.<br/>netto</th>
+                <th class="col-net">Wartość<br/>netto</th>
+                <th class="col-vat">Stawka<br/>zwrotu</th>
+                <th class="col-net">Kwota<br/>zwrotu</th>
+                <th class="col-net">Wartość<br/>brutto</th>
             </tr>
         </thead>
         <tbody>
             {% for item in items %}
             <tr>
                 <td class="col-no">{{ item.nr or loop.index }}</td>
-                <td class="col-name">{{ item.p7 or "—" }}</td>
-                {% if has_col.p8a %}<td class="col-unit">{{ item.p8a or "" }}</td>{% endif %}
-                {% if has_col.p8b %}<td class="col-qty">{{ item.p8b | fmt_amt if item.p8b else "" }}</td>{% endif %}
-                {% if has_col.p9a %}<td class="col-price">{{ item.p9a | fmt_amt if item.p9a else "" }}</td>{% endif %}
-                {% if has_col.p11 %}<td class="col-net">{{ item.p11 | fmt_amt if item.p11 else "" }}</td>{% endif %}
-                {% if has_col.p12 %}<td class="col-vat">{{ item.p12 | vat_label if item.p12 else "" }}</td>{% endif %}
+                <td class="col-name">{{ item.p5 or "—" }}{% if item.p6c %}<br/><span style="color:#777;">{{ item.p6c }}</span>{% endif %}</td>
+                <td class="col-unit">{{ item.p6a or "" }}</td>
+                <td class="col-qty">{{ item.p6b | fmt_amt if item.p6b else "" }}</td>
+                <td class="col-price">{{ item.p7 | fmt_amt if item.p7 else "" }}</td>
+                <td class="col-net">{{ item.p8 | fmt_amt if item.p8 else "" }}</td>
+                <td class="col-vat">{{ item.p9 }}{% if item.p9 %}%{% endif %}</td>
+                <td class="col-net">{{ item.p10 | fmt_amt if item.p10 else "" }}</td>
+                <td class="col-net">{{ item.p11 | fmt_amt if item.p11 else "" }}</td>
             </tr>
             {% endfor %}
         </tbody>
@@ -256,99 +278,115 @@
 </div>
 {% endif %}
 
-<!-- VAT summary rows (from standard vat_rows) -->
-{% if vat_rows %}
-<div class="rr-section">
-    <p class="rr-section-title">Podliczenie VAT RR</p>
-    <table class="items-table" style="width: 50%;">
-        <thead>
-            <tr>
-                <th>Stawka VAT</th>
-                <th>Wartość netto</th>
-                <th>Kwota VAT</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for row in vat_rows %}
-            <tr>
-                <td style="text-align:center;">{{ row.label }}</td>
-                <td style="text-align:right;">{{ row.net | fmt_amt }}</td>
-                <td style="text-align:right;">{{ row.vat | fmt_amt if row.vat else "—" }}</td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
-</div>
-{% endif %}
-
-<!-- RR specific amounts -->
+<!-- RR totals -->
 <div class="rr-section">
     <table class="totals-table">
-        {% if fa_rr.kwota_vat_rr %}
+        {% if fa_rr.p11_1 %}
         <tr>
-            <td class="total-label">Kwota zryczałtowanego zwrotu podatku (VAT RR):</td>
-            <td class="total-value">{{ fa_rr.kwota_vat_rr | fmt_amt }} {{ header.kod_waluty or "PLN" }}</td>
+            <td class="total-label">Wartość nabytych produktów/usług (netto):</td>
+            <td class="total-value">{{ fa_rr.p11_1 | fmt_amt }} {{ header.kod_waluty or "PLN" }}</td>
         </tr>
         {% endif %}
-        {% if fa_rr.p15_rr or header.p15 %}
+        {% if fa_rr.p11_2 %}
+        <tr>
+            <td class="total-label">Kwota zryczałtowanego zwrotu podatku:</td>
+            <td class="total-value">{{ fa_rr.p11_2 | fmt_amt }} {{ header.kod_waluty or "PLN" }}</td>
+        </tr>
+        {% endif %}
+        {% if fa_rr.p12_1 or header.p15 %}
         <tr class="total-grand">
             <td class="total-label">Kwota należności ogółem:</td>
-            <td class="total-value">{{ (fa_rr.p15_rr or header.p15) | fmt_amt }} {{ header.kod_waluty or "PLN" }}</td>
+            <td class="total-value">{{ (fa_rr.p12_1 or header.p15) | fmt_amt }} {{ header.kod_waluty or "PLN" }}</td>
+        </tr>
+        {% endif %}
+        {% if fa_rr.p12_2 %}
+        <tr>
+            <td class="total-label">Kwota należności ogółem (słownie):</td>
+            <td class="total-value">{{ fa_rr.p12_2 }}</td>
         </tr>
         {% endif %}
     </table>
 </div>
 
-<!-- Oświadczenie rolnika -->
-{% if fa_rr.oswiadczenie %}
-<div class="declaration-box">
-    <p class="declaration-title">Oświadczenie rolnika ryczałtowego</p>
-    <p class="declaration-text">{{ fa_rr.oswiadczenie }}</p>
-</div>
-{% else %}
-<div class="declaration-box">
-    <p class="declaration-title">Oświadczenie rolnika ryczałtowego</p>
-    <p class="declaration-text">
-        Oświadczam, że jestem rolnikiem ryczałtowym zwolnionym od podatku od towarów i usług
-        na podstawie art. 43 ust. 1 pkt 3 ustawy o podatku od towarów i usług.
-    </p>
+<!-- Rozliczenie -->
+{% if rozliczenie %}
+<div class="rr-section">
+    <p class="rr-section-title">Rozliczenie</p>
+    <table class="rr-table">
+        {% for o in rozliczenie.obciazenia | default([]) %}
+        <tr><td class="rr-label">Obciążenie:</td><td class="rr-value">{{ o.kwota | fmt_amt }} — {{ o.powod }}</td></tr>
+        {% endfor %}
+        {% for o in rozliczenie.odliczenia | default([]) %}
+        <tr><td class="rr-label">Odliczenie:</td><td class="rr-value">{{ o.kwota | fmt_amt }} — {{ o.powod }}</td></tr>
+        {% endfor %}
+        {% if rozliczenie.do_zaplaty %}
+        <tr><td class="rr-label">Do zapłaty:</td><td class="rr-value">{{ rozliczenie.do_zaplaty | fmt_amt }}</td></tr>
+        {% endif %}
+        {% if rozliczenie.do_rozliczenia %}
+        <tr><td class="rr-label">Do rozliczenia:</td><td class="rr-value">{{ rozliczenie.do_rozliczenia | fmt_amt }}</td></tr>
+        {% endif %}
+    </table>
 </div>
 {% endif %}
 
 <!-- Payment -->
-{% if payment and (payment.terminy or payment.rachunki) %}
+{% if payment and (payment.forma or payment.rachunki) %}
 <div class="rr-section">
     <p class="rr-section-title">Płatność</p>
     <table class="rr-table">
         {% if payment.forma %}
-        <tr>
-            <td class="rr-label">Forma płatności:</td>
-            <td class="rr-value">{{ payment.forma | payment_method }}</td>
-        </tr>
+        <tr><td class="rr-label">Forma płatności:</td><td class="rr-value">{{ payment.forma | payment_method }}</td></tr>
         {% endif %}
-        {% for termin in payment.terminy %}
-        {% if termin.termin %}
-        <tr>
-            <td class="rr-label">Termin płatności:</td>
-            <td class="rr-value">{{ termin.termin }}</td>
-        </tr>
+        {% if payment.ipksef %}
+        <tr><td class="rr-label">Identyfikator płatności KSeF:</td><td class="rr-value">{{ payment.ipksef }}</td></tr>
+        {% endif %}
+        {% if payment.link_do_platnosci %}
+        <tr><td class="rr-label">Link do płatności:</td><td class="rr-value">{{ payment.link_do_platnosci }}</td></tr>
+        {% endif %}
+        {% for r in payment.rachunki | default([]) %}
+        {% if r.nr_rb %}
+        <tr><td class="rr-label">Rachunek bankowy:</td><td class="rr-value">{{ r.nr_rb }}{% if r.swift %} (SWIFT: {{ r.swift }}){% endif %}{% if r.nazwa_banku %} — {{ r.nazwa_banku }}{% endif %}</td></tr>
         {% endif %}
         {% endfor %}
-        {% for r in payment.rachunki %}
-        {% if r.nr_rb %}
-        <tr>
-            <td class="rr-label">Rachunek bankowy:</td>
-            <td class="rr-value">{{ r.nr_rb }}{% if r.nazwa_banku %} ({{ r.nazwa_banku }}){% endif %}</td>
-        </tr>
-        {% endif %}
+    </table>
+</div>
+{% endif %}
+
+<!-- Payment documents (DokumentZaplaty) -->
+{% if fa_rr.dokumenty_zaplaty %}
+<div class="rr-section">
+    <p class="rr-section-title">Dokumenty zapłaty</p>
+    <table class="rr-table">
+        {% for d in fa_rr.dokumenty_zaplaty %}
+        <tr><td class="rr-label">Dokument:</td><td class="rr-value">{{ d.nr }}{% if d.data %} ({{ d.data }}){% endif %}</td></tr>
+        {% endfor %}
+    </table>
+</div>
+{% endif %}
+
+<!-- Additional descriptions -->
+{% if dodatkowy_opis %}
+<div class="rr-section">
+    <p class="rr-section-title">Informacje dodatkowe</p>
+    <table class="rr-table">
+        {% for o in dodatkowy_opis %}
+        <tr><td class="rr-label">{{ o.klucz }}</td><td class="rr-value">{{ o.wartosc }}</td></tr>
         {% endfor %}
     </table>
 </div>
 {% endif %}
 
 <!-- Footer metadata -->
+{% if footer_data.informacje %}
+{% for info in footer_data.informacje %}
+<p style="font-size: 8pt; margin-top: 2mm;">{{ info }}</p>
+{% endfor %}
+{% endif %}
+{% if header.system_info %}
+<p style="font-size: 7pt; color: #888888; margin-top: 2mm;">System: {{ header.system_info }}</p>
+{% endif %}
 {% if header.data_wytworzenia %}
-<p style="font-size: 7pt; color: #888888; margin-top: 3mm;">
+<p style="font-size: 7pt; color: #888888; margin-top: 2mm;">
     Data wytworzenia faktury: {{ header.data_wytworzenia }}
 </p>
 {% endif %}
