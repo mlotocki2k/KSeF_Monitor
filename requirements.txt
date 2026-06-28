@@ -1,7 +1,7 @@
 requests>=2.32.5,<3.0.0
 urllib3>=2.6.3,<3.0.0  # CVE-2026-21441 (fix in 2.6.3)
 python-dateutil==2.9.0.post0
-cryptography==47.0.0
+cryptography==48.0.1  # GHSA-537c-gmf6-5ccf — statically-linked OpenSSL fix (secadv 20260609)
 prometheus-client==0.24.1
 pytz==2026.1.post1
 

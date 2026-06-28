@@ -20,7 +20,7 @@ dependencies = [
     "requests>=2.32.5,<3.0.0",
     "urllib3>=2.6.3,<3.0.0",            # CVE-2025-66418, CVE-2025-66471, CVE-2026-21441 (fix in 2.6.3)
     "python-dateutil==2.9.0.post0",
-    "cryptography==47.0.0",             # major bump (47.x): drops OpenSSL 1.1.x + LibreSSL <4.1; only symmetric AES + RSA-OAEP used here, no SECT*
+    "cryptography==48.0.1",             # GHSA-537c-gmf6-5ccf — statically-linked OpenSSL fix (secadv 20260609); only symmetric AES + RSA-OAEP used here
     "prometheus-client==0.24.1",
     "pytz==2026.1.post1",
     "Jinja2>=3.1.6,<4.0.0",
