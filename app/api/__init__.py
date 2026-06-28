@@ -22,7 +22,7 @@ from app import __version__
 
 # Import module-level limiter and per-endpoint limits from dedicated submodule
 # (must come before .routers imports to avoid circular import)
-from ._limiter import limiter, _endpoint_limits, configure_limiter  # noqa: F401
+from ._limiter import limiter, _endpoint_limits, configure_limiter, check_global_default_limit  # noqa: F401
 
 from .routers import invoices, stats, monitor, artifacts, push, initial_load, ui
 
@@ -235,6 +235,25 @@ def create_app(
     app.state.rate_limit_config = rl_config
     app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
     app.add_middleware(SlowAPIMiddleware)
+
+    # Explicit global default-limit enforcement. slowapi's SlowAPIMiddleware fails
+    # to apply the default limit to FastAPI include_router routes under Starlette
+    # 1.x (route wrapped in `_IncludedRouter`, no `endpoint` → treated as exempt),
+    # so enforce it here. Health/docs/static are exempt.
+    _RL_EXEMPT = {"/docs", "/redoc", "/openapi.json", "/api/v1/monitor/health"}
+
+    @app.middleware("http")
+    async def enforce_global_default_limit(request: Request, call_next):
+        path = request.url.path
+        if path not in _RL_EXEMPT and not path.startswith("/ui/static"):
+            if not check_global_default_limit(request):
+                return JSONResponse(
+                    status_code=429,
+                    content={"detail": "Rate limit exceeded"},
+                    headers={"Retry-After": "60"},
+                )
+        return await call_next(request)
+
     if rl_config.get("enabled", False):
         logger.info("API rate limiting: default=%s", rl_config.get("default", "60/minute"))
 
