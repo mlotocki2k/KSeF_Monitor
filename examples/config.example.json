@@ -3,6 +3,14 @@
     "environment": "test",
     "nip": "1234567890",
     "token": "your-ksef-token-here",
+    "auth_method": "token",
+    "auth_method_description": "Metoda logowania do KSeF: 'token' (domyślnie — NIP + token) lub 'certificate' (podpis XAdES certyfikatem .p12/.pfx). Przy 'certificate' pole 'token' nie jest wymagane.",
+    "certificate": {
+      "path": "/data/certs/ksef.p12",
+      "password": "",
+      "subject_identifier_type": "certificateSubject",
+      "description": "Logowanie certyfikatem (gdy auth_method='certificate'). 'path' = plik .p12/.pfx (PKCS#12). Hasło podawaj przez KSEF_CERT_PASSWORD (env var / Docker secret), NIE w configu. 'subject_identifier_type': 'certificateSubject' lub 'certificateFingerprint'."
+    },
     "description": "KSeF API Configuration. Environment: 'test', 'demo', or 'prod'. Get token from KSeF portal. Token can also be provided via KSEF_TOKEN env var or Docker secret.",
     "rate_limit": {
       "per_second": 10,

@@ -12,12 +12,13 @@ to avoid internal HTTP calls and token management in browser.
 
 import json
 import logging
+import os
 import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, Form, Query, Request
+from fastapi import APIRouter, File, Form, Query, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 
@@ -119,6 +120,7 @@ def _base_ctx(request: Request) -> dict:
         {"href": "/ui", "label": "Dashboard"},
         {"href": "/ui/invoices", "label": "Faktury"},
         {"href": "/ui/initial-load", "label": "Import historyczny"},
+        {"href": "/ui/certificate", "label": "Certyfikat"},
     ]
     if _get_push_manager(request):
         nav.append({"href": "/ui/push", "label": "Parowanie iOS"})
@@ -670,3 +672,127 @@ def ui_account_change_password(
     resp = RedirectResponse(url="/ui/login?ok=password", status_code=303)
     resp.delete_cookie(_SESSION_COOKIE, path="/")
     return resp
+
+
+# ── Certificate (XAdES login) ───────────────────────────────────────────────
+
+_DEFAULT_CERT_PATH = "/data/certs/ksef.p12"
+_CERT_EXTENSIONS = (".p12", ".pfx")
+_MAX_CERT_BYTES = 256 * 1024  # certy PKCS#12 to kilka KB; 256 KB to bezpieczny zapas
+
+
+def _ksef_config(request: Request):
+    monitor = getattr(request.app.state, "monitor", None)
+    return getattr(monitor, "config", None) if monitor else None
+
+
+def _cert_path(request: Request) -> str:
+    """Skonfigurowana ścieżka certyfikatu (ksef.certificate.path) lub domyślna."""
+    cfg = _ksef_config(request)
+    if cfg is not None:
+        path = cfg.get("ksef", "certificate", "path")
+        if path:
+            return path
+    return _DEFAULT_CERT_PATH
+
+
+def _auth_method(request: Request) -> str:
+    cfg = _ksef_config(request)
+    if cfg is not None:
+        return (cfg.get("ksef", "auth_method") or "token").lower()
+    return "token"
+
+
+def _cert_status(cert_path: str) -> dict:
+    """Lekki status pliku certyfikatu (bez odszyfrowania — to wymaga hasła)."""
+    try:
+        p = Path(cert_path)
+        if p.is_file():
+            st = p.stat()
+            return {
+                "present": True,
+                "size": st.st_size,
+                "modified": datetime.fromtimestamp(st.st_mtime, tz=timezone.utc),
+            }
+    except OSError:
+        pass
+    return {"present": False, "size": 0, "modified": None}
+
+
+@router.get("/ui/certificate", response_class=HTMLResponse)
+def ui_certificate_form(
+    request: Request, error: Optional[str] = None, ok: Optional[str] = None
+):
+    """Strona certyfikatu — upload pliku .p12/.pfx do logowania certyfikatem (XAdES)."""
+    if getattr(request.state, "ui_user_id", None) is None:
+        return RedirectResponse(url="/ui/login?next=/ui/certificate", status_code=303)
+    ctx = _base_ctx(request)
+    ctx["page"] = "certificate"
+    ctx["error"] = error
+    ctx["ok"] = ok
+    ctx["cert_path"] = _cert_path(request)
+    ctx["auth_method"] = _auth_method(request)
+    ctx["cert_status"] = _cert_status(ctx["cert_path"])
+    return templates.TemplateResponse(request, "certificate.html", ctx)
+
+
+@router.post("/ui/certificate")
+@limiter.limit("5/minute")
+async def ui_certificate_upload(
+    request: Request,
+    certificate: UploadFile = File(...),
+    password: str = Form(""),
+):
+    """Waliduj i zapisz przesłany certyfikat .p12/.pfx do skonfigurowanej ścieżki.
+
+    Hasło służy wyłącznie do weryfikacji, że plik daje się otworzyć — NIE jest
+    zapisywane. Hasło runtime podawaj przez KSEF_CERT_PASSWORD / Docker secret.
+    """
+    from urllib.parse import quote
+
+    if getattr(request.state, "ui_user_id", None) is None:
+        return RedirectResponse(url="/ui/login?next=/ui/certificate", status_code=303)
+
+    def _err(msg: str):
+        return RedirectResponse(
+            url=f"/ui/certificate?error={quote(msg)}", status_code=303
+        )
+
+    filename = (certificate.filename or "").lower()
+    if not filename.endswith(_CERT_EXTENSIONS):
+        return _err("Plik musi mieć rozszerzenie .p12 lub .pfx")
+
+    data = await certificate.read()
+    if not data:
+        return _err("Przesłany plik jest pusty")
+    if len(data) > _MAX_CERT_BYTES:
+        return _err("Plik jest za duży (limit 256 KB)")
+
+    # Walidacja: czy PKCS#12 daje się otworzyć podanym hasłem
+    try:
+        from app.xades_signer import load_pkcs12
+
+        load_pkcs12(data, password)
+    except ValueError as e:
+        return _err(str(e))
+
+    # Zapis atomowy z restrykcyjnymi uprawnieniami (0600)
+    cert_path = _cert_path(request)
+    try:
+        target = Path(cert_path)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        tmp = target.with_name(target.name + ".tmp")
+        tmp.write_bytes(data)
+        os.chmod(tmp, 0o600)
+        os.replace(tmp, target)
+    except OSError as e:
+        logger.error("Failed to save uploaded certificate: %s", e)
+        return _err("Nie udało się zapisać certyfikatu na dysku")
+
+    logger.info(
+        "Certificate uploaded via UI by user_id=%s",
+        getattr(request.state, "ui_user_id", None),
+    )
+    return RedirectResponse(
+        url="/ui/certificate?ok=Certyfikat+zapisany", status_code=303
+    )

@@ -121,7 +121,7 @@ class ConfigManager:
             ValueError: If required fields are missing
         """
         required_fields = {
-            "ksef": ["environment", "nip", "token"],
+            "ksef": ["environment", "nip"],
             "monitoring": []  # check_interval is deprecated, schedule section is now used
         }
 
@@ -133,6 +133,25 @@ class ConfigManager:
                     raise ValueError(f"Missing required field: {section}.{field}")
                 if not config[section][field]:
                     raise ValueError(f"Empty value for required field: {section}.{field}")
+
+        # Metoda uwierzytelniania decyduje, czy wymagany jest token czy certyfikat
+        ksef_cfg = config["ksef"]
+        auth_method = (ksef_cfg.get("auth_method") or "token").lower()
+        if auth_method not in ("token", "certificate"):
+            raise ValueError(
+                f"Invalid ksef.auth_method: '{auth_method}'. Valid values: token, certificate"
+            )
+        if auth_method == "certificate":
+            certificate = ksef_cfg.get("certificate")
+            if not isinstance(certificate, dict) or "path" not in certificate:
+                raise ValueError("Missing required field: ksef.certificate.path")
+            if not certificate["path"]:
+                raise ValueError("Empty value for required field: ksef.certificate.path")
+        else:
+            if "token" not in ksef_cfg:
+                raise ValueError("Missing required field: ksef.token")
+            if not ksef_cfg["token"]:
+                raise ValueError("Empty value for required field: ksef.token")
 
         # Validate schedule section (if present, otherwise fallback to deprecated check_interval)
         if "schedule" in config:

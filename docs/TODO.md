@@ -65,6 +65,10 @@ Release `test` → `main` gating: **manualny user-test + iOS app v1.1.1 w App St
 Zgodnie z `ROADMAP.md` §v0.6. Skupia się na rozdzieleniu detekcji nowych
 faktur od pobierania artefaktów (oszczędność API calls KSeF).
 
+Dodatkowo (`ROADMAP.md` §v0.6 pkt 6): **logowanie przez certyfikat (XAdES)** —
+alternatywa dla tokenu KSeF; `authenticate_with_certificate()` + podpis
+`AuthTokenRequest` → `POST /auth/xades-signature`.
+
 ---
 
 ## Znane problemy (v0.5.3 test)

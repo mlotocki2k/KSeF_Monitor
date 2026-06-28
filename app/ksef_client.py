@@ -59,7 +59,17 @@ class KSeFClient:
         self.environment = config.get("ksef", "environment")
         self.nip = config.get("ksef", "nip")
         self.token = config.get("ksef", "token")
-        
+
+        # Metoda uwierzytelniania: "token" (domyślnie) lub "certificate" (XAdES)
+        self.auth_method = (config.get("ksef", "auth_method") or "token").lower()
+        cert_cfg = config.get("ksef", "certificate")
+        cert_cfg = cert_cfg if isinstance(cert_cfg, dict) else {}
+        self.cert_path = cert_cfg.get("path")
+        self.cert_password = cert_cfg.get("password")
+        self.cert_subject_identifier_type = cert_cfg.get(
+            "subject_identifier_type", "certificateSubject"
+        )
+
         # Set base URL based on environment
         if self.environment == "prod":
             self.base_url = "https://api.ksef.mf.gov.pl"
@@ -288,12 +298,17 @@ class KSeFClient:
 
     def authenticate(self) -> bool:
         """
-        Authenticate with KSeF API using authorization token
-        Full flow: Challenge -> KSeF Token -> Poll Status -> Redeem
+        Authenticate with KSeF API.
+
+        Dispatches by configured auth method (`ksef.auth_method`):
+          - "token" (default): Challenge -> KSeF Token (RSA-OAEP) -> Poll Status -> Redeem
+          - "certificate": Challenge -> XAdES-signed AuthTokenRequest -> Poll Status -> Redeem
 
         Returns:
             True if authentication successful, False otherwise
         """
+        if self.auth_method == "certificate":
+            return self._authenticate_certificate_flow()
         try:
             # Step 1: Get authentication challenge (returns challenge + timestampMs)
             challenge_data = self._get_challenge()
@@ -336,7 +351,114 @@ class KSeFClient:
             if self.on_auth_failure:
                 self.on_auth_failure(0)
             return False
-    
+
+    def _authenticate_certificate_flow(self) -> bool:
+        """
+        Authenticate with KSeF using a certificate (XAdES signature).
+        Full flow: Challenge -> XAdES-signed AuthTokenRequest -> Poll Status -> Redeem
+
+        Returns:
+            True if authentication successful, False otherwise
+        """
+        try:
+            # Step 1: Get authentication challenge
+            challenge_data = self._get_challenge()
+            if not challenge_data:
+                logger.error("Failed to get authentication challenge")
+                return False
+
+            challenge = challenge_data.get("challenge")
+            logger.info(f"Got authentication challenge: {challenge[:10]}...")
+
+            # Step 2: Build + sign AuthTokenRequest, submit XAdES signature
+            auth_result = self._authenticate_with_xades(challenge)
+            if not auth_result:
+                logger.error("Failed to authenticate with certificate (XAdES)")
+                return False
+
+            reference_number = auth_result.get("referenceNumber")
+            authentication_token = auth_result.get("authenticationToken", {}).get("token")
+
+            # Step 3: Poll status using the temporary authenticationToken
+            if not self._wait_for_auth_status(reference_number, authentication_token):
+                logger.error("Authentication status check failed")
+                return False
+
+            # Step 4: Redeem for accessToken + refreshToken
+            if not self._redeem_token(authentication_token):
+                logger.error("Failed to redeem access token")
+                return False
+
+            logger.info(f"Certificate authentication successful (session: {reference_number})")
+            return True
+
+        except Exception as e:
+            logger.error(f"Certificate authentication failed: {e}")
+            if self.on_auth_failure:
+                self.on_auth_failure(0)
+            return False
+
+    def _authenticate_with_xades(self, challenge: str) -> Optional[Dict]:
+        """
+        Authenticate using a certificate-signed AuthTokenRequest.
+        Endpoint: POST /v2/auth/xades-signature  (Content-Type: application/xml)
+
+        Builds AuthTokenRequest (auth v2-1 schema), signs it with XAdES-BES
+        (enveloped, RSA-SHA256) using the configured PKCS#12 certificate, and
+        submits the signed XML.
+
+        Args:
+            challenge: Challenge string from /auth/challenge response
+
+        Returns:
+            Auth result dict with referenceNumber and authenticationToken, or None
+        """
+        try:
+            # Import leniwy — signxml potrzebny tylko przy logowaniu certyfikatem
+            try:
+                from .xades_signer import build_signed_auth_request
+            except ImportError:
+                from app.xades_signer import build_signed_auth_request
+
+            if not self.cert_path:
+                logger.error("Certificate auth selected but ksef.certificate.path is not set")
+                return None
+
+            try:
+                with open(self.cert_path, "rb") as cert_file:
+                    p12_bytes = cert_file.read()
+            except OSError as e:
+                logger.error(f"Failed to read certificate file: {e}")
+                return None
+
+            signed_xml = build_signed_auth_request(
+                challenge=challenge,
+                nip=self.nip,
+                p12_bytes=p12_bytes,
+                password=self.cert_password,
+                subject_identifier_type=self.cert_subject_identifier_type,
+            )
+
+            url = f"{self.base_url}/{self.API_VERSION}/auth/xades-signature"
+            headers = {"Content-Type": "application/xml"}
+
+            response = self._request_with_retry(
+                "POST", url, data=signed_xml, headers=headers, timeout=30
+            )
+            response.raise_for_status()
+
+            return response.json()
+
+        except ValueError as e:
+            # Błąd certyfikatu / budowy podpisu (np. złe hasło) — bez stack trace z materiałem klucza
+            logger.error(f"Certificate signing failed: {e}")
+            return None
+        except Exception as e:
+            logger.error(f"XAdES authentication failed: {e}")
+            if hasattr(e, 'response') and e.response is not None:
+                logger.error(f"API error: {self._extract_api_error_details(e.response)}")
+            return None
+
     def _get_challenge(self) -> Optional[Dict]:
         """
         Get authentication challenge from KSeF

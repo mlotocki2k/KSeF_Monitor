@@ -466,8 +466,31 @@ _Pełna lista zmian: `CHANGELOG.md` [0.5.3]. Siedem defektów wykrytych w pre-me
 - [x] **Drift detection** — `check_ksef_fa_schema.yml` matryca rozszerzona o FA(2) v1-0E i FA_RR(1) v1-1E (CRD + CIRFMF); skan nowych wersji obejmuje `faktury/schemy/FA` + `faktury/schemy/RR`
 - [x] Testy — `test_multi_schema_parser.py`: FA_RR przepisane na realny schemat + `TestFA3ExtendedFields` (61 passed)
 
+### 6) Logowanie przez certyfikat (XAdES)
+**Cel:** alternatywna metoda uwierzytelniania KSeF — podpis dokumentu `AuthTokenRequest` certyfikatem (kwalifikowany podpis/pieczęć lub certyfikat KSeF) zamiast tokenu KSeF. Endpoint `POST /auth/xades-signature` (zwraca 202).
+
+**Flow API (openapi v2 + [uwierzytelnianie.md](https://github.com/CIRFMF/ksef-api/blob/main/uwierzytelnianie.md)):**
+1. `POST /auth/challenge` → `challenge` + `timestamp`
+2. Budowa `AuthTokenRequest` XML (schemat `auth v2-0`/`v2-1`) z `challenge`, `contextIdentifier` (Nip), typem podmiotu
+3. Podpis XAdES (enveloped) kluczem prywatnym certyfikatu
+4. `POST /auth/xades-signature` (`application/xml`) → 202 → `referenceNumber` + `authenticationToken`
+5. `GET /auth/{referenceNumber}` polling — jak w token flow; `authenticationMethodInfo.category = "XadesSignature"`
+6. `POST /auth/token/redeem` → access/refresh token (reużycie istniejącego kodu)
+
+- [x] `app/ksef_client.py`: `_authenticate_certificate_flow()` + `_authenticate_with_xades()` — dispatch w `authenticate()` wg `auth_method`; wspólny challenge/poll/redeem, nowy krok podpisu
+- [x] Budowa + podpis `AuthTokenRequest` (XAdES-BES enveloped, RSA-SHA256) — `app/xades_signer.py`, biblioteka **signxml** (bez systemowych zależności; pull `lxml`)
+- [x] Ładowanie certyfikatu: `.p12`/`.pfx` (PKCS#12) z hasłem — ścieżka w configu, hasło przez `KSEF_CERT_PASSWORD` (`SecretsManager`/Docker secret)
+- [x] Konfiguracja: `ksef.auth_method = "token" | "certificate"` + `ksef.certificate.{path, password, subject_identifier_type}`; walidacja w `config_manager` (token vs certyfikat)
+- [ ] Walidacja certyfikatu (ważność, dopasowanie NIP/kontekstu) przed próbą auth — *(TODO: dziś tylko sprawdzenie poprawności PKCS#12 / hasła)*
+- [x] Web UI: upload `.p12`/`.pfx` na stronie `/ui/certificate` (auth-required) — walidacja PKCS#12 hasłem (hasło niezapisywane) + atomowy zapis 0600 do `ksef.certificate.path`; status pliku. *(Przełączenie `auth_method` nadal w `config.json`.)*
+- [x] Testy: mock `/auth/xades-signature`, weryfikacja struktury podpisanego XML (XAdES-BES, rsa-sha256, enveloped), błędne hasło, brak pliku, dispatch — `tests/test_certificate_auth.py` (25 testów)
+- [x] Dokumentacja: [KSEF_CERTIFICATE_AUTH.md](KSEF_CERTIFICATE_AUTH.md)
+- [ ] **Weryfikacja end-to-end** przeciw realnemu KSeF — wymaga prawdziwego certyfikatu (dziś tylko testy mock)
+
+> *(Osobny temat, poza tym wpisem)* Zarządzanie certyfikatami KSeF: `/certificates/enrollments`, `/certificates/query`, `/certificates/retrieve`, `/certificates/{serial}/revoke` — wydawanie i rotacja certyfikatów KSeF.
+
 **Zależności:** v0.5
-**DoD:** monitor wykrywa nowe faktury i wysyła push w jednym tanim API call; artefakty pobierane niezależnie; konfigurowalny interwał pollingu; UPO faktur sprzedażowych pobierane i zapisywane gdy `fetch_upo=true`; klient wysyła `publicKeyId` w `/auth/ksef-token` przed PRD 11.05.2026; specy demo i prod zaktualizowane; testy aktualne.
+**DoD:** monitor wykrywa nowe faktury i wysyła push w jednym tanim API call; artefakty pobierane niezależnie; konfigurowalny interwał pollingu; UPO faktur sprzedażowych pobierane i zapisywane gdy `fetch_upo=true`; klient wysyła `publicKeyId` w `/auth/ksef-token` przed PRD 11.05.2026; logowanie certyfikatem XAdES przez `POST /auth/xades-signature` jako alternatywa dla tokenu; specy demo i prod zaktualizowane; testy aktualne.
 
 ---
 

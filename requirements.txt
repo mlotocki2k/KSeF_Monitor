@@ -11,6 +11,10 @@ Jinja2>=3.1.6,<4.0.0
 # Security
 defusedxml>=0.7.1,<1.0.0
 
+# Certificate login (XAdES) — v0.6
+signxml>=4.0.0,<5.0.0  # XAdES-BES signing of AuthTokenRequest (POST /auth/xades-signature)
+lxml>=5.0.0,<7.0.0     # XML building/signing (also pulled by signxml)
+
 # PDF generation
 reportlab==4.4.10
 qrcode==8.2
