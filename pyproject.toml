@@ -22,11 +22,12 @@ dependencies = [
     "python-dateutil==2.9.0.post0",
     "cryptography==48.0.1",             # GHSA-537c-gmf6-5ccf — statically-linked OpenSSL fix (secadv 20260609); only symmetric AES + RSA-OAEP used here
     "prometheus-client==0.24.1",
-    "pytz==2026.1.post1",
+    "pytz==2026.2",
     "Jinja2>=3.1.6,<4.0.0",
     "defusedxml>=0.7.1,<1.0.0",
     "signxml>=4.0.0,<5.0.0",            # XAdES-BES signing for certificate-based KSeF auth (v0.6); pulls lxml
-    "reportlab==4.4.10",
+    "reportlab==4.5.0",
+    "bcrypt>=5.0.0,<6.0.0",             # UI user password hashing (V5-13) — kept in sync with requirements.txt
     "qrcode==8.2",
     "xhtml2pdf>=0.2.16,<1.0.0",
     "SQLAlchemy>=2.0.0,<3.0.0",
