@@ -935,3 +935,43 @@ class TestInvoiceMonitorUPO:
             assert upo.status == "pending"  # untouched by XML/PDF phase
             xml = s.query(InvoiceArtifact).filter_by(artifact_type="xml").first()
             assert xml.status == "downloaded"
+
+
+class TestInvoiceMonitorSubjectIntervals:
+    """v0.6 §1 — configurable per-subject polling interval."""
+
+    def test_no_interval_always_due(self, monitor):
+        monitor.subject_intervals = {}
+        assert monitor._subject_due("Subject1", None, {}, monitor._get_now()) is True
+
+    def test_recent_check_not_due(self, monitor):
+        monitor.subject_intervals = {"Subject1": 600}
+        now = monitor._get_now()
+        with patch.object(monitor, "_get_last_check", return_value=now - timedelta(seconds=100)):
+            assert monitor._subject_due("Subject1", None, {}, now) is False
+
+    def test_elapsed_check_due(self, monitor):
+        monitor.subject_intervals = {"Subject1": 600}
+        now = monitor._get_now()
+        with patch.object(monitor, "_get_last_check", return_value=now - timedelta(seconds=700)):
+            assert monitor._subject_due("Subject1", None, {}, now) is True
+
+    def test_first_run_due(self, monitor):
+        monitor.subject_intervals = {"Subject1": 600}
+        with patch.object(monitor, "_get_last_check", return_value=None):
+            assert monitor._subject_due("Subject1", None, {}, monitor._get_now()) is True
+
+    def test_check_skips_not_due_subject(self, monitor, tmp_path):
+        monitor.state_file = tmp_path / "last_check.json"
+        monitor.subject_types = ["Subject1", "Subject2"]
+        monitor.subject_intervals = {"Subject2": 99999}  # huge → Subject2 not due
+        monitor.ksef.get_invoices_metadata.return_value = []
+        now = monitor._get_now()
+        monitor.state_file.write_text(
+            json.dumps({"last_check": now.isoformat(), "seen_invoices": []}), encoding="utf-8"
+        )
+
+        monitor.check_for_new_invoices()
+
+        # Subject1 (no interval) polled; Subject2 (recent + huge interval) skipped.
+        assert monitor.ksef.get_invoices_metadata.call_count == 1

@@ -76,6 +76,10 @@ class InvoiceMonitor:
         self._session_invoice_map = None     # cache: ksefNumber -> sessionReference
         self._session_map_ts = 0.0           # czas ostatniego zbudowania mapy
         self._session_map_ttl = 24 * 3600    # TTL cache mapy sesji (24h)
+        # Opcjonalny interwał pollingu per subject type (sekundy), np.
+        # {"Subject1": 240, "Subject2": 420}. Subject bez wpisu pollowany co cykl.
+        subject_intervals = config.get("monitoring", "subject_poll_intervals")
+        self.subject_intervals = subject_intervals if isinstance(subject_intervals, dict) else {}
         output_dir = config.get("storage", "output_dir", default="/data/invoices")
         self.output_dir = Path(output_dir)
         self.folder_structure = config.get("storage", "folder_structure", default="")
@@ -290,6 +294,13 @@ class InvoiceMonitor:
 
         try:
             for subject_type in self.subject_types:
+                if not self._subject_due(subject_type, db_session, state, now):
+                    logger.debug(
+                        "Subject %s pominięty — interwał pollingu jeszcze nie minął",
+                        subject_type,
+                    )
+                    continue
+
                 new_count, last_ksef_number = self._poll_subject_type(
                     subject_type, db_session, state, seen_hashes, seen_entries, now
                 )
@@ -659,8 +670,8 @@ class InvoiceMonitor:
                 except Exception as e:
                     logger.debug("Failed to update artifacts_pending metric: %s", e)
     
-    def _get_date_from(self, db_session, subject_type: str, json_state: Dict, now: datetime) -> datetime:
-        """Determine date_from for a subject_type. DB has priority over JSON state."""
+    def _get_last_check(self, db_session, subject_type: str, json_state: Dict) -> Optional[datetime]:
+        """Last check time for a subject (DB priority over JSON), or None if never checked."""
         if db_session is not None:
             ms = self.db.get_monitor_state(db_session, self.nip, subject_type)
             if ms and ms.last_check:
@@ -671,15 +682,35 @@ class InvoiceMonitor:
                     dt = dt.astimezone(self.timezone)
                 return dt
 
-        # Fallback to JSON state
         if json_state.get("last_check"):
             try:
                 return self._parse_datetime(json_state["last_check"])
             except (ValueError, TypeError):
                 logger.warning("Invalid last_check date, using 24h ago")
 
+        return None
+
+    def _get_date_from(self, db_session, subject_type: str, json_state: Dict, now: datetime) -> datetime:
+        """Determine date_from for a subject_type. DB has priority over JSON state."""
+        last = self._get_last_check(db_session, subject_type, json_state)
+        if last is not None:
+            return last
         logger.info("First run - checking last 24 hours")
         return now - timedelta(hours=24)
+
+    def _subject_due(self, subject_type: str, db_session, json_state: Dict, now: datetime) -> bool:
+        """Czy minął skonfigurowany interwał pollingu dla danego subject type.
+
+        Brak wpisu w `subject_poll_intervals` → subject pollowany w każdym cyklu
+        (zachowanie domyślne). Pierwszy raz (brak last_check) → zawsze due.
+        """
+        interval = self.subject_intervals.get(subject_type)
+        if not interval:
+            return True
+        last = self._get_last_check(db_session, subject_type, json_state)
+        if last is None:
+            return True
+        return (now - last).total_seconds() >= interval
 
     def _save_invoice_to_db(self, session, invoice: Dict, subject_type: str) -> Optional[int]:
         """Save invoice metadata to DB. Returns invoice.id (new or existing) or None."""

@@ -385,7 +385,7 @@ _Pełna lista zmian: `CHANGELOG.md` [0.5.3]. Siedem defektów wykrytych w pre-me
 ### 1) Dwufazowy cykl monitoringu
 - [x] Faza 1: detekcja na metadanych + push z metadanych (bazowo już tak działało) — w trybie lazy artefakty NIE są pobierane inline *(pageSize bez zmian — `get_invoices_metadata` paginuje pełne metadane)*
 - [x] Faza 2: artefakty — osobna faza `process_pending_artifacts()` (rate limiter globalny); flaga **opt-in** `monitoring.lazy_artifacts` (default: inline, bez zmiany zachowania)
-- [ ] Konfiguracja interwału pollingu per subject type w `config.json` — *(odłożone, osobny item)*
+- [x] Konfiguracja interwału pollingu per subject type w `config.json` — `monitoring.subject_poll_intervals` (sekundy/subject); `_subject_due` pomija subject jeśli interwał nie minął; testy `TestInvoiceMonitorSubjectIntervals` (5)
 - [x] Update `invoice_monitor.py` — oddzielenie detekcji od artifact download (`_enqueue_artifacts` / `process_pending_artifacts` / `_check_and_drain`); testy `tests/test_invoice_monitor.py::TestInvoiceMonitorLazyArtifacts` (9)
 
 ### 2) Push notification z metadata (bez XML)
