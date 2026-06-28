@@ -2,7 +2,39 @@
 
 All notable changes to KSeF Monitor are documented here.
 
-## [0.6.0] — 2026-06-03 (invoice schema coverage + FA_RR rewrite)
+## [0.6.0] (unreleased) — certificate login, UPO, Lightweight Polling, schema coverage
+
+### Certificate login, UPO, Lightweight Polling, API 2.6.1 (2026-06-28)
+
+**Authentication**
+- Certificate login (XAdES-BES, RSA-SHA256) as an alternative to the KSeF token —
+  `ksef.auth_method="certificate"` + a `.p12`/`.pfx`; signs `AuthTokenRequest` →
+  `POST /auth/xades-signature`. Web UI upload at `/ui/certificate`. Certificate
+  validity is checked before auth. See `docs/KSEF_CERTIFICATE_AUTH.md`.
+- `publicKeyId` sent in `/auth/ksef-token` for KSeF v2.5.0 public-key rotation.
+- `X-Error-Format: problem-details` requested so 400/429 return `problem+json`.
+
+**UPO (Urzędowe Poświadczenie Odbioru)**
+- Download UPO for sales invoices (Subject1) in a separate phase
+  (`monitoring.fetch_upo`): resolves the session, downloads + SHA-256-verifies
+  `/sessions/{ref}/invoices/ksef/{ksef}/upo`, saves `{output_dir}/upo/{ksef}.xml`,
+  sets `has_upo`/`upo_path`. Web UI download button + `GET /api/v1/invoices/{ksef}/upo`.
+
+**Lightweight Polling**
+- `monitoring.lazy_artifacts` — decouple XML/PDF download from detection (push
+  fires from metadata; artifacts fetched in a separate phase, own rate budget).
+- `monitoring.subject_poll_intervals` — configurable per-subject polling interval.
+
+**Dependencies / spec**
+- OpenAPI specs synced to KSeF 2.6.1 (test/demo/prod).
+- cryptography 47→48.0.1 (GHSA-537c-gmf6-5ccf), bcrypt 5.0, pytz 2026.2,
+  reportlab 4.5.0; added signxml + lxml (certificate signing).
+
+**Fixes**
+- Global API rate limit now enforced under Starlette 1.x — slowapi's default-limit
+  middleware no-ops on FastAPI `include_router` routes; enforced explicitly.
+
+### Invoice schema coverage + FA_RR rewrite (2026-06-03)
 
 Full audit of FA(3) v1-0E field coverage against the published XSD, a ground-up
 rewrite of the FA_RR parser/template against the real schema, and real XSD files

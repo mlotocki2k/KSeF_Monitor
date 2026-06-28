@@ -493,6 +493,8 @@ _Pełna lista zmian: `CHANGELOG.md` [0.5.3]. Siedem defektów wykrytych w pre-me
 **Zależności:** v0.5
 **DoD:** monitor wykrywa nowe faktury i wysyła push w jednym tanim API call; artefakty pobierane niezależnie; konfigurowalny interwał pollingu; UPO faktur sprzedażowych pobierane i zapisywane gdy `fetch_upo=true`; klient wysyła `publicKeyId` w `/auth/ksef-token` przed PRD 11.05.2026; logowanie certyfikatem XAdES przez `POST /auth/xades-signature` jako alternatywa dla tokenu; specy demo i prod zaktualizowane; testy aktualne.
 
+**Status (2026-06-28):** wszystkie elementy zaimplementowane i pokryte testami (suite 837). Pozostaje **weryfikacja end-to-end na żywym KSeF**: logowanie certyfikatem (§7) i UPO (§4) — wymaga realnego certyfikatu / tokenu z uprawnieniem `Introspection`; oraz operacyjne potwierdzenie limitów TEST=PRD (§5). Opcjonalny wrapper `/testdata/rate-limits` pominięty (wartość tylko przy testach integracyjnych na żywym env).
+
 ---
 
 ## v0.7 (Auto-update)

@@ -134,6 +134,7 @@ Katalog `data/` powstaje w runtime i zawiera bazę danych `invoices.db` oraz leg
 
 - 📖 [QUICKSTART.md](docs/QUICKSTART.md) — Szybki start w 5 minut
 - 🔑 [KSEF_TOKEN.md](docs/KSEF_TOKEN.md) — Tworzenie tokena KSeF (krok po kroku, uprawnienia read-only)
+- 📜 [KSEF_CERTIFICATE_AUTH.md](docs/KSEF_CERTIFICATE_AUTH.md) — Logowanie certyfikatem (XAdES) — konfiguracja, upload `.p12` w UI (v0.6)
 - 🔔 [NOTIFICATIONS.md](docs/NOTIFICATIONS.md) — Konfiguracja powiadomień (6 kanałów, tworzenie webhooków)
 - 🎨 [TEMPLATES.md](docs/TEMPLATES.md) — Szablony Jinja2 powiadomień (zmienne, filtry, przykłady)
 - 🔒 [SECURITY.md](docs/SECURITY.md) — Najlepsze praktyki bezpieczeństwa
@@ -193,6 +194,8 @@ Skopiuj `examples/config.example.json` do `config.json` i uzupełnij wartości.
 | `environment` | `test` \| `demo` \| `prod` — wyznacza base URL API (patrz tabelka poniżej). |
 | `nip` | 10-cyfrowy NIP podmiotu. |
 | `token` | Token autoryzacyjny z portalu KSeF — **wyłącznie z uprawnieniami do przeglądania faktur** (read-only). Może być podany tu lub przez env variable / Docker secret (patrz [Sekretne wartości](#sekretne-wartości)). Przewodnik tworzenia: [KSEF_TOKEN.md](docs/KSEF_TOKEN.md) |
+| `auth_method` | `"token"` (domyślnie) \| `"certificate"`. Przy `certificate` logowanie odbywa się podpisem XAdES certyfikatem (`token` nie jest wymagany). Patrz [KSEF_CERTIFICATE_AUTH.md](docs/KSEF_CERTIFICATE_AUTH.md). |
+| `certificate` | Obiekt dla `auth_method="certificate"`: `path` (plik `.p12`/`.pfx` PKCS#12, **wymagane**), `password` (zalecane przez env `KSEF_CERT_PASSWORD` / Docker secret, nie w configu), `subject_identifier_type` (`certificateSubject` \| `certificateFingerprint`). Plik można też wgrać w UI: `/ui/certificate`. |
 
 Base URLs przypisane automatycznie:
 
@@ -391,6 +394,10 @@ Szablony powiadomień: [docs/TEMPLATES.md](docs/TEMPLATES.md)
 | `timezone` | `"Europe/Warsaw"` | Strefa czasowa używana do wszystkich operacji z datami. Nazwa według standardu IANA (np. `Europe/Warsaw`, `America/New_York`). Zobacz [listę stref czasowych](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones). Fallback na `Europe/Warsaw` przy niepoprawnej wartości. |
 | `message_priority` | `0` | Priority powiadomień Pushover dla nowych faktur. `-2` cisza \| `-1` cicho \| `0` normalne \| `1` wysoka \| `2` pilne (wymaga potwierdzenia). Fallback na `0`. |
 | `test_notification` | `false` | Jeśli `true` — wysyła testowe powiadomienie przy starcie aplikacji. |
+| `lazy_artifacts` | `false` | Lightweight Polling (v0.6): gdy `true`, detekcja tylko kolejkuje XML/PDF, a pobieranie odbywa się w osobnej fazie (szybszy push). Wymaga bazy danych. |
+| `artifact_batch_size` | `50` | Maks. liczba artefaktów przetwarzanych w jednym przebiegu fazy 2 (lazy artifacts / UPO). |
+| `fetch_upo` | `false` | v0.6: pobieranie UPO faktur sprzedażowych (Subject1) w osobnej fazie (rozwiązanie sesji + `/upo` + weryfikacja SHA-256 → `{output_dir}/upo/{ksef}.xml`). Wymaga bazy i tokenu z uprawnieniem `Introspection`. |
+| `subject_poll_intervals` | `{}` | Opcjonalny min. interwał pollingu per subject w sekundach, np. `{"Subject1": 240, "Subject2": 420}`. Subject pollowany dopiero gdy interwał minął; nieujęte subjecty pollowane co cykl. |
 
 ### Sekcja `schedule`
 
