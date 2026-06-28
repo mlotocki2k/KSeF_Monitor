@@ -7,6 +7,7 @@ import json
 import hashlib
 import logging
 import os
+import time
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -69,6 +70,12 @@ class InvoiceMonitor:
         # istniejących wdrożeń. Wymaga bazy danych (DB).
         self.lazy_artifacts = bool(config.get("monitoring", "lazy_artifacts", default=False))
         self.artifact_batch_size = config.get("monitoring", "artifact_batch_size", default=50)
+        # UPO (Urzędowe Poświadczenie Odbioru) — pobieranie dla faktur sprzedażowych
+        # (Subject1). Wymaga tokenu z uprawnieniem Introspection. Opt-in, osobny budżet API.
+        self.fetch_upo = bool(config.get("monitoring", "fetch_upo", default=False))
+        self._session_invoice_map = None     # cache: ksefNumber -> sessionReference
+        self._session_map_ts = 0.0           # czas ostatniego zbudowania mapy
+        self._session_map_ttl = 24 * 3600    # TTL cache mapy sesji (24h)
         output_dir = config.get("storage", "output_dir", default="/data/invoices")
         self.output_dir = Path(output_dir)
         self.folder_structure = config.get("storage", "folder_structure", default="")
@@ -407,15 +414,18 @@ class InvoiceMonitor:
         if self.save_pdf:
             self.db.create_artifact(db_session, invoice_id, "pdf", status="pending")
 
-    def _mark_remaining_pending_failed(self, db_session, invoice_id: int, reason: str) -> None:
+    def _mark_remaining_pending_failed(self, db_session, invoice_id: int, reason: str,
+                                       types=("xml", "pdf")) -> None:
         """Oznacz jako failed artefakty faktury, które po próbie wciąż są 'pending'.
 
         Zwiększa licznik prób (`download_attempts`), dzięki czemu
         `get_pending_artifacts` przestanie je zwracać po 3 nieudanych próbach.
+        `types` ogranicza działanie do wybranych typów (UPO ma osobny przebieg).
         """
         pending = (
             db_session.query(InvoiceArtifact)
             .filter_by(invoice_id=invoice_id, status="pending")
+            .filter(InvoiceArtifact.artifact_type.in_(types))
             .all()
         )
         for art in pending:
@@ -439,6 +449,8 @@ class InvoiceMonitor:
         session = self.db.get_session()
         try:
             pending = self.db.get_pending_artifacts(session, limit=limit)
+            # UPO ma osobny przebieg (process_pending_upo) — tu tylko XML/PDF.
+            pending = [a for a in pending if a.artifact_type in ("xml", "pdf")]
             if not pending:
                 return 0
 
@@ -495,6 +507,123 @@ class InvoiceMonitor:
 
         if processed:
             logger.info("Faza 2: pobrano artefakty dla %d faktur", processed)
+        return processed
+
+    def _build_session_invoice_map(self, force: bool = False) -> dict:
+        """Zbuduj (z cache TTL) mapę ksefNumber -> sessionReference z sesji KSeF.
+
+        Listuje sesje online i ich faktury — pozwala odnaleźć sesję, w której
+        wystawiono fakturę sprzedażową, aby pobrać jej UPO.
+        """
+        now = time.time()
+        if (not force and self._session_invoice_map is not None
+                and (now - self._session_map_ts) < self._session_map_ttl):
+            return self._session_invoice_map
+
+        mapping = {}
+        for sess in self.ksef.list_sessions(session_type="Online"):
+            ref = sess.get("referenceNumber")
+            if not ref:
+                continue
+            for inv in self.ksef.get_session_invoices(ref):
+                ksef_number = inv.get("ksefNumber")
+                if ksef_number:
+                    mapping[ksef_number] = ref
+
+        self._session_invoice_map = mapping
+        self._session_map_ts = now
+        logger.info("UPO: zbudowano mapę sesji (%d faktur)", len(mapping))
+        return mapping
+
+    def _save_upo_xml(self, ksef_number: str, upo_xml: str) -> Optional[Path]:
+        """Zapisz UPO XML do {output_dir}/upo/{ksefNumber}.xml (guard path traversal)."""
+        upo_dir = self.output_dir / "upo"
+        upo_dir.mkdir(parents=True, exist_ok=True)
+        target = upo_dir / f"{ksef_number}.xml"
+        if not target.resolve().is_relative_to(self.output_dir.resolve()):
+            logger.error("UPO: path traversal blocked for %s", ksef_number)
+            return None
+        try:
+            with open(target, "w", encoding="utf-8") as f:
+                f.write(upo_xml)
+        except OSError as e:
+            logger.error("UPO: zapis nie powiódł się dla %s: %s", ksef_number, e)
+            return None
+        return target
+
+    def process_pending_upo(self, limit: Optional[int] = None) -> int:
+        """Pobierz UPO dla wykrytych faktur sprzedażowych (Subject1) bez UPO.
+
+        Dla każdej takiej faktury: odnajdź sesję (mapa ksefNumber->sessionRef),
+        pobierz UPO (`get_invoice_upo`, z weryfikacją SHA-256), zapisz XML i ustaw
+        `has_upo`/`upo_path`. Próby liczone artefaktem typu 'upo' (bounded retry —
+        np. KSeF 21178 „UPO not found" może pojawić się z opóźnieniem). Wymaga DB
+        oraz `fetch_upo=True`.
+
+        Returns:
+            Liczba pobranych UPO.
+        """
+        if self.db is None or not self.fetch_upo:
+            return 0
+
+        limit = limit if limit is not None else self.artifact_batch_size
+        processed = 0
+        session = self.db.get_session()
+        try:
+            invoices = (
+                session.query(Invoice)
+                .filter(Invoice.subject_type == "Subject1", Invoice.has_upo.is_(False))
+                .order_by(Invoice.id)
+                .limit(limit)
+                .all()
+            )
+            if not invoices:
+                return 0
+
+            session_map = None
+            for inv in invoices:
+                # artefakt 'upo' do liczenia prób (no-op jeśli już istnieje)
+                self.db.create_artifact(session, inv.id, "upo", status="pending")
+                art = (session.query(InvoiceArtifact)
+                       .filter_by(invoice_id=inv.id, artifact_type="upo").first())
+                if art and (art.download_attempts or 0) >= 3:
+                    continue  # próby wyczerpane
+
+                if session_map is None:
+                    session_map = self._build_session_invoice_map()
+                session_ref = session_map.get(inv.ksef_number)
+                if not session_ref:
+                    self.db.mark_artifact_failed(session, inv.id, "upo", "session not found")
+                    continue
+
+                upo = self.ksef.get_invoice_upo(session_ref, inv.ksef_number)
+                if not upo:
+                    self.db.mark_artifact_failed(
+                        session, inv.id, "upo", "UPO unavailable (e.g. 21178) or hash mismatch")
+                    continue
+
+                path = self._save_upo_xml(inv.ksef_number, upo["upo_xml"])
+                if path is None:
+                    self.db.mark_artifact_failed(session, inv.id, "upo", "save failed")
+                    continue
+
+                inv.has_upo = True
+                inv.upo_path = str(path)
+                self.db.mark_artifact_downloaded(
+                    session, inv.id, "upo", file_path=str(path),
+                    file_hash=upo.get("sha256_hash") or None,
+                )
+                processed += 1
+
+            session.commit()
+        except Exception:
+            session.rollback()
+            raise
+        finally:
+            session.close()
+
+        if processed:
+            logger.info("UPO: pobrano %d UPO", processed)
         return processed
 
     def _finalize_check_cycle(self, use_db: bool, state: Dict, seen_entries: list,
@@ -1034,6 +1163,11 @@ class InvoiceMonitor:
                 self.process_pending_artifacts()
             except Exception as e:
                 logger.error("Faza 2 (pobieranie artefaktów) nie powiodła się: %s", e, exc_info=True)
+        if self.fetch_upo:
+            try:
+                self.process_pending_upo()
+            except Exception as e:
+                logger.error("UPO: pobieranie nie powiodło się: %s", e, exc_info=True)
 
     def run(self):
         """

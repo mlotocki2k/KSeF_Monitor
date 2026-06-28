@@ -78,6 +78,8 @@
     "lazy_artifacts": false,
     "artifact_batch_size": 50,
     "lazy_artifacts_description": "Lightweight Polling (v0.6): when true, the detection cycle only queues XML/PDF as pending and downloads them in a separate phase (faster push, separate rate budget). Requires database. Default false = download inline during detection. artifact_batch_size: max artifacts processed per phase-2 pass (default 50).",
+    "fetch_upo": false,
+    "fetch_upo_description": "UPO download (v0.6): when true, fetch the official receipt (UPO) for sales invoices (Subject1) in a separate phase — resolves the KSeF session, downloads /sessions/{ref}/invoices/ksef/{ksef}/upo with SHA-256 verification, saves to {output_dir}/upo/{ksef}.xml and sets has_upo. Requires database and a token with the Introspection permission. Opt-in (extra API budget).",
     "description": "Monitoring settings. subject_types: Subject1 (sprzedażowe - you are seller), Subject2 (zakupowe - you are buyer). date_type: Issue | Invoicing | PermanentStorage. timezone: IANA timezone name (default: Europe/Warsaw). logging_level: DEBUG | INFO | WARNING | ERROR | CRITICAL (default: INFO). See https://en.wikipedia.org/wiki/List_of_tz_database_time_zones for valid timezone values."
   },
   "schedule": {

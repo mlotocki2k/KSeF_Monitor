@@ -10,7 +10,7 @@ from pathlib import Path
 from unittest.mock import patch, MagicMock, mock_open
 
 from app.invoice_monitor import InvoiceMonitor
-from app.database import Database, Base, InvoiceArtifact
+from app.database import Database, Base, Invoice, InvoiceArtifact
 
 
 @pytest.fixture
@@ -811,3 +811,127 @@ class TestInvoiceMonitorLazyArtifacts:
             m._check_and_drain()
             chk.assert_called_once()
             drain.assert_not_called()
+
+
+class TestInvoiceMonitorUPO:
+    """v0.6 §4 — UPO download (sessions map + storage + bounded retry)."""
+
+    def _make(self, mock_config, tmp_path):
+        cfg = mock_config.config
+        cfg["monitoring"]["lazy_artifacts"] = False
+        cfg["monitoring"]["fetch_upo"] = True
+        cfg["monitoring"]["subject_types"] = ["Subject1"]
+        cfg["storage"]["save_xml"] = False
+        cfg["storage"]["save_pdf"] = False
+        cfg["storage"]["output_dir"] = str(tmp_path / "out")
+        cfg["storage"]["folder_structure"] = ""
+        db = Database(str(tmp_path / "u.db"))
+        Base.metadata.create_all(db.engine)
+        ksef = MagicMock()
+        ksef.environment = "test"
+        ksef.nip = "1234567890"
+        nm = MagicMock()
+        nm.send_invoice_notification.return_value = True
+        m = InvoiceMonitor(mock_config, ksef, nm, MagicMock(), database=db)
+        return m, db
+
+    def _detect_one(self, m, sample_invoice):
+        m.ksef.get_invoices_metadata.return_value = [sample_invoice]
+        m.check_for_new_invoices()  # saves Subject1 invoice (has_upo=False)
+
+    def test_init_reads_fetch_upo(self, mock_config, tmp_path):
+        m, _ = self._make(mock_config, tmp_path)
+        assert m.fetch_upo is True
+
+    def test_session_map_built_and_cached(self, mock_config, tmp_path):
+        m, _ = self._make(mock_config, tmp_path)
+        m.ksef.list_sessions.return_value = [{"referenceNumber": "S"}]
+        m.ksef.get_session_invoices.return_value = [{"ksefNumber": "K"}]
+        assert m._build_session_invoice_map() == {"K": "S"}
+        m.ksef.list_sessions.return_value = []  # changed upstream
+        assert m._build_session_invoice_map() == {"K": "S"}      # cache hit
+        assert m._build_session_invoice_map(force=True) == {}    # forced rebuild
+
+    def test_process_pending_upo_happy(self, mock_config, tmp_path, sample_invoice):
+        m, db = self._make(mock_config, tmp_path)
+        ksef_num = sample_invoice["ksefNumber"]
+        self._detect_one(m, sample_invoice)
+        m.ksef.list_sessions.return_value = [{"referenceNumber": "SESS1"}]
+        m.ksef.get_session_invoices.return_value = [{"ksefNumber": ksef_num}]
+        m.ksef.get_invoice_upo.return_value = {
+            "upo_xml": "<UPO/>", "sha256_hash": "h", "hash_verified": True,
+        }
+        assert m.process_pending_upo() == 1
+        m.ksef.get_invoice_upo.assert_called_once_with("SESS1", ksef_num)
+        with db.get_session() as s:
+            inv = s.query(Invoice).filter_by(ksef_number=ksef_num).first()
+            assert inv.has_upo is True
+            assert inv.upo_path.endswith(f"upo/{ksef_num}.xml")
+            art = s.query(InvoiceArtifact).filter_by(invoice_id=inv.id, artifact_type="upo").first()
+            assert art.status == "downloaded"
+        assert (tmp_path / "out" / "upo" / f"{ksef_num}.xml").read_text() == "<UPO/>"
+
+    def test_process_pending_upo_session_not_found(self, mock_config, tmp_path, sample_invoice):
+        m, db = self._make(mock_config, tmp_path)
+        self._detect_one(m, sample_invoice)
+        m.ksef.list_sessions.return_value = []
+        m.ksef.get_session_invoices.return_value = []
+        assert m.process_pending_upo() == 0
+        m.ksef.get_invoice_upo.assert_not_called()
+        with db.get_session() as s:
+            inv = s.query(Invoice).first()
+            assert inv.has_upo is False
+            art = s.query(InvoiceArtifact).filter_by(artifact_type="upo").first()
+            assert art.status == "failed" and art.download_attempts == 1
+
+    def test_process_pending_upo_unavailable_bounded_retry(self, mock_config, tmp_path, sample_invoice):
+        m, db = self._make(mock_config, tmp_path)
+        ksef_num = sample_invoice["ksefNumber"]
+        self._detect_one(m, sample_invoice)
+        m.ksef.list_sessions.return_value = [{"referenceNumber": "SESS1"}]
+        m.ksef.get_session_invoices.return_value = [{"ksefNumber": ksef_num}]
+        m.ksef.get_invoice_upo.return_value = None  # e.g. KSeF 21178 (not ready)
+        for _ in range(3):
+            m.process_pending_upo()
+        with db.get_session() as s:
+            art = s.query(InvoiceArtifact).filter_by(artifact_type="upo").first()
+            assert art.status == "failed" and art.download_attempts == 3
+        # 4th pass: attempts exhausted → skipped, no further API call
+        m.ksef.get_invoice_upo.reset_mock()
+        m.process_pending_upo()
+        m.ksef.get_invoice_upo.assert_not_called()
+
+    def test_process_pending_upo_noop_when_disabled(self, mock_config, tmp_path):
+        m, _ = self._make(mock_config, tmp_path)
+        m.fetch_upo = False
+        assert m.process_pending_upo() == 0
+
+    def test_process_pending_upo_noop_without_db(self, mock_config, tmp_path):
+        m, _ = self._make(mock_config, tmp_path)
+        m.db = None
+        assert m.process_pending_upo() == 0
+
+    def test_check_and_drain_runs_upo_when_enabled(self, mock_config, tmp_path):
+        m, _ = self._make(mock_config, tmp_path)
+        with patch.object(m, "check_for_new_invoices"), \
+             patch.object(m, "process_pending_upo") as upo:
+            m._check_and_drain()
+            upo.assert_called_once()
+
+    def test_process_pending_artifacts_ignores_upo_rows(self, mock_config, tmp_path, sample_invoice):
+        """Regression: the XML/PDF phase must not touch (or fail) 'upo' rows."""
+        m, db = self._make(mock_config, tmp_path)
+        m.lazy_artifacts = True
+        m.save_xml = True
+        self._detect_one(m, sample_invoice)  # enqueues pending xml
+        with db.get_session() as s:
+            inv = s.query(Invoice).first()
+            m.db.create_artifact(s, inv.id, "upo", status="pending")  # add a pending upo row
+            s.commit()
+        m.ksef.get_invoice_xml.return_value = {"xml_content": "<x/>"}
+        m.process_pending_artifacts()
+        with db.get_session() as s:
+            upo = s.query(InvoiceArtifact).filter_by(artifact_type="upo").first()
+            assert upo.status == "pending"  # untouched by XML/PDF phase
+            xml = s.query(InvoiceArtifact).filter_by(artifact_type="xml").first()
+            assert xml.status == "downloaded"
