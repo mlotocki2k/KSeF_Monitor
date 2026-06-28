@@ -471,3 +471,57 @@ class TestCertificateUploadRoute:
         resp = c.post("/ui/certificate", files=files, data={"password": P12_PASSWORD})
         assert resp.status_code == 303
         assert "/ui/login" in resp.headers["location"]
+
+
+# --------------------------------------------------------------------------- #
+# Certificate validity / NIP pre-check (v0.6 §7)
+# --------------------------------------------------------------------------- #
+def _p12_with_validity(not_before, not_after, password=P12_PASSWORD, nip=NIP) -> bytes:
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    name = x509.Name([
+        x509.NameAttribute(NameOID.COMMON_NAME, f"TEST {nip}"),
+        x509.NameAttribute(NameOID.ORGANIZATION_NAME, "KrzewiLabs Test"),
+    ])
+    cert = (
+        x509.CertificateBuilder()
+        .subject_name(name).issuer_name(name)
+        .public_key(key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(not_before).not_valid_after(not_after)
+        .sign(key, hashes.SHA256())
+    )
+    enc = (serialization.BestAvailableEncryption(password.encode())
+           if password else serialization.NoEncryption())
+    return pkcs12.serialize_key_and_certificates(b"test", key, cert, None, enc)
+
+
+def _dt(year):
+    return datetime.datetime(year, 1, 1, tzinfo=datetime.timezone.utc)
+
+
+class TestCertificateValidity:
+    def test_expired_certificate_raises(self):
+        p12 = _p12_with_validity(_dt(2020), _dt(2021))
+        with pytest.raises(ValueError):
+            load_pkcs12(p12, P12_PASSWORD)
+
+    def test_not_yet_valid_certificate_raises(self):
+        p12 = _p12_with_validity(_dt(2090), _dt(2091))
+        with pytest.raises(ValueError):
+            load_pkcs12(p12, P12_PASSWORD)
+
+    def test_valid_certificate_loads(self):
+        p12 = _p12_with_validity(_dt(2026), _dt(2090))
+        key_pem, cert_pem = load_pkcs12(p12, P12_PASSWORD, expected_nip=NIP)
+        assert key_pem and cert_pem
+
+    def test_nip_mismatch_warns_but_loads(self):
+        p12 = _p12_with_validity(_dt(2026), _dt(2090), nip="9999999999")
+        # expected_nip not in subject → warning only, no exception
+        key_pem, cert_pem = load_pkcs12(p12, P12_PASSWORD, expected_nip="1234567890")
+        assert key_pem and cert_pem
+
+    def test_expired_certificate_blocks_signed_request(self):
+        p12 = _p12_with_validity(_dt(2020), _dt(2021))
+        with pytest.raises(ValueError):
+            build_signed_auth_request(CHALLENGE, NIP, p12, P12_PASSWORD)

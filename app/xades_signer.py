@@ -14,9 +14,13 @@ Akceptowane przez KSeF (auth/podpis-xades.md):
 
 Moduł nie loguje hasła ani materiału klucza.
 """
-from typing import Tuple
+import logging
+from datetime import datetime, timezone
+from typing import Optional, Tuple
 
 from lxml import etree
+
+logger = logging.getLogger(__name__)
 
 # Namespace dokumentu AuthTokenRequest (schemat auth v2-1)
 AUTH_NS = "http://ksef.mf.gov.pl/auth/token/2.1"
@@ -66,19 +70,52 @@ def build_auth_token_request(
     return root
 
 
-def load_pkcs12(p12_bytes: bytes, password: str) -> Tuple[bytes, bytes]:
+def _validate_certificate(cert, expected_nip: Optional[str] = None) -> None:
+    """Sprawdź ważność certyfikatu (okres) i — best-effort — dopasowanie NIP.
+
+    Raises:
+        ValueError: certyfikat wygasł lub jeszcze nieważny.
+    """
+    now = datetime.now(timezone.utc)
+    not_before = cert.not_valid_before_utc
+    not_after = cert.not_valid_after_utc
+    if now > not_after:
+        raise ValueError(f"Certyfikat wygasł ({not_after.date()}) — nie można się uwierzytelnić")
+    if now < not_before:
+        raise ValueError(f"Certyfikat jeszcze nieważny (ważny od {not_before.date()})")
+
+    # NIP w subject — best-effort (format subjectu certyfikatów bywa różny): tylko ostrzeżenie
+    if expected_nip:
+        try:
+            subject = cert.subject.rfc4514_string()
+        except Exception:
+            subject = ""
+        if expected_nip not in subject:
+            logger.warning(
+                "Certyfikat: NIP %s nie odnaleziony w subject certyfikatu — kontynuuję mimo to",
+                expected_nip,
+            )
+
+
+def load_pkcs12(p12_bytes: bytes, password: str,
+                expected_nip: Optional[str] = None) -> Tuple[bytes, bytes]:
     """
     Wczytaj certyfikat PKCS#12 (.p12/.pfx) → (klucz prywatny PEM, certyfikat PEM).
+
+    Waliduje ważność certyfikatu (okres) przed użyciem; gdy podano `expected_nip`,
+    ostrzega (bez błędu) jeśli NIP nie występuje w subject certyfikatu.
 
     Args:
         p12_bytes: zawartość pliku .p12/.pfx
         password: hasło do PKCS#12 (może być pusty/None dla braku hasła)
+        expected_nip: oczekiwany NIP kontekstu (best-effort dopasowanie do subject)
 
     Returns:
         Krotka (private_key_pem, certificate_pem) w formacie PEM (bytes).
 
     Raises:
-        ValueError: błędne hasło, uszkodzony plik lub brak klucza/certyfikatu.
+        ValueError: błędne hasło, uszkodzony plik, brak klucza/certyfikatu,
+                    certyfikat wygasły lub jeszcze nieważny.
     """
     from cryptography.hazmat.primitives import serialization
     from cryptography.hazmat.primitives.serialization import pkcs12
@@ -93,6 +130,8 @@ def load_pkcs12(p12_bytes: bytes, password: str) -> Tuple[bytes, bytes]:
 
     if key is None or cert is None:
         raise ValueError("Plik PKCS#12 musi zawierać klucz prywatny i certyfikat")
+
+    _validate_certificate(cert, expected_nip)
 
     key_pem = key.private_bytes(
         serialization.Encoding.PEM,
@@ -147,6 +186,6 @@ def build_signed_auth_request(
     Raises:
         ValueError: problem z certyfikatem PKCS#12 lub danymi wejściowymi.
     """
-    key_pem, cert_pem = load_pkcs12(p12_bytes, password)
+    key_pem, cert_pem = load_pkcs12(p12_bytes, password, expected_nip=nip)
     root = build_auth_token_request(challenge, nip, subject_identifier_type)
     return sign_auth_token_request(root, key_pem, cert_pem)

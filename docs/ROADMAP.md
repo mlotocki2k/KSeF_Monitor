@@ -482,7 +482,7 @@ _Pełna lista zmian: `CHANGELOG.md` [0.5.3]. Siedem defektów wykrytych w pre-me
 - [x] Budowa + podpis `AuthTokenRequest` (XAdES-BES enveloped, RSA-SHA256) — `app/xades_signer.py`, biblioteka **signxml** (bez systemowych zależności; pull `lxml`)
 - [x] Ładowanie certyfikatu: `.p12`/`.pfx` (PKCS#12) z hasłem — ścieżka w configu, hasło przez `KSEF_CERT_PASSWORD` (`SecretsManager`/Docker secret)
 - [x] Konfiguracja: `ksef.auth_method = "token" | "certificate"` + `ksef.certificate.{path, password, subject_identifier_type}`; walidacja w `config_manager` (token vs certyfikat)
-- [ ] Walidacja certyfikatu (ważność, dopasowanie NIP/kontekstu) przed próbą auth — *(TODO: dziś tylko sprawdzenie poprawności PKCS#12 / hasła)*
+- [x] Walidacja certyfikatu przed próbą auth — `_validate_certificate` w `load_pkcs12`: blokuje wygasły / jeszcze nieważny certyfikat; dopasowanie NIP do subject best-effort (ostrzeżenie). Testy `TestCertificateValidity` (5)
 - [x] Web UI: upload `.p12`/`.pfx` na stronie `/ui/certificate` (auth-required) — walidacja PKCS#12 hasłem (hasło niezapisywane) + atomowy zapis 0600 do `ksef.certificate.path`; status pliku. *(Przełączenie `auth_method` nadal w `config.json`.)*
 - [x] Testy: mock `/auth/xades-signature`, weryfikacja struktury podpisanego XML (XAdES-BES, rsa-sha256, enveloped), błędne hasło, brak pliku, dispatch — `tests/test_certificate_auth.py` (25 testów)
 - [x] Dokumentacja: [KSEF_CERTIFICATE_AUTH.md](KSEF_CERTIFICATE_AUTH.md)
