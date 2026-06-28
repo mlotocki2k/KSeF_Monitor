@@ -399,3 +399,84 @@ class TestKSeFClientRevokeSession:
         client.revoke_current_session()
         assert client.access_token is None
         assert client.refresh_token is None
+
+
+class TestKSeFClientPublicKeyId:
+    """v0.6 — publicKeyId forward-compat for KSeF v2.5.0 public key rotation."""
+
+    @staticmethod
+    def _self_signed_cert_b64():
+        import base64
+        import datetime
+
+        from cryptography import x509
+        from cryptography.x509.oid import NameOID
+        from cryptography.hazmat.primitives import hashes, serialization
+        from cryptography.hazmat.primitives.asymmetric import rsa
+
+        key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "KSeF Test Key")])
+        nb = datetime.datetime(2026, 1, 1, tzinfo=datetime.timezone.utc)
+        cert = (
+            x509.CertificateBuilder()
+            .subject_name(name)
+            .issuer_name(name)
+            .public_key(key.public_key())
+            .serial_number(x509.random_serial_number())
+            .not_valid_before(nb)
+            .not_valid_after(nb + datetime.timedelta(days=365))
+            .sign(key, hashes.SHA256())
+        )
+        der = cert.public_bytes(serialization.Encoding.DER)
+        return base64.b64encode(der).decode()
+
+    @staticmethod
+    def _rsa_public_key():
+        from cryptography.hazmat.primitives.asymmetric import rsa
+
+        return rsa.generate_private_key(public_exponent=65537, key_size=2048).public_key()
+
+    def test_fetch_public_key_stores_id(self, client):
+        resp = MagicMock()
+        resp.raise_for_status.return_value = None
+        resp.json.return_value = [
+            {
+                "certificate": self._self_signed_cert_b64(),
+                "certificateId": "CID",
+                "publicKeyId": "A" * 44,
+                "usage": ["KsefTokenEncryption"],
+            }
+        ]
+        with patch.object(client, "_request_with_retry", return_value=resp):
+            client._fetch_public_key()
+        assert client._ksef_public_key is not None
+        assert client._ksef_public_key_id == "A" * 44
+
+    def test_authenticate_with_token_sends_public_key_id(self, client):
+        client._ksef_public_key = self._rsa_public_key()
+        client._ksef_public_key_id = "B" * 44
+        resp = MagicMock()
+        resp.raise_for_status.return_value = None
+        resp.json.return_value = {
+            "referenceNumber": "R",
+            "authenticationToken": {"token": "T"},
+        }
+        with patch.object(client, "_request_with_retry", return_value=resp) as req:
+            client._authenticate_with_token("chal", 123)
+        payload = req.call_args.kwargs["json"]
+        assert payload["publicKeyId"] == "B" * 44
+        assert payload["encryptedToken"]
+
+    def test_authenticate_with_token_omits_id_when_none(self, client):
+        client._ksef_public_key = self._rsa_public_key()
+        client._ksef_public_key_id = None
+        resp = MagicMock()
+        resp.raise_for_status.return_value = None
+        resp.json.return_value = {
+            "referenceNumber": "R",
+            "authenticationToken": {"token": "T"},
+        }
+        with patch.object(client, "_request_with_retry", return_value=resp) as req:
+            client._authenticate_with_token("chal", 123)
+        payload = req.call_args.kwargs["json"]
+        assert "publicKeyId" not in payload

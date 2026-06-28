@@ -435,9 +435,9 @@ _Pełna lista zmian: `CHANGELOG.md` [0.5.3]. Siedem defektów wykrytych w pre-me
 - [x] `spec/openapi-test.json` → v2.5.0 (TEST)
 - [ ] `spec/openapi-demo.json` → v2.5.0 (po wdrożeniu DEMO 07.05)
 - [ ] `spec/openapi.json` → v2.5.0 (po wdrożeniu PRD 11.05)
-- [ ] **Forward-compat dla rotacji kluczy** (przed PRD):
-  - `KSeFClient._fetch_public_key` — zachować `cert["publicKeyId"]` obok `_ksef_public_key`
-  - `KSeFClient._authenticate_with_token` — wysyłać `publicKeyId` w body `POST /auth/ksef-token` (pole opcjonalne, nullable, ale zalecane jako selektor klucza przy rotacji)
+- [x] **Forward-compat dla rotacji kluczy** (przed PRD):
+  - `KSeFClient._fetch_public_key` — zachowuje `cert["publicKeyId"]` w `self._ksef_public_key_id`
+  - `KSeFClient._authenticate_with_token` — wysyła `publicKeyId` w body `POST /auth/ksef-token` gdy znany (nullable, omijany dla środowisk pre-2.5 bez rotacji); testy w `tests/test_ksef_client.py::TestKSeFClientPublicKeyId`
 - [ ] Limity TEST API zrównane z PRD (ten sam profil) — zweryfikować że `_request_with_retry` + 429 backoff radzi sobie pod nowym budżetem; rozważyć wyrównanie defaultowego `check_interval` jeśli polling poprzednio bazował na luźniejszych limitach test
 - [ ] (Opcjonalnie) Endpointy `/testdata/rate-limits` — wrapper do testów integracyjnych pod customowy profil limitów
 - [ ] (Opcjonalnie) Wsparcie `X-Error-Format: problem-details` dla 400/429 — dziś `_extract_api_error_details` parsuje `application/json`; nowy header daje spójny `application/problem+json` wszędzie

@@ -82,6 +82,7 @@ class KSeFClient:
         self.refresh_token = None
         self.session_reference = None  # Session referenceNumber for UPO endpoints
         self._ksef_public_key = None
+        self._ksef_public_key_id = None  # publicKeyId selektora (rotacja kluczy KSeF v2.5.0)
         self.on_auth_failure = None  # Optional callback: on_auth_failure(status_code: int)
         self.prometheus_metrics = None  # Set externally from main.py
         self.session = requests.Session()
@@ -509,6 +510,9 @@ class KSeFClient:
                     cert_der = base64.b64decode(cert["certificate"])
                     x509_cert = load_der_x509_certificate(cert_der)
                     self._ksef_public_key = x509_cert.public_key()
+                    # publicKeyId — selektor klucza przy rotacji (KSeF v2.5.0);
+                    # wysyłany w /auth/ksef-token, by KSeF wiedział którym kluczem odszyfrować
+                    self._ksef_public_key_id = cert.get("publicKeyId")
                     logger.info("KSeF public key fetched successfully")
                     return
 
@@ -560,6 +564,12 @@ class KSeFClient:
                 },
                 "encryptedToken": encrypted_token_b64
             }
+
+            # Forward-compat z rotacją kluczy (KSeF v2.5.0): wskaż klucz użyty do
+            # szyfrowania. Pole opcjonalne/nullable — wysyłamy tylko gdy znamy id
+            # (pre-2.5 środowiska bez rotacji nadal działają bez niego).
+            if self._ksef_public_key_id:
+                payload["publicKeyId"] = self._ksef_public_key_id
 
             response = self._request_with_retry("POST", url, json=payload, headers=headers, timeout=30)
             response.raise_for_status()
