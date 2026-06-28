@@ -432,9 +432,9 @@ _Pełna lista zmian: `CHANGELOG.md` [0.5.3]. Siedem defektów wykrytych w pre-me
 
 **Smoke test (2026-05-07, env=test):** auth flow 6/6 OK przeciw `api-test.ksef.mf.gov.pl` — backward compat potwierdzony, klient działa **bez** wysyłania `publicKeyId`.
 
-- [x] `spec/openapi-test.json` → v2.5.0 (TEST)
-- [ ] `spec/openapi-demo.json` → v2.5.0 (po wdrożeniu DEMO 07.05)
-- [ ] `spec/openapi.json` → v2.5.0 (po wdrożeniu PRD 11.05)
+- [x] `spec/openapi-test.json` → **2.6.1** (TEST, build `20260610.2`, sync `d6d05e1`) — KSeF wyszedł poza 2.5.0
+- [x] `spec/openapi-demo.json` → **2.6.1** (DEMO, build `20260615.1`, sync `f1c1ca7`)
+- [x] `spec/openapi.json` → **2.6.1** (PRD, build `20260616.3`, sync `f1c1ca7`)
 - [x] **Forward-compat dla rotacji kluczy** (przed PRD):
   - `KSeFClient._fetch_public_key` — zachowuje `cert["publicKeyId"]` w `self._ksef_public_key_id`
   - `KSeFClient._authenticate_with_token` — wysyła `publicKeyId` w body `POST /auth/ksef-token` gdy znany (nullable, omijany dla środowisk pre-2.5 bez rotacji); testy w `tests/test_ksef_client.py::TestKSeFClientPublicKeyId`
