@@ -4,6 +4,8 @@ Unit tests for KSeFClient
 
 import pytest
 import json
+import base64
+import hashlib
 import time
 from datetime import datetime, timezone
 from unittest.mock import patch, MagicMock, PropertyMock
@@ -480,3 +482,78 @@ class TestKSeFClientPublicKeyId:
             client._authenticate_with_token("chal", 123)
         payload = req.call_args.kwargs["json"]
         assert "publicKeyId" not in payload
+
+
+class TestKSeFClientUPO:
+    """v0.6 §4 — UPO download (sessions listing + SHA-256 integrity verification)."""
+
+    VALID_KSEF = "1234567890-20240101-ABCDEF123456-AB"
+
+    @staticmethod
+    def _resp(json_data=None, content=None, headers=None):
+        r = MagicMock()
+        r.raise_for_status.return_value = None
+        if json_data is not None:
+            r.json.return_value = json_data
+        if content is not None:
+            r.content = content
+        r.headers = headers or {}
+        return r
+
+    def test_verify_sha256_match(self, client):
+        data = b"<UPO/>"
+        h = base64.b64encode(hashlib.sha256(data).digest()).decode()
+        assert client._verify_sha256(data, h) is True
+
+    def test_verify_sha256_mismatch(self, client):
+        assert client._verify_sha256(b"<UPO/>", "deadbeef") is False
+
+    def test_verify_sha256_empty_header(self, client):
+        assert client._verify_sha256(b"x", "") is False
+
+    def test_list_sessions_returns_list(self, client):
+        resp = self._resp(json_data={"sessions": [{"referenceNumber": "S1"}]})
+        with patch.object(client, "_make_authenticated_request", return_value=resp) as req:
+            out = client.list_sessions("Online")
+        assert out == [{"referenceNumber": "S1"}]
+        assert req.call_args[0][1].endswith("/v2/sessions")
+        assert req.call_args.kwargs["params"]["sessionType"] == "Online"
+
+    def test_list_sessions_auth_fail_returns_empty(self, client):
+        with patch.object(client, "_make_authenticated_request", return_value=None):
+            assert client.list_sessions() == []
+
+    def test_get_session_invoices_returns_list(self, client):
+        resp = self._resp(json_data={"invoices": [{"ksefNumber": "K1", "upoDownloadUrl": "https://x"}]})
+        with patch.object(client, "_make_authenticated_request", return_value=resp) as req:
+            out = client.get_session_invoices("S1")
+        assert out[0]["ksefNumber"] == "K1"
+        assert "/v2/sessions/S1/invoices" in req.call_args[0][1]
+
+    def test_get_invoice_upo_happy_verifies_hash(self, client):
+        data = b"<UPO>ok</UPO>"
+        h = base64.b64encode(hashlib.sha256(data).digest()).decode()
+        resp = self._resp(content=data, headers={"x-ms-meta-hash": h})
+        with patch.object(client, "_make_authenticated_request", return_value=resp) as req:
+            out = client.get_invoice_upo("S1", self.VALID_KSEF)
+        assert out["upo_xml"] == "<UPO>ok</UPO>"
+        assert out["hash_verified"] is True
+        assert out["sha256_hash"] == h
+        assert f"/sessions/S1/invoices/ksef/{self.VALID_KSEF}/upo" in req.call_args[0][1]
+
+    def test_get_invoice_upo_hash_mismatch_returns_none(self, client):
+        resp = self._resp(content=b"<UPO/>", headers={"x-ms-meta-hash": "AAAA"})
+        with patch.object(client, "_make_authenticated_request", return_value=resp):
+            assert client.get_invoice_upo("S1", self.VALID_KSEF) is None
+
+    def test_get_invoice_upo_no_header_unverified(self, client):
+        resp = self._resp(content=b"<UPO/>", headers={})
+        with patch.object(client, "_make_authenticated_request", return_value=resp):
+            out = client.get_invoice_upo("S1", self.VALID_KSEF)
+        assert out["hash_verified"] is False
+        assert out["upo_xml"] == "<UPO/>"
+
+    def test_get_invoice_upo_invalid_ksef_returns_none(self, client):
+        with patch.object(client, "_make_authenticated_request") as req:
+            assert client.get_invoice_upo("S1", "bad") is None
+            req.assert_not_called()

@@ -8,6 +8,7 @@ import logging
 import re
 import time
 import base64
+import hashlib
 from datetime import datetime
 from typing import Optional, Dict, List
 import requests
@@ -967,6 +968,129 @@ class KSeFClient:
             return None
         except Exception as e:
             logger.error(f"Unexpected error while getting invoice XML: {e}")
+            return None
+
+    # ── UPO (Urzędowe Poświadczenie Odbioru) ────────────────────────────────
+    # Pobieranie UPO faktur sprzedażowych. Wymaga tokenu z uprawnieniem
+    # Introspection (lub InvoiceWrite, ograniczone do sesji własnych).
+    # API zweryfikowane skryptem examples/test_upo_download.py (env=test).
+
+    @staticmethod
+    def _verify_sha256(data: bytes, header_b64: str) -> bool:
+        """Czy base64(sha256(data)) == wartość z nagłówka x-ms-meta-hash."""
+        if not header_b64:
+            return False
+        actual_b64 = base64.b64encode(hashlib.sha256(data).digest()).decode()
+        return actual_b64 == header_b64
+
+    def list_sessions(self, session_type: str = "Online", page_size: int = 50,
+                      date_from: Optional[str] = None,
+                      date_to: Optional[str] = None) -> List[Dict]:
+        """
+        List KSeF sessions for the authenticated context.
+        Endpoint: GET /v2/sessions (rate: 5/s, 10/min, 60/h)
+
+        Args:
+            session_type: "Online" or "Batch"
+            page_size: results per page (default 50)
+            date_from / date_to: optional ISO datetime range filters
+
+        Returns:
+            List of session dicts (empty list on failure).
+        """
+        try:
+            url = f"{self.base_url}/{self.API_VERSION}/sessions"
+            params = {"sessionType": session_type, "pageSize": page_size}
+            if date_from:
+                params["dateFrom"] = date_from
+            if date_to:
+                params["dateTo"] = date_to
+
+            response = self._make_authenticated_request("GET", url, params=params, timeout=30)
+            if response is None:
+                logger.error("Cannot list sessions: authentication failed")
+                return []
+            response.raise_for_status()
+            return response.json().get("sessions", [])
+
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Failed to list sessions: {e}")
+            if hasattr(e, 'response') and e.response is not None:
+                logger.error(f"API error: {self._extract_api_error_details(e.response)}")
+            return []
+
+    def get_session_invoices(self, session_reference: str, page_size: int = 100) -> List[Dict]:
+        """
+        List invoices in a session (includes direct `upoDownloadUrl` SAS links).
+        Endpoint: GET /v2/sessions/{referenceNumber}/invoices
+
+        Returns:
+            List of invoice dicts (empty list on failure).
+        """
+        try:
+            url = f"{self.base_url}/{self.API_VERSION}/sessions/{session_reference}/invoices"
+            params = {"pageSize": page_size}
+
+            response = self._make_authenticated_request("GET", url, params=params, timeout=30)
+            if response is None:
+                logger.error("Cannot get session invoices: authentication failed")
+                return []
+            response.raise_for_status()
+            return response.json().get("invoices", [])
+
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Failed to get session invoices: {e}")
+            if hasattr(e, 'response') and e.response is not None:
+                logger.error(f"API error: {self._extract_api_error_details(e.response)}")
+            return []
+
+    def get_invoice_upo(self, session_reference: str, ksef_number: str) -> Optional[Dict]:
+        """
+        Download the UPO (official receipt confirmation) for an invoice.
+        Endpoint: GET /v2/sessions/{ref}/invoices/ksef/{ksefNumber}/upo
+                  (rate: 10/s, 120/min, 1200/h)
+
+        Verifies the `x-ms-meta-hash` (SHA-256 base64) integrity header. On hash
+        mismatch the artifact is discarded (returns None).
+
+        Returns:
+            Dict {upo_xml, sha256_hash, hash_verified, ksef_number}, or None on
+            failure / hash mismatch. KSeF error 21178 means UPO not yet available.
+        """
+        if not self._validate_ksef_number(ksef_number):
+            logger.error(f"Invalid KSeF number format: {ksef_number}")
+            return None
+
+        try:
+            url = (f"{self.base_url}/{self.API_VERSION}/sessions/{session_reference}"
+                   f"/invoices/ksef/{ksef_number}/upo")
+
+            response = self._make_authenticated_request("GET", url, timeout=60)
+            if response is None:
+                logger.error("Cannot get UPO: authentication failed")
+                return None
+            response.raise_for_status()
+
+            content = response.content  # bytes — hash is computed over raw bytes
+            header_hash = response.headers.get("x-ms-meta-hash", "")
+
+            if header_hash and not self._verify_sha256(content, header_hash):
+                logger.error("UPO SHA-256 mismatch for %s — discarding artifact", ksef_number)
+                return None
+            if not header_hash:
+                logger.warning("UPO for %s has no x-ms-meta-hash header — integrity unverified", ksef_number)
+
+            return {
+                "upo_xml": content.decode("utf-8"),
+                "sha256_hash": header_hash,
+                "hash_verified": bool(header_hash),
+                "ksef_number": ksef_number,
+            }
+
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Failed to get UPO for {ksef_number}: {e}")
+            if hasattr(e, 'response') and e.response is not None:
+                logger.error(f"API error: {self._extract_api_error_details(e.response)}")
             return None
 
     def get_api_status(self) -> Dict:
