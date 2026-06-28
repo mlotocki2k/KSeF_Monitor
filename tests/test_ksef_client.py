@@ -28,6 +28,11 @@ class TestKSeFClientInit:
         assert c.base_url == "https://api-test.ksef.mf.gov.pl"
         assert c.environment == "test"
 
+    def test_session_requests_problem_details_errors(self, mock_config):
+        """Client requests consistent application/problem+json error format."""
+        c = KSeFClient(mock_config)
+        assert c.session.headers.get("X-Error-Format") == "problem-details"
+
     def test_prod_environment(self, mock_config):
         """Production environment URL."""
         mock_config.config["ksef"]["environment"] = "prod"
@@ -482,6 +487,31 @@ class TestKSeFClientPublicKeyId:
             client._authenticate_with_token("chal", 123)
         payload = req.call_args.kwargs["json"]
         assert "publicKeyId" not in payload
+
+    def test_fetch_public_key_snapshot_v25_schema(self, client):
+        """v2.5.0 PublicKeyCertificate schema (certificateId + publicKeyId): select
+        the KsefTokenEncryption cert among several usages and store ITS publicKeyId."""
+        cert_b64 = self._self_signed_cert_b64()
+        resp = MagicMock()
+        resp.raise_for_status.return_value = None
+        resp.json.return_value = [
+            {
+                "certificate": cert_b64, "certificateId": "SYM",
+                "publicKeyId": "X" * 44,
+                "validFrom": "2026-01-01T00:00:00Z", "validTo": "2027-01-01T00:00:00Z",
+                "usage": ["SymmetricKeyEncryption"],
+            },
+            {
+                "certificate": cert_b64, "certificateId": "TOK",
+                "publicKeyId": "Y" * 44,
+                "validFrom": "2026-01-01T00:00:00Z", "validTo": "2027-01-01T00:00:00Z",
+                "usage": ["KsefTokenEncryption"],
+            },
+        ]
+        with patch.object(client, "_request_with_retry", return_value=resp):
+            client._fetch_public_key()
+        assert client._ksef_public_key is not None
+        assert client._ksef_public_key_id == "Y" * 44  # from the token-encryption cert
 
 
 class TestKSeFClientUPO:

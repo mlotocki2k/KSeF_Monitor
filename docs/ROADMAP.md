@@ -391,7 +391,7 @@ _Pełna lista zmian: `CHANGELOG.md` [0.5.3]. Siedem defektów wykrytych w pre-me
 ### 2) Push notification z metadata (bez XML)
 - [x] Treść push budowana z pól `InvoiceMetadata` — realizowane przez `build_template_context` (push nigdy nie wymagał XML)
 - [x] XML pobierany lazy (gdy `lazy_artifacts=true`) — pobieranie przeniesione do Fazy 2 (Docker); w iOS XML i tak fetch-owany na żądanie
-- [ ] Update `ios_push.json.j2` — przegląd template pod kątem wyłącznie metadanych *(push już bazuje na metadanych; template do zweryfikowania)*
+- [x] `ios_push.json.j2` zweryfikowany — używa wyłącznie pól metadanych (nazwy/NIP, kwoty, daty, `ksef_number`, `invoice_number`); `schema_type` z `_detect_schema_type_from_metadata` (pole `type`/`schemaType` z metadanych, bez parsowania XML). Bez zmian w kodzie.
 
 ### 3) Dokumentacja
 - [x] Analiza limitów per endpoint (z OpenAPI spec `x-rate-limits`) — [KSEF_API_LIMITATIONS.md](KSEF_API_LIMITATIONS.md)
@@ -441,8 +441,8 @@ _Pełna lista zmian: `CHANGELOG.md` [0.5.3]. Siedem defektów wykrytych w pre-me
   - `KSeFClient._authenticate_with_token` — wysyła `publicKeyId` w body `POST /auth/ksef-token` gdy znany (nullable, omijany dla środowisk pre-2.5 bez rotacji); testy w `tests/test_ksef_client.py::TestKSeFClientPublicKeyId`
 - [ ] Limity TEST API zrównane z PRD (ten sam profil) — zweryfikować że `_request_with_retry` + 429 backoff radzi sobie pod nowym budżetem; rozważyć wyrównanie defaultowego `check_interval` jeśli polling poprzednio bazował na luźniejszych limitach test
 - [ ] (Opcjonalnie) Endpointy `/testdata/rate-limits` — wrapper do testów integracyjnych pod customowy profil limitów
-- [ ] (Opcjonalnie) Wsparcie `X-Error-Format: problem-details` dla 400/429 — dziś `_extract_api_error_details` parsuje `application/json`; nowy header daje spójny `application/problem+json` wszędzie
-- [ ] Test `tests/test_ksef_client.py` — snapshot nowego `PublicKeyCertificate` schema (pola `certificateId`, `publicKeyId` jako wymagane w response)
+- [x] Wsparcie `X-Error-Format: problem-details` dla 400/429 — nagłówek wysyłany w `session.headers` (`_extract_api_error_details` parsuje `problem+json`); spójny `application/problem+json` wszędzie
+- [x] Test `tests/test_ksef_client.py` — snapshot `PublicKeyCertificate` schema v2.5.0 (`certificateId` + `publicKeyId`, wybór cert `KsefTokenEncryption` spośród wielu usage) — `test_fetch_public_key_snapshot_v25_schema`
 
 ### 6) Pełne pokrycie schematów faktur + FA_RR rewrite ✅
 **Cel:** audyt pokrycia pól FA(3) względem opublikowanego XSD, przepisanie FA_RR wg realnego schematu, realne pliki XSD zamiast stubów. _Pełna lista zmian: `CHANGELOG.md` [0.6.0]._

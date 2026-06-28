@@ -88,6 +88,9 @@ class KSeFClient:
         self.prometheus_metrics = None  # Set externally from main.py
         self.session = requests.Session()
         self.session.verify = True  # Explicit TLS certificate verification
+        # Spójny format błędów (application/problem+json) także dla 400/429 —
+        # _extract_api_error_details parsuje problem+json. (KSeF v2.5.0+)
+        self.session.headers["X-Error-Format"] = "problem-details"
 
         date_type = config.get("monitoring", "date_type")
         if date_type not in self.VALID_DATE_TYPES:
