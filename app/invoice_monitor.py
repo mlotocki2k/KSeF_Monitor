@@ -16,7 +16,7 @@ from .scheduler import Scheduler
 from .notifiers import NotificationManager
 from .invoice_pdf_generator import generate_invoice_pdf, REPORTLAB_AVAILABLE
 from .invoice_xml_parser import detect_schema_type, SCHEMA_TYPE_UNKNOWN
-from .database import Database, Invoice
+from .database import Database, Invoice, InvoiceArtifact
 
 # Optional timezone support
 try:
@@ -63,6 +63,12 @@ class InvoiceMonitor:
         # Storage settings
         self.save_xml = config.get("storage", "save_xml", default=False)
         self.save_pdf = config.get("storage", "save_pdf", default=False)
+        # Lightweight Polling (v0.6): gdy True, detekcja tylko kolejkuje artefakty
+        # jako pending; pobranie XML/PDF dzieje się w osobnej fazie
+        # process_pending_artifacts(). Domyślnie inline — bez zmiany zachowania
+        # istniejących wdrożeń. Wymaga bazy danych (DB).
+        self.lazy_artifacts = bool(config.get("monitoring", "lazy_artifacts", default=False))
+        self.artifact_batch_size = config.get("monitoring", "artifact_batch_size", default=50)
         output_dir = config.get("storage", "output_dir", default="/data/invoices")
         self.output_dir = Path(output_dir)
         self.folder_structure = config.get("storage", "folder_structure", default="")
@@ -382,9 +388,114 @@ class InvoiceMonitor:
         else:
             logger.warning("Failed to send notification [%s] invoice: %s", subject_type, safe_ksef_log)
 
-        # Save invoice artifacts (PDF, XML)
-        # Rate limiting is handled globally by RateLimiter in ksef_client
-        self._save_invoice_artifacts(invoice, subject_type, invoice_id=invoice_id, db_session=db_session)
+        # Save invoice artifacts (PDF, XML).
+        # Lightweight Polling: w trybie lazy detekcja tylko rejestruje artefakty jako
+        # pending (Faza 1); faktyczne pobranie XML/PDF dzieje się w
+        # process_pending_artifacts() (Faza 2). Wymaga DB; inaczej fallback na inline.
+        # Rate limiting jest egzekwowany globalnie przez RateLimiter w ksef_client.
+        if self.lazy_artifacts and use_db and invoice_id and (self.save_xml or self.save_pdf):
+            self._enqueue_artifacts(db_session, invoice_id)
+        else:
+            self._save_invoice_artifacts(invoice, subject_type, invoice_id=invoice_id, db_session=db_session)
+
+    def _enqueue_artifacts(self, db_session, invoice_id: int) -> None:
+        """Faza 1 (lazy): zarejestruj artefakty jako pending — pobranie w Fazie 2."""
+        if self.db is None:
+            return
+        if self.save_xml:
+            self.db.create_artifact(db_session, invoice_id, "xml", status="pending")
+        if self.save_pdf:
+            self.db.create_artifact(db_session, invoice_id, "pdf", status="pending")
+
+    def _mark_remaining_pending_failed(self, db_session, invoice_id: int, reason: str) -> None:
+        """Oznacz jako failed artefakty faktury, które po próbie wciąż są 'pending'.
+
+        Zwiększa licznik prób (`download_attempts`), dzięki czemu
+        `get_pending_artifacts` przestanie je zwracać po 3 nieudanych próbach.
+        """
+        pending = (
+            db_session.query(InvoiceArtifact)
+            .filter_by(invoice_id=invoice_id, status="pending")
+            .all()
+        )
+        for art in pending:
+            self.db.mark_artifact_failed(db_session, invoice_id, art.artifact_type, reason)
+
+    def process_pending_artifacts(self, limit: Optional[int] = None) -> int:
+        """Faza 2 (lazy artifacts): pobierz XML/PDF dla zakolejkowanych faktur.
+
+        Grupuje pending artefakty per faktura i pobiera je raz na fakturę
+        (`_save_invoice_artifacts` pobiera XML i generuje PDF w jednym kroku).
+        Limity KSeF API są egzekwowane globalnie przez RateLimiter w ksef_client.
+
+        Returns:
+            Liczba faktur, dla których udało się pobrać artefakty.
+        """
+        if self.db is None:
+            return 0
+
+        limit = limit if limit is not None else self.artifact_batch_size
+        processed = 0
+        session = self.db.get_session()
+        try:
+            pending = self.db.get_pending_artifacts(session, limit=limit)
+            if not pending:
+                return 0
+
+            # Grupuj per faktura, zachowując kolejność (created_at z get_pending_artifacts)
+            invoice_ids = []
+            seen = set()
+            for art in pending:
+                if art.invoice_id not in seen:
+                    seen.add(art.invoice_id)
+                    invoice_ids.append(art.invoice_id)
+
+            for invoice_id in invoice_ids:
+                inv = session.query(Invoice).filter_by(id=invoice_id).first()
+                if inv is None or not inv.raw_metadata:
+                    logger.warning(
+                        "Pending artifacts: brak raw_metadata dla invoice_id=%s — pomijam",
+                        invoice_id,
+                    )
+                    self._mark_remaining_pending_failed(session, invoice_id, "missing raw_metadata")
+                    continue
+
+                try:
+                    invoice = json.loads(inv.raw_metadata)
+                except (ValueError, TypeError) as e:
+                    logger.error(
+                        "Pending artifacts: nieprawidłowy raw_metadata dla invoice_id=%s: %s",
+                        invoice_id, e,
+                    )
+                    self._mark_remaining_pending_failed(session, invoice_id, "invalid raw_metadata")
+                    continue
+
+                subject_type = inv.subject_type or self.subject_types[0]
+                try:
+                    self._save_invoice_artifacts(
+                        invoice, subject_type, invoice_id=invoice_id, db_session=session
+                    )
+                    processed += 1
+                except Exception as e:
+                    logger.error(
+                        "Pending artifacts: pobranie nie powiodło się dla invoice_id=%s: %s",
+                        invoice_id, e,
+                    )
+
+                # Cokolwiek nie zostało pobrane (np. fetch XML zwrócił None) wciąż jest
+                # 'pending' → oznacz failed, by zwiększyć licznik prób (bounded retry).
+                self._mark_remaining_pending_failed(session, invoice_id, "download did not complete")
+
+            session.commit()
+        except Exception:
+            session.rollback()
+            raise
+        finally:
+            session.close()
+
+        if processed:
+            logger.info("Faza 2: pobrano artefakty dla %d faktur", processed)
+        return processed
 
     def _finalize_check_cycle(self, use_db: bool, state: Dict, seen_entries: list,
                               now: datetime, new_invoices_count: Dict) -> None:
@@ -914,6 +1025,16 @@ class InvoiceMonitor:
             logger.error(f"save_artifact: write failed for {ksef_number} {artifact_type}: {e}")
             return None
 
+    def _check_and_drain(self) -> None:
+        """Jeden przebieg: detekcja nowych faktur + (w trybie lazy) Faza 2 — pobranie
+        zakolejkowanych artefaktów. Błąd Fazy 2 nie przerywa detekcji."""
+        self.check_for_new_invoices()
+        if self.lazy_artifacts:
+            try:
+                self.process_pending_artifacts()
+            except Exception as e:
+                logger.error("Faza 2 (pobieranie artefaktów) nie powiodła się: %s", e, exc_info=True)
+
     def run(self):
         """
         Main monitoring loop
@@ -944,12 +1065,12 @@ class InvoiceMonitor:
                 if self._manual_trigger:
                     self._manual_trigger = False
                     logger.info("Manual trigger received — checking for new invoices...")
-                    self.check_for_new_invoices()
+                    self._check_and_drain()
                     logger.info(self.scheduler.get_next_run_info())
                     logger.info("-" * 60)
                 elif self.scheduler.should_run():
                     logger.info("Checking for new invoices...")
-                    self.check_for_new_invoices()
+                    self._check_and_drain()
                     logger.info(self.scheduler.get_next_run_info())
                     logger.info("-" * 60)
 

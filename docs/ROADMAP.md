@@ -383,15 +383,15 @@ _Pełna lista zmian: `CHANGELOG.md` [0.5.3]. Siedem defektów wykrytych w pre-me
 - Poll co 60s = niemożliwe (3× przekroczony limit hour=20)
 
 ### 1) Dwufazowy cykl monitoringu
-- [ ] Faza 1: detekcja — `pageSize=10`, tylko metadane, bez XML (1-2 API calls per cykl)
-- [ ] Faza 2: artefakty — lazy/background, osobny rate budget (`GET /invoices/ksef/{ksefNumber}` hour=64)
-- [ ] Konfiguracja interwału pollingu per subject type w `config.json`
-- [ ] Update `invoice_monitor.py` — oddzielenie detekcji od artifact download
+- [x] Faza 1: detekcja na metadanych + push z metadanych (bazowo już tak działało) — w trybie lazy artefakty NIE są pobierane inline *(pageSize bez zmian — `get_invoices_metadata` paginuje pełne metadane)*
+- [x] Faza 2: artefakty — osobna faza `process_pending_artifacts()` (rate limiter globalny); flaga **opt-in** `monitoring.lazy_artifacts` (default: inline, bez zmiany zachowania)
+- [ ] Konfiguracja interwału pollingu per subject type w `config.json` — *(odłożone, osobny item)*
+- [x] Update `invoice_monitor.py` — oddzielenie detekcji od artifact download (`_enqueue_artifacts` / `process_pending_artifacts` / `_check_and_drain`); testy `tests/test_invoice_monitor.py::TestInvoiceMonitorLazyArtifacts` (9)
 
 ### 2) Push notification z metadata (bez XML)
-- [ ] Treść push budowana z pól `InvoiceMetadata` (seller, buyer, kwoty, typ, daty)
-- [ ] XML pobierany lazy dopiero gdy user otwiera fakturę w app
-- [ ] Update `ios_push.json.j2` — template oparty wyłącznie o metadata
+- [x] Treść push budowana z pól `InvoiceMetadata` — realizowane przez `build_template_context` (push nigdy nie wymagał XML)
+- [x] XML pobierany lazy (gdy `lazy_artifacts=true`) — pobieranie przeniesione do Fazy 2 (Docker); w iOS XML i tak fetch-owany na żądanie
+- [ ] Update `ios_push.json.j2` — przegląd template pod kątem wyłącznie metadanych *(push już bazuje na metadanych; template do zweryfikowania)*
 
 ### 3) Dokumentacja
 - [x] Analiza limitów per endpoint (z OpenAPI spec `x-rate-limits`) — [KSEF_API_LIMITATIONS.md](KSEF_API_LIMITATIONS.md)

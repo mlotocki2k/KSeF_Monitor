@@ -10,6 +10,7 @@ from pathlib import Path
 from unittest.mock import patch, MagicMock, mock_open
 
 from app.invoice_monitor import InvoiceMonitor
+from app.database import Database, Base, InvoiceArtifact
 
 
 @pytest.fixture
@@ -713,3 +714,100 @@ class TestSaveInvoiceToDb:
         monitor._save_invoice_to_db(MagicMock(), invoice, "Subject1")
         call_data = mock_db.save_invoice.call_args[0][1]
         assert call_data["buyer_nip"] is None  # no identifier, no nip
+
+
+class TestInvoiceMonitorLazyArtifacts:
+    """v0.6 Lightweight Polling — decouple artifact download from detection."""
+
+    def _make(self, mock_config, tmp_path, save_pdf=False, lazy=True):
+        cfg = mock_config.config
+        cfg["monitoring"]["lazy_artifacts"] = lazy
+        cfg["monitoring"]["subject_types"] = ["Subject1"]
+        cfg["storage"]["save_xml"] = True
+        cfg["storage"]["save_pdf"] = save_pdf
+        cfg["storage"]["output_dir"] = str(tmp_path / "out")
+        cfg["storage"]["folder_structure"] = ""
+        db = Database(str(tmp_path / "m.db"))
+        Base.metadata.create_all(db.engine)
+        ksef = MagicMock()
+        ksef.environment = "test"
+        ksef.nip = "1234567890"
+        nm = MagicMock()
+        nm.send_invoice_notification.return_value = True
+        m = InvoiceMonitor(mock_config, ksef, nm, MagicMock(), database=db)
+        return m, db
+
+    def test_init_reads_lazy_flag(self, mock_config, tmp_path):
+        m, _ = self._make(mock_config, tmp_path)
+        assert m.lazy_artifacts is True
+
+    def test_detection_enqueues_pending_not_inline(self, mock_config, tmp_path, sample_invoice):
+        m, db = self._make(mock_config, tmp_path)
+        m.ksef.get_invoices_metadata.return_value = [sample_invoice]
+        with patch.object(m, "_save_invoice_artifacts") as inline:
+            m.check_for_new_invoices()
+            inline.assert_not_called()  # Faza 1 nie pobiera artefaktów
+        m.ksef.get_invoice_xml.assert_not_called()
+        with db.get_session() as s:
+            arts = s.query(InvoiceArtifact).all()
+        assert len(arts) == 1
+        assert arts[0].artifact_type == "xml"
+        assert arts[0].status == "pending"
+
+    def test_process_pending_downloads_and_marks(self, mock_config, tmp_path, sample_invoice):
+        m, db = self._make(mock_config, tmp_path)
+        m.ksef.get_invoices_metadata.return_value = [sample_invoice]
+        m.check_for_new_invoices()  # Faza 1 — enqueue
+        m.ksef.get_invoice_xml.return_value = {"xml_content": "<Faktura/>"}
+        processed = m.process_pending_artifacts()  # Faza 2
+        assert processed == 1
+        m.ksef.get_invoice_xml.assert_called_once()
+        with db.get_session() as s:
+            art = s.query(InvoiceArtifact).first()
+            assert art.status == "downloaded"
+
+    def test_process_pending_noop_when_empty(self, mock_config, tmp_path):
+        m, _ = self._make(mock_config, tmp_path)
+        assert m.process_pending_artifacts() == 0
+        m.ksef.get_invoice_xml.assert_not_called()
+
+    def test_process_pending_noop_without_db(self, mock_config, tmp_path):
+        m, _ = self._make(mock_config, tmp_path)
+        m.db = None
+        assert m.process_pending_artifacts() == 0
+
+    def test_failed_xml_fetch_marks_failed_with_attempt(self, mock_config, tmp_path, sample_invoice):
+        m, db = self._make(mock_config, tmp_path)
+        m.ksef.get_invoices_metadata.return_value = [sample_invoice]
+        m.check_for_new_invoices()
+        m.ksef.get_invoice_xml.return_value = None  # fetch fails
+        m.process_pending_artifacts()
+        with db.get_session() as s:
+            art = s.query(InvoiceArtifact).first()
+            assert art.status == "failed"
+            assert art.download_attempts == 1
+
+    def test_non_lazy_downloads_inline(self, mock_config, tmp_path, sample_invoice):
+        m, db = self._make(mock_config, tmp_path, lazy=False)
+        m.ksef.get_invoices_metadata.return_value = [sample_invoice]
+        with patch.object(m, "_save_invoice_artifacts") as inline:
+            m.check_for_new_invoices()
+            inline.assert_called_once()  # inline download (zachowanie domyślne)
+        with db.get_session() as s:
+            assert s.query(InvoiceArtifact).count() == 0  # nic nie zakolejkowane
+
+    def test_check_and_drain_runs_phase2_when_lazy(self, mock_config, tmp_path):
+        m, _ = self._make(mock_config, tmp_path)
+        with patch.object(m, "check_for_new_invoices") as chk, \
+             patch.object(m, "process_pending_artifacts") as drain:
+            m._check_and_drain()
+            chk.assert_called_once()
+            drain.assert_called_once()
+
+    def test_check_and_drain_skips_phase2_when_not_lazy(self, mock_config, tmp_path):
+        m, _ = self._make(mock_config, tmp_path, lazy=False)
+        with patch.object(m, "check_for_new_invoices") as chk, \
+             patch.object(m, "process_pending_artifacts") as drain:
+            m._check_and_drain()
+            chk.assert_called_once()
+            drain.assert_not_called()
