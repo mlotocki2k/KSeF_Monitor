@@ -402,25 +402,26 @@ _Pełna lista zmian: `CHANGELOG.md` [0.5.3]. Siedem defektów wykrytych w pre-me
 
 **Status:** ścieżka API zweryfikowana skryptem `examples/test_upo_download.py` (env=test, 2026-04-29) — auth + listing sesji + UPO faktury + UPO sesji, SHA256 OK, schema `http://upo.schematy.mf.gov.pl/KSeF/v4-3`.
 
-- [ ] Rozszerzenie `app/ksef_client.py`:
-  - `list_sessions(sessionType, dateFrom, dateTo, statuses)` → `GET /v2/sessions` (rate: 5/s, 10/min, 60/h)
-  - `get_session_invoices(referenceNumber)` → `GET /v2/sessions/{ref}/invoices` (zwraca też `upoDownloadUrl` SAS direct)
-  - `get_invoice_upo(sessionRef, ksefNumber)` → `GET /v2/sessions/{ref}/invoices/ksef/{ksefNumber}/upo` (rate: 10/s, 120/min, 1200/h)
-  - Weryfikacja `x-ms-meta-hash` (SHA256 base64) per artefakt
-- [ ] Integracja z `invoice_monitor.py`:
-  - Dla faktur Subject1 (sprzedażowe) — po wykryciu znajdź sesję i pobierz UPO XML
-  - Strategia mapowania ksefNumber → sessionRef: cache sesji (lista + invoices), TTL np. 24h
-  - Backoff przy 21178 (UPO not found) — UPO może pojawić się z opóźnieniem po wystawieniu
-- [ ] Storage:
-  - Aktywacja kolumn `has_upo`/`upo_path` w `invoices` (już w schema, dotąd nieużywane)
-  - Zapis pliku obok XML/PDF: `{output_dir}/upo/{ksefNumber}.xml`
-  - `artifact_type='upo'` w `invoice_artifacts` (typ już dopuszczony w schema)
-- [ ] Web UI:
+- [x] Rozszerzenie `app/ksef_client.py`:
+  - `list_sessions(session_type, page_size, date_from, date_to)` → `GET /v2/sessions`
+  - `get_session_invoices(reference)` → `GET /v2/sessions/{ref}/invoices` (`upoDownloadUrl` SAS direct)
+  - `get_invoice_upo(sessionRef, ksefNumber)` → `GET /v2/sessions/{ref}/invoices/ksef/{ksefNumber}/upo`
+  - Weryfikacja `x-ms-meta-hash` (SHA256 base64) — `_verify_sha256`, odrzut przy mismatch
+- [x] Integracja z `invoice_monitor.py` (`process_pending_upo`, osobna faza po detekcji):
+  - Dla faktur Subject1 (sprzedażowe) — odnajdź sesję i pobierz UPO XML
+  - Mapa ksefNumber → sessionRef: cache `list_sessions` + `get_session_invoices`, TTL 24h
+  - Bounded retry przy 21178 / brak sesji — artefakt `upo` z licznikiem prób (<3)
+- [x] Storage:
+  - `has_upo`/`upo_path` w `invoices` aktywowane
+  - Zapis pliku: `{output_dir}/upo/{ksefNumber}.xml` (guard path traversal)
+  - `artifact_type='upo'` w `invoice_artifacts`
+- [x] Web UI:
   - Przycisk "Pobierz UPO" na `invoice_detail.html` (gdy `has_upo=True`)
-  - Endpoint `GET /api/invoices/{ksefNumber}/upo` zwracający XML
-- [ ] Konfiguracja: flaga `monitoring.fetch_upo` (default: false — opt-in, dodatkowy rate budget)
-- [ ] Token wymaga uprawnienia `Introspection` (lub `InvoiceWrite` — ograniczone do sesji własnych) — udokumentować w [KSEF_TOKEN.md](KSEF_TOKEN.md)
-- [ ] Testy: mock `/sessions` + `/sessions/{ref}/invoices/ksef/{ksefNumber}/upo`, weryfikacja SHA256 mismatch handling, 21178
+  - Endpoint `GET /api/v1/invoices/{ksefNumber}/upo` (serwuje z cache; 404 gdy brak)
+- [x] Konfiguracja: flaga `monitoring.fetch_upo` (default: false — opt-in, dodatkowy rate budget)
+- [x] Token wymaga uprawnienia `Introspection` — udokumentowane w `config.example.json` (opis `fetch_upo`) i tutaj *(KSEF_TOKEN.md nie aktualizowany osobno)*
+- [x] Testy: mock `/sessions` + `/upo`, SHA256 mismatch, brak sesji, bounded retry (21178), endpoint UI — `test_ksef_client.py::TestKSeFClientUPO` (10) + `test_invoice_monitor.py::TestInvoiceMonitorUPO` (9) + `test_api_invoices.py::TestUpoEndpoint` (4)
+- [ ] **Weryfikacja end-to-end** przeciw realnemu KSeF — wymaga tokenu z uprawnieniem Introspection (dotąd tylko testy mock)
 
 ### 5) Adaptacja KSeF API v2.5.0
 **Cel:** forward-compat z rotacją kluczy publicznych KSeF; zaktualizowane spec'i dla wszystkich środowisk.
@@ -466,7 +467,7 @@ _Pełna lista zmian: `CHANGELOG.md` [0.5.3]. Siedem defektów wykrytych w pre-me
 - [x] **Drift detection** — `check_ksef_fa_schema.yml` matryca rozszerzona o FA(2) v1-0E i FA_RR(1) v1-1E (CRD + CIRFMF); skan nowych wersji obejmuje `faktury/schemy/FA` + `faktury/schemy/RR`
 - [x] Testy — `test_multi_schema_parser.py`: FA_RR przepisane na realny schemat + `TestFA3ExtendedFields` (61 passed)
 
-### 6) Logowanie przez certyfikat (XAdES)
+### 7) Logowanie przez certyfikat (XAdES)
 **Cel:** alternatywna metoda uwierzytelniania KSeF — podpis dokumentu `AuthTokenRequest` certyfikatem (kwalifikowany podpis/pieczęć lub certyfikat KSeF) zamiast tokenu KSeF. Endpoint `POST /auth/xades-signature` (zwraca 202).
 
 **Flow API (openapi v2 + [uwierzytelnianie.md](https://github.com/CIRFMF/ksef-api/blob/main/uwierzytelnianie.md)):**

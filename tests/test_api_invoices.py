@@ -276,3 +276,62 @@ class TestKsefNumberValidation:
             headers={"Authorization": "Bearer " + "a" * 32},
         )
         assert resp.status_code != 422
+
+
+class TestUpoEndpoint:
+    """GET /api/v1/invoices/{ksef}/upo — serves cached UPO XML (v0.6 §4)."""
+
+    KSEF = "1111111111-20260301-AAAAAA-01"
+
+    def _db_with_upo(self, tmp_path, with_file=True):
+        engine = create_engine(
+            "sqlite:///:memory:",
+            connect_args={"check_same_thread": False},
+            poolclass=StaticPool,
+        )
+        Base.metadata.create_all(engine)
+        db = InMemoryDB(engine, sessionmaker(bind=engine))
+
+        upo_path = str(tmp_path / "upo.xml")
+        if with_file:
+            with open(upo_path, "w", encoding="utf-8") as f:
+                f.write("<UPO>ok</UPO>")
+
+        s = db.SessionLocal()
+        inv = Invoice(
+            ksef_number=self.KSEF, invoice_number="FV/1", invoice_type="VAT",
+            subject_type="Subject1", issue_date="2026-03-01",
+            gross_amount=1.0, net_amount=1.0, vat_amount=0.0, currency="PLN",
+            seller_nip="1111111111", seller_name="Test Seller", source="polling",
+            has_upo=with_file, upo_path=upo_path if with_file else None,
+        )
+        s.add(inv)
+        s.commit()
+        if with_file:
+            db.create_artifact(s, inv.id, "upo")
+            db.mark_artifact_downloaded(s, inv.id, "upo", file_path=upo_path, file_hash="h")
+            s.commit()
+        s.close()
+        return db
+
+    def test_upo_download_ok(self, tmp_path):
+        client = TestClient(create_app(db=self._db_with_upo(tmp_path), auth_token=None))
+        resp = client.get(f"/api/v1/invoices/{self.KSEF}/upo")
+        assert resp.status_code == 200
+        assert resp.headers["content-type"].startswith("application/xml")
+        assert resp.text == "<UPO>ok</UPO>"
+
+    def test_upo_404_when_not_available(self, tmp_path):
+        client = TestClient(create_app(db=self._db_with_upo(tmp_path, with_file=False), auth_token=None))
+        resp = client.get(f"/api/v1/invoices/{self.KSEF}/upo")
+        assert resp.status_code == 404
+
+    def test_upo_404_unknown_invoice(self, tmp_path):
+        client = TestClient(create_app(db=self._db_with_upo(tmp_path), auth_token=None))
+        resp = client.get("/api/v1/invoices/9999999999-20260301-AAAAAA-99/upo")
+        assert resp.status_code == 404
+
+    def test_upo_503_without_db(self):
+        client = TestClient(create_app(db=None, auth_token=None))
+        resp = client.get(f"/api/v1/invoices/{self.KSEF}/upo")
+        assert resp.status_code == 503

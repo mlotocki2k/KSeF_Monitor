@@ -187,6 +187,48 @@ def get_invoice_xml(request: Request, ksef_number: KsefNumberPath):
     )
 
 
+@router.get("/invoices/{ksef_number}/upo")
+@limiter.limit(lambda key: _endpoint_limits["invoice_download"])
+def get_invoice_upo(request: Request, ksef_number: KsefNumberPath):
+    """Return the UPO (official receipt) XML for a sales invoice from local cache.
+
+    UPO is downloaded by the monitor's UPO phase (monitoring.fetch_upo) and served
+    here from disk. Returns 404 if not yet available (e.g. fetch_upo disabled or
+    UPO not yet issued by KSeF).
+    """
+    db = request.app.state.db
+    if not db:
+        return JSONResponse(status_code=503, content={"detail": "Database not available"})
+
+    from app.database import Invoice, InvoiceArtifact
+
+    session = db.get_session()
+    try:
+        invoice = session.query(Invoice).filter_by(ksef_number=ksef_number).first()
+        if not invoice:
+            return JSONResponse(status_code=404, content={"detail": "Invoice not found"})
+
+        artifact = (
+            session.query(InvoiceArtifact)
+            .filter_by(invoice_id=invoice.id, artifact_type="upo", status="downloaded")
+            .first()
+        )
+        upo_path = artifact.file_path if (artifact and artifact.file_path) else invoice.upo_path
+        if not upo_path or not os.path.exists(upo_path):
+            return JSONResponse(status_code=404, content={"detail": "UPO not available yet"})
+
+        with open(upo_path, "r", encoding="utf-8") as f:
+            upo_content = f.read()
+        safe_filename = quote(f"{ksef_number}-upo.xml")
+        return Response(
+            content=upo_content,
+            media_type="application/xml",
+            headers={"Content-Disposition": f'attachment; filename="{safe_filename}"'},
+        )
+    finally:
+        session.close()
+
+
 @router.get("/invoices/{ksef_number}/pdf")
 @limiter.limit(lambda key: _endpoint_limits["invoice_download"])
 def get_invoice_pdf(request: Request, ksef_number: KsefNumberPath):
