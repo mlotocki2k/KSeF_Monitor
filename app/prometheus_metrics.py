@@ -20,8 +20,15 @@ class PrometheusMetrics:
 
     Metrics exposed:
     - ksef_last_check_timestamp: Unix timestamp of last KSeF API check
-    - ksef_new_invoices_total: Total count of new invoices by subject_type
-    - ksef_monitor_up: Health check - 1 if monitor is running
+    - ksef_new_invoices_total: Total count of new invoices by subject_type (counter with labels)
+    - ksef_monitor_up: Health check gauge - 1 if monitor is running, 0 otherwise
+    - ksef_auth_failures_total: Total number of KSeF API authentication failures counter with status_code label
+    - ksef_api_requests_total: Total KSeF API requests (v0.4) counter with endpoint and status_code labels
+    - ksef_api_response_time_seconds: Histogram of KSeF API response times in seconds per endpoint
+    - ksef_api_rate_limit_waits_total: Counter tracking rate limiter wait events before request execution
+    - ksef_api_rate_limit_remaining: Gauge showing remaining API calls available in current window
+    - ksef_artifacts_pending_total: Number of artifacts pending download grouped by type label
+    - ksef_rest_api_requests_total: Total REST API requests counter with endpoint and method labels
     """
 
     def __init__(self, port: int = 8000, bind_address: str = '127.0.0.1'):
