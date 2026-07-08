@@ -191,7 +191,7 @@ Poprawki niezwiązane z konkretnymi feature'ami, ale krytyczne dla stabilności:
 
 ### 3) Push notyfikacje iOS — Monitor KSeF (Cloudflare Worker) ✅
 - nowy kanał powiadomień: natywne push notifications na iOS via aplikację **Monitor KSeF**
-- Aplikacja iOS: Monitor KSeF (w trakcie review w App Store)
+- Aplikacja iOS: Monitor KSeF (dostępna w App Store, v1.1.2+ — parowanie push działa)
 - **Architektura** (wg `architektura_push_notifications_v1_1_PL.md`):
   - Central Push Service: Cloudflare Worker (`push.monitorksef.com`) jako proxy do APNs
   - Worker przechowuje klucz .p8 — nigdy nie opuszcza Worker
@@ -361,7 +361,7 @@ _Pełna lista zmian: `CHANGELOG.md` [0.5.3]. Siedem defektów wykrytych w pre-me
 - [x] **Logo↔menu spacing** — active nav-link niebieskie tło zlewało się z brand text. `ml-2 sm:ml-4` na `<nav>`, prawa strona spacing bez zmian.
 
 ### Dokumentacja
-- [x] **iOS App Store status notice** — App Store v1.0.2 nie obsługuje parowania push. Amber callout w `/ui/push` pod CTA + blockquote w `README.md` iOS Push, oba pointujące na `kontakt@krzewilabs.pl` po TestFlight v1.1.x.
+- [x] **iOS App Store status notice** — (historyczne: App Store v1.0.2 nie obsługiwał parowania push; amber callout w `/ui/push` + blockquote w `README.md` kierujące na TestFlight). **Nieaktualne od v1.1.2 (2026-07-08): parowanie push działa w App Store; blockquote README zaktualizowany, amber callout w `/ui/push` do usunięcia.**
 
 ### Migracje
 - [x] `h3c4d5e67890` — phase 8 `initial_load_windows`. Idempotent, head-revision check w `tests/test_db_migration.py` zaktualizowany.

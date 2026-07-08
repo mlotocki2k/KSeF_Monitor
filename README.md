@@ -349,7 +349,7 @@ System powiadomień obsługuje **6 kanałów** jednocześnie. Możesz włączyć
 4. Regeneracja credentials: `POST /api/v1/push/regenerate`
 5. Reset pełny: `POST /api/v1/push/reset`
 
-> ⚠ **Status aplikacji iOS:** wersja w App Store nie obsługuje jeszcze parowania push — pełna funkcjonalność wkrótce. Po wersję testową przez TestFlight napisz na [kontakt@krzewilabs.pl](mailto:kontakt@krzewilabs.pl).
+> ℹ️ **Aplikacja iOS:** parowanie push jest dostępne w oficjalnej wersji **Monitor KSeF w App Store** (v1.1.2+). Parowanie w aplikacji: Konfiguracja → sekcja „Powiadomienia Push" → włącz przełącznik → zeskanuj kod QR lub wpisz 8-znakowy kod ręcznie.
 
 Secret: `IOS_PUSH_INSTANCE_KEY` (env var / Docker secret)
 </details>

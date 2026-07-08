@@ -27,14 +27,14 @@ Release `test` → `main` gating: **manualny user-test + iOS app v1.1.1 w App St
 - [x] **GUI: progress 50% pod "Ukończony"** — bump `windows_completed` na failure path. Nowy status `completed_with_errors`.
 - [x] **GUI: per-window history** — phase 8 migration `initial_load_windows`, endpoint, toggle table.
 - [x] **GUI: logo↔menu spacing** — `ml-2 sm:ml-4` na `<nav>`.
-- [x] **iOS App Store status** — amber notice w `/ui/push` + README pointujące na `kontakt@krzewilabs.pl` po TestFlight.
+- [x] **iOS App Store status** — amber notice w `/ui/push` + README (historyczne — dot. TestFlight). **Nieaktualne od v1.1.2 (2026-07-08): parowanie push w App Store; README zaktualizowany, usunąć amber notice z `/ui/push`.**
 
 ### User testing scenariuszy
 - [ ] Fresh install (czysty volume): `/ui/login` → 303 → `/ui/setup` wizard → username/pass → login → dashboard
 - [ ] Upgrade z v0.5.0 z istniejącym `auth_token`: bootstrap `admin` = `auth_token`, login, zmiana hasła w `/ui/account`
 - [ ] Przycisk "Sprawdź" w navbar → status 200, flash "Check scheduled"
 - [ ] Bearer `Authorization: Bearer <token>` curl na `/api/v1/invoices` → działa
-- [ ] iOS pairing flow (push pairing code z `/ui/push` → TestFlight v1.1.x)
+- [ ] iOS pairing flow (push pairing code z `/ui/push` → App Store v1.1.2+)
 - [ ] Rate limity: `/ui/login` 5/min, `/ui/setup` 3/min
 - [ ] Password change → revoke wszystkich sesji → wymuszone ponowne logowanie
 - [ ] Visual QA dark theme: navbar, dashboard, lista faktur, push, setup, login
