@@ -406,11 +406,11 @@ class TestRateLimiting:
         from fastapi.testclient import TestClient
         from app.api import create_app
 
-        app = create_app(rate_limit_config={"enabled": True, "default": "2/minute"})
+        app = create_app(rate_limit_config={"enabled": True, "default": "1000/minute", "trigger": "2/minute"})
         client = TestClient(app)
 
         # Exhaust rate limit with 3 requests (limit is 2/min)
-        responses = [client.get("/api/v1/stats/summary") for _ in range(3)]
+        responses = [client.post("/api/v1/monitor/trigger") for _ in range(3)]
         status_codes = [r.status_code for r in responses]
         assert 429 in status_codes, f"Expected 429 in {status_codes}"
 
