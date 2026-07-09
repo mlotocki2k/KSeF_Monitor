@@ -410,7 +410,7 @@ class TestRateLimiting:
         client = TestClient(app)
 
         # Exhaust rate limit with 3 requests (limit is 2/min)
-        responses = [client.get("/api/v1/stats/summary") for _ in range(3)]
+        responses = [client.get("/api/v1/monitor/health") for _ in range(3)]
         status_codes = [r.status_code for r in responses]
         assert 429 in status_codes, f"Expected 429 in {status_codes}"
 
