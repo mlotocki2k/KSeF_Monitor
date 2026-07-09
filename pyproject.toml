@@ -1,6 +1,6 @@
 [project]
 name = "ksef-monitor"
-version = "0.5.3"
+version = "0.5.4"
 description = "Monitor faktur w Krajowym Systemie e-Faktur (KSeF) — polling API, powiadomienia multi-kanałowe, generowanie PDF"
 license = "MIT"
 requires-python = ">=3.10"
