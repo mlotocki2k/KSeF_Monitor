@@ -4,6 +4,15 @@
 
 **Goal:** Dodać do repo dockerowego pipeline Gitea Actions build → push (rejestr Gitea) → deploy przez SSH na `test.krzewiny.net` (branch `test`) i `docker.krzewiny.net` (branch `main`), wzorowany 1:1 na budget app.
 
+> **PIVOT 2026-06-30 — Tasks 1/2/4/5 ZASTĄPIONE.** Zamiast kopiować inline pipeline,
+> KSeF używa reusable `mlotocki/ci-templates/.gitea/workflows/docker-synology.yml@v0.18.0`
+> przez cienki caller `.gitea/workflows/ci.yml` (commit `5bf89e7`). Usunięto
+> `resolve-deploy-config.sh`, `remote-deploy.sh`, `docker-build.yml` (template ma własne w `_cit/`).
+> **Nadal aktualne:** Task 3 (`compose.yaml` = `compose_src`), Task 6 (Gitea Variables/Secrets
+> + edycja host compose), Task 7 (pierwszy deploy test), Task 8 (promocja main). Zamiast
+> commitować `docker-build.yml` (Task 7 Step 2) — commituje się `ci.yml` (już zrobione).
+> Poniższe Tasks 1/2/4/5 zachowane jako historia.
+
 **Architecture:** Jeden workflow `.gitea/workflows/docker-build.yml` z jobem `build` (build+push obrazu do rejestru Gitea) i dwoma jobami deploy (`deploy-test`, `deploy-prod`) uruchamianymi warunkowo po branchu/dispatchu. Deploy = SSH na Synology, `resolve-deploy-config.sh` czyta konfigurację z Gitea Variables/Secrets, `remote-deploy.sh` robi `docker compose pull` + `up -d` serwisu `ksef_monitor`. Dodanie `.gitea/workflows` **wyłącza** równoległe wykonywanie `.github/workflows` przez Gitę (precedence WorkflowDirs).
 
 **Tech Stack:** Gitea Actions (Gitea 1.26.2), Bash, Docker Compose, Synology DSM Container Manager.

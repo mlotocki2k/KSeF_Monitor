@@ -3,6 +3,18 @@
 Data: 2026-06-28
 Repo: `gitea.krzewiny.net:3033/mlotocki/KSeF_Monitor` (`ksef_monitor_v0_1`)
 
+> **PIVOT 2026-06-30 — PODEJŚCIE ZMIENIONE.** Ten spec opisuje pierwotny wariant
+> „kopiuj inline pipeline z budget app". W trakcie realizacji ustalono, że istnieje
+> **reusable workflow** `mlotocki/ci-templates/.gitea/workflows/docker-synology.yml`
+> (uogólniony z budgetu; budget już go używa). KSeF migruje na niego zamiast kopiować.
+> **Autorytatywne artefakty:** `.gitea/workflows/ci.yml` (cienki caller `@v0.18.0`) +
+> `deploy/synology/compose.yaml` (`compose_src`) + `deploy/synology/README.md`.
+> Skrypty deploy należą do ci-templates (`templates_ref: v0.18.0`) — nie do tego repo.
+> Poniższe sekcje o `resolve-deploy-config.sh` / `remote-deploy.sh` / `docker-build.yml`
+> są historyczne. Aktualne: branch/env mapping, hosty, ścieżki, Gitea Variables/Secrets,
+> precedence `.gitea`>`.github`, edycja host compose (opcja A) — bez zmian.
+> Znane residuum: v0.18.0 przekazuje `REGISTRY_TOKEN` w argv ssh (reguła #1) → fix upstream w ci-templates (→ v0.19.0).
+
 ## Cel
 
 Dodać do repozytorium dockerowego automatyczny pipeline build → push → deploy w
