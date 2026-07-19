@@ -439,7 +439,7 @@ _Pełna lista zmian: `CHANGELOG.md` [0.5.3]. Siedem defektów wykrytych w pre-me
 - [x] **Forward-compat dla rotacji kluczy** (przed PRD):
   - `KSeFClient._fetch_public_key` — zachowuje `cert["publicKeyId"]` w `self._ksef_public_key_id`
   - `KSeFClient._authenticate_with_token` — wysyła `publicKeyId` w body `POST /auth/ksef-token` gdy znany (nullable, omijany dla środowisk pre-2.5 bez rotacji); testy w `tests/test_ksef_client.py::TestKSeFClientPublicKeyId`
-- [ ] Limity TEST API zrównane z PRD (ten sam profil) — zweryfikować że `_request_with_retry` + 429 backoff radzi sobie pod nowym budżetem; rozważyć wyrównanie defaultowego `check_interval` jeśli polling poprzednio bazował na luźniejszych limitach test
+- [x] Limity TEST API zrównane z PRD — kod: 429 backoff w `_request_with_retry` (otestowany); default interwał wyrównany **5→7 min** (bezpieczny dla 2 subjectów pod limit 20/h) + ostrzeżenie startowe gdy `subjects × cykle/h > 20` (`_warn_if_polling_exceeds_limit`, uwzględnia `subject_poll_intervals`). *Pozostaje weryfikacja operacyjna na żywym API.*
 - [ ] (Opcjonalnie) Endpointy `/testdata/rate-limits` — wrapper do testów integracyjnych pod customowy profil limitów
 - [x] Wsparcie `X-Error-Format: problem-details` dla 400/429 — nagłówek wysyłany w `session.headers` (`_extract_api_error_details` parsuje `problem+json`); spójny `application/problem+json` wszędzie
 - [x] Test `tests/test_ksef_client.py` — snapshot `PublicKeyCertificate` schema v2.5.0 (`certificateId` + `publicKeyId`, wybór cert `KsefTokenEncryption` spośród wielu usage) — `test_fetch_public_key_snapshot_v25_schema`

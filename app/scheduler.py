@@ -98,6 +98,21 @@ class Scheduler:
                     if day.lower() not in self.VALID_WEEKDAYS:
                         raise ValueError(f"Invalid weekday: {day}")
 
+    def interval_seconds(self) -> Optional[float]:
+        """Effective cycle interval in seconds for interval-based modes.
+
+        Returns None for 'daily'/'weekly' (few runs/day — low API volume).
+        The interval is already clamped to MIN_INTERVAL_SECONDS by _validate_config.
+        """
+        if self.mode not in ('simple', 'minutes', 'hourly'):
+            return None
+        interval = self.config.get('interval')
+        if self.mode == 'minutes':
+            return interval * 60
+        if self.mode == 'hourly':
+            return interval * 3600
+        return interval  # 'simple' = seconds
+
     def _parse_time(self, time_str: str) -> dt_time:
         """Parse time string in HH:MM format"""
         try:

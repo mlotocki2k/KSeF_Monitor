@@ -86,8 +86,8 @@
   },
   "schedule": {
     "mode": "minutes",
-    "interval": 5,
-    "description": "Schedule configuration. MODES: 'simple' (seconds), 'minutes', 'hourly', 'daily' (specific time), 'weekly' (specific days/times)",
+    "interval": 7,
+    "description": "Schedule configuration. MODES: 'simple' (seconds), 'minutes', 'hourly', 'daily' (specific time), 'weekly' (specific days/times). NOTE: /invoices/query/metadata limit is 20/h — with the default 2 subject_types, use >=7 min (24/h at 5 min exceeds the limit; the client applies 429 backoff, but 7 min stays safe).",
     "examples": {
       "every_5_minutes": {"mode": "minutes", "interval": 5},
       "every_2_hours": {"mode": "hourly", "interval": 2},

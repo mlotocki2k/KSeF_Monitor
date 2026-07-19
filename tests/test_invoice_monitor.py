@@ -11,6 +11,7 @@ from unittest.mock import patch, MagicMock, mock_open
 
 from app.invoice_monitor import InvoiceMonitor
 from app.database import Database, Base, Invoice, InvoiceArtifact
+from app.scheduler import Scheduler
 
 
 @pytest.fixture
@@ -975,3 +976,40 @@ class TestInvoiceMonitorSubjectIntervals:
 
         # Subject1 (no interval) polled; Subject2 (recent + huge interval) skipped.
         assert monitor.ksef.get_invoices_metadata.call_count == 1
+
+
+class TestInvoiceMonitorPollingLimit:
+    """v0.6 §5 — startup warning when polling would exceed /metadata 20/h limit."""
+
+    def test_estimate_two_subjects_5min_exceeds(self, monitor):
+        monitor.subject_types = ["Subject1", "Subject2"]
+        monitor.subject_intervals = {}
+        monitor.scheduler = Scheduler({"mode": "minutes", "interval": 5})
+        assert round(monitor._estimate_metadata_calls_per_hour()) == 24  # 12/h × 2 > 20
+
+    def test_estimate_respects_per_subject_interval(self, monitor):
+        monitor.subject_types = ["Subject1", "Subject2"]
+        monitor.subject_intervals = {"Subject2": 3600}  # Subject2 hourly
+        monitor.scheduler = Scheduler({"mode": "minutes", "interval": 5})
+        # Subject1: 12/h, Subject2: 1/h → 13
+        assert round(monitor._estimate_metadata_calls_per_hour()) == 13
+
+    def test_estimate_none_for_daily(self, monitor):
+        monitor.scheduler = Scheduler({"mode": "daily", "time": "09:00"})
+        assert monitor._estimate_metadata_calls_per_hour() is None
+
+    def test_warn_when_over_limit(self, monitor):
+        monitor.subject_types = ["Subject1", "Subject2"]
+        monitor.subject_intervals = {}
+        monitor.scheduler = Scheduler({"mode": "minutes", "interval": 5})
+        with patch("app.invoice_monitor.logger") as log:
+            monitor._warn_if_polling_exceeds_limit()
+        assert log.warning.called
+
+    def test_no_warn_when_safe(self, monitor):
+        monitor.subject_types = ["Subject1", "Subject2"]
+        monitor.subject_intervals = {}
+        monitor.scheduler = Scheduler({"mode": "minutes", "interval": 7})  # 17/h < 20
+        with patch("app.invoice_monitor.logger") as log:
+            monitor._warn_if_polling_exceeds_limit()
+        assert not log.warning.called

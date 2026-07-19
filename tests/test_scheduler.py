@@ -251,3 +251,19 @@ class TestSchedulerGetNextRunInfo:
         s.should_run()
         info = s.get_next_run_info()
         assert "check" in info.lower() or "Next" in info
+
+
+class TestSchedulerIntervalSeconds:
+    """interval_seconds() for the polling-limit estimate (v0.6 §5)."""
+
+    def test_minutes(self):
+        assert Scheduler({"mode": "minutes", "interval": 7}).interval_seconds() == 420
+
+    def test_hourly(self):
+        assert Scheduler({"mode": "hourly", "interval": 2}).interval_seconds() == 7200
+
+    def test_simple(self):
+        assert Scheduler({"mode": "simple", "interval": 600}).interval_seconds() == 600
+
+    def test_daily_returns_none(self):
+        assert Scheduler({"mode": "daily", "time": "09:00"}).interval_seconds() is None

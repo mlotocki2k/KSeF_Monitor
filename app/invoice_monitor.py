@@ -41,6 +41,9 @@ class InvoiceMonitor:
     # KSeF API maximum dateRange is 3 months (90 days)
     MAX_DATE_RANGE_DAYS = 90
 
+    # POST /invoices/query/metadata hour limit (KSeF x-rate-limits) — detekcja
+    METADATA_HOUR_LIMIT = 20
+
     def __init__(self, config, ksef_client, notification_manager, prometheus_metrics=None, database=None):
         """
         Initialize invoice monitor
@@ -712,6 +715,34 @@ class InvoiceMonitor:
             return True
         return (now - last).total_seconds() >= interval
 
+    def _estimate_metadata_calls_per_hour(self) -> Optional[float]:
+        """Szacowana liczba zapytań/h do /invoices/query/metadata (suma po subjectach).
+
+        Uwzględnia per-subject interwał: subject pollowany co max(cykl, jego interwał).
+        Zwraca None dla trybów daily/weekly (niski wolumen — pomijamy ostrzeżenie).
+        """
+        base = self.scheduler.interval_seconds()
+        if not base:
+            return None
+        total = 0.0
+        for subject in self.subject_types:
+            eff = max(base, self.subject_intervals.get(subject) or 0)
+            if eff > 0:
+                total += 3600.0 / eff
+        return total
+
+    def _warn_if_polling_exceeds_limit(self) -> None:
+        """Ostrzeż przy starcie, jeśli konfiguracja pollingu przekracza limit metadata."""
+        calls = self._estimate_metadata_calls_per_hour()
+        if calls is not None and calls > self.METADATA_HOUR_LIMIT:
+            logger.warning(
+                "Konfiguracja pollingu: ~%.0f zapytań/h do /invoices/query/metadata "
+                "przy %d subject(ach) — przekracza limit KSeF %d/h. Zwiększ interwał "
+                "(min. ~7 min dla 2 subjectów) lub ustaw monitoring.subject_poll_intervals. "
+                "Klient zastosuje backoff na 429.",
+                calls, len(self.subject_types), self.METADATA_HOUR_LIMIT,
+            )
+
     def _save_invoice_to_db(self, session, invoice: Dict, subject_type: str) -> Optional[int]:
         """Save invoice metadata to DB. Returns invoice.id (new or existing) or None."""
         try:
@@ -1216,6 +1247,7 @@ class InvoiceMonitor:
         if self.save_xml or self.save_pdf:
             logger.info(f"Output directory: {self.output_dir}")
         self.scheduler._log_schedule_info()
+        self._warn_if_polling_exceeds_limit()
         logger.info("=" * 60)
 
         # Send startup notification
