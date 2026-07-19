@@ -35,6 +35,11 @@ jobs:
       tag_env: MKSEF_TAG
       deploy_enabled: 'true'
       compose_src: deploy/synology/compose.yaml
+      # Katalogi hosta niestandardowe (≠ nazwa repo) — override, bo default
+      # /volume1/docker/KSeF_Monitor utworzyłby świeży deploy bez istniejącego config.json/data.
+      deploy_test_path: /volume1/docker/monitor_ksef
+      deploy_prod_path: /volume1/docker/ksef_monitor
       templates_ref: v0.18.0
       environment: ${{ gitea.event.inputs.environment }}
+    # Host/user/klucze/token = GLOBALNE user-level Variables/Secrets (współdzielone z budget/bug-intake)
     secrets: inherit

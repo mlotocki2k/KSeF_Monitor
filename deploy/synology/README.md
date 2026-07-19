@@ -27,19 +27,27 @@ Template obsługuje branch `test` (obok `develop`) → env `test`.
 Oba: `compose.yaml` + `config.json` (sekrety KSeF) + `data/` (bind). Deploy NIE
 rusza `config.json` ani `data/`.
 
-## Gitea — konfiguracja (repo `KSeF_Monitor` → Settings → Actions)
+## Gitea — konfiguracja GLOBALNA (user-level, współdzielona)
 
-Repo-level (user-level zajęty przez inny projekt). Do template przez `secrets: inherit`.
+Config deploy jest **globalny** na poziomie usera Gitea `mlotocki` (Settings → Actions),
+**współdzielony** przez wszystkie projekty (budget_app, bug-intake, monitor_ksef, …) — wszystkie
+deployują na te same 2 hosty Synology. **KSeF nie dodaje nic per-repo** — korzysta z globalnych.
+Do template przez `secrets: inherit`.
 
-**Secrets:** `DEPLOY_TEST_SSH_KEY` (klucz `cdeploy_test`), `DEPLOY_PROD_SSH_KEY` (klucz
-`cdeploy_docker`), `REGISTRY_TOKEN` — **jako Secret** (maskowany w logach; Variable NIE jest).
+Globalne **Secrets** (user-level): `DEPLOY_TEST_SSH_KEY` (`cdeploy_test`), `DEPLOY_PROD_SSH_KEY`
+(`cdeploy_docker`), `REGISTRY_TOKEN` (**Secret** — maskowany w logach; Variable NIE jest).
 
-**Variables:** `DEPLOY_USER=cdeploy`, `DEPLOY_TEST_HOST=test.krzewiny.net`,
-`DEPLOY_PROD_HOST=docker.krzewiny.net`, `DEPLOY_TEST_SSH_PORT=223`, `DEPLOY_PROD_SSH_PORT=223`,
-`DEPLOY_TEST_PATH=/volume1/docker/monitor_ksef`, `DEPLOY_PROD_PATH=/volume1/docker/ksef_monitor`.
+Globalne **Variables** (user-level): `DEPLOY_USER=cdeploy`, `DEPLOY_TEST_HOST=test.krzewiny.net`,
+`DEPLOY_PROD_HOST=docker.krzewiny.net`, `DEPLOY_TEST_SSH_PORT=223`, `DEPLOY_PROD_SSH_PORT=223`.
+Ścieżek deploy NIE ustawiamy globalnie — domyślnie `/volume1/docker/<repo>`.
 
-Brak wymaganej wartości → deploy job **czerwony** z `Brak <NAZWA>: ustaw w…` (świadomie —
-głośny sygnał zamiast cichego skipu).
+**KSeF-specyficzne — tylko w `.gitea/workflows/ci.yml` (NIE w Gitea):** `image/service/container/tag_env`
++ **path override** `deploy_test_path=/volume1/docker/monitor_ksef`,
+`deploy_prod_path=/volume1/docker/ksef_monitor` (katalogi ≠ nazwa repo; bez override template zrobiłby
+świeży deploy w `/volume1/docker/KSeF_Monitor` bez istniejącego config.json/data).
+
+Globalne wartości **już istnieją** (budget/bug-intake deployują na te hosty) — KSeF najpewniej nie
+wymaga zmian w Gitea. Brak którejś → deploy job czerwony z `Brak <NAZWA>: ustaw w…`.
 
 ## compose_src + jednorazowa zmiana host compose (opcja A)
 

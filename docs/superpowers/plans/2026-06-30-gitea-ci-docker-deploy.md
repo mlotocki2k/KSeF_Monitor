@@ -12,6 +12,11 @@
 > + edycja host compose), Task 7 (pierwszy deploy test), Task 8 (promocja main). Zamiast
 > commitować `docker-build.yml` (Task 7 Step 2) — commituje się `ci.yml` (już zrobione).
 > Poniższe Tasks 1/2/4/5 zachowane jako historia.
+>
+> **KOREKTA Task 6 (2026-06-30):** Gitea config jest GLOBALNY (user-level, współdzielony z
+> budget/bug-intake) — NIE repo-level. KSeF nie ustawia nic w Gitea (globalne `DEPLOY_USER=cdeploy`,
+> hosty, porty, klucze `cdeploy_test`/`cdeploy_docker`, `REGISTRY_TOKEN` już istnieją). Niestandardowe
+> ścieżki hosta idą przez inputy `deploy_test_path`/`deploy_prod_path` w `ci.yml` (już dodane).
 
 **Architecture:** Jeden workflow `.gitea/workflows/docker-build.yml` z jobem `build` (build+push obrazu do rejestru Gitea) i dwoma jobami deploy (`deploy-test`, `deploy-prod`) uruchamianymi warunkowo po branchu/dispatchu. Deploy = SSH na Synology, `resolve-deploy-config.sh` czyta konfigurację z Gitea Variables/Secrets, `remote-deploy.sh` robi `docker compose pull` + `up -d` serwisu `ksef_monitor`. Dodanie `.gitea/workflows` **wyłącza** równoległe wykonywanie `.github/workflows` przez Gitę (precedence WorkflowDirs).
 

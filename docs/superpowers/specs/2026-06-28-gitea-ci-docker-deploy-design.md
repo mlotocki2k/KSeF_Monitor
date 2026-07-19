@@ -14,6 +14,12 @@ Repo: `gitea.krzewiny.net:3033/mlotocki/KSeF_Monitor` (`ksef_monitor_v0_1`)
 > są historyczne. Aktualne: branch/env mapping, hosty, ścieżki, Gitea Variables/Secrets,
 > precedence `.gitea`>`.github`, edycja host compose (opcja A) — bez zmian.
 > Znane residuum: v0.18.0 przekazuje `REGISTRY_TOKEN` w argv ssh (reguła #1) → fix upstream w ci-templates (→ v0.19.0).
+>
+> **KOREKTA konfiguracji (2026-06-30):** Gitea Variables/Secrets są **GLOBALNE (user-level),
+> współdzielone** przez wszystkie projekty (budget/bug-intake/monitor_ksef deployują na te same
+> 2 hosty Synology) — NIE repo-level jak pierwotnie zakładano. KSeF nie dodaje nic w Gitea.
+> Niestandardowe katalogi hosta (`monitor_ksef`/`ksef_monitor` ≠ nazwa repo) rozwiązane przez
+> **inputy `deploy_test_path`/`deploy_prod_path` w `ci.yml`**, nie przez repo-level Variables.
 
 ## Cel
 
