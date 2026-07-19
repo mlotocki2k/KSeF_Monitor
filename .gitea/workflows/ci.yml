@@ -1,0 +1,40 @@
+name: CI (reusable klasa A)
+
+# Caller reusable workflow z mlotocki/ci-templates (klasa A: docker → Synology).
+# Branch → środowisko:
+#   main → prod  (tag latest, host docker.krzewiny.net / DEPLOY_PROD_*)
+#   test → test  (tag test,   host test.krzewiny.net / DEPLOY_TEST_*)
+# PR → tylko build (bez push/deploy). Ręcznie (workflow_dispatch) → wybór test|prod.
+#
+# Sam fakt istnienia .gitea/workflows wyłącza wykonywanie .github/workflows na Gitei
+# (WorkflowDirs precedence); GitHub mirror dalej je odpala.
+
+on:
+  push:
+    branches: [main, test]
+  pull_request:
+    branches: [main, test]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Środowisko (test lub prod)
+        required: true
+        default: test
+        type: choice
+        options:
+          - test
+          - prod
+
+jobs:
+  ci:
+    uses: mlotocki/ci-templates/.gitea/workflows/docker-synology.yml@v0.18.0
+    with:
+      image: ksef_monitor
+      service: ksef_monitor
+      container: ksef-monitor
+      tag_env: MKSEF_TAG
+      deploy_enabled: 'true'
+      compose_src: deploy/synology/compose.yaml
+      templates_ref: v0.18.0
+      environment: ${{ gitea.event.inputs.environment }}
+    secrets: inherit
