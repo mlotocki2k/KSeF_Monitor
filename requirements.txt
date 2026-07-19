@@ -1,7 +1,7 @@
 requests>=2.32.5,<3.0.0
 urllib3>=2.6.3,<3.0.0  # CVE-2026-21441 (fix in 2.6.3)
 python-dateutil==2.9.0.post0
-cryptography==48.0.1  # GHSA-537c-gmf6-5ccf — statically-linked OpenSSL fix (secadv 20260609)
+cryptography==49.0.0  # latest; GHSA-537c-gmf6-5ccf (statically-linked OpenSSL) was fixed in 48.0.1
 prometheus-client==0.24.1
 pytz==2026.2
 
@@ -16,7 +16,7 @@ signxml>=4.0.0,<5.0.0  # XAdES-BES signing of AuthTokenRequest (POST /auth/xades
 lxml>=5.0.0,<7.0.0     # XML building/signing (also pulled by signxml)
 
 # PDF generation
-reportlab==4.5.0
+reportlab==4.5.0  # capped <5: xhtml2pdf>=0.2.16 requires reportlab<5 (5.0.0 unresolvable)
 qrcode==8.2
 xhtml2pdf>=0.2.16,<1.0.0
 
