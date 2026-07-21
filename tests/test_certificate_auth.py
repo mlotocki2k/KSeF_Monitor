@@ -10,7 +10,9 @@ Pokrycie:
 Weryfikacja na poziomie mock (bez realnego KSeF i bez realnego certyfikatu) —
 certyfikat self-signed generowany w teście; HTTP do KSeF jest mockowany.
 """
+import base64
 import datetime
+import hashlib
 import json
 from unittest.mock import MagicMock, patch
 
@@ -18,7 +20,7 @@ import pytest
 from cryptography import x509
 from cryptography.x509.oid import NameOID
 from cryptography.hazmat.primitives import hashes, serialization
-from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.hazmat.primitives.asymmetric import ec, rsa
 from cryptography.hazmat.primitives.serialization import pkcs12
 from lxml import etree
 from fastapi.testclient import TestClient
@@ -42,9 +44,9 @@ P12_PASSWORD = "pass123"
 # --------------------------------------------------------------------------- #
 # Helpers / fixtures
 # --------------------------------------------------------------------------- #
-def _make_self_signed_p12(password: str = P12_PASSWORD) -> bytes:
-    """Wygeneruj self-signed cert (RSA-2048) + zapakuj do PKCS#12."""
-    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+def _make_self_signed_p12(password: str = P12_PASSWORD, key=None) -> bytes:
+    """Wygeneruj self-signed cert (domyślnie RSA-2048) + zapakuj do PKCS#12."""
+    key = key or rsa.generate_private_key(public_exponent=65537, key_size=2048)
     name = x509.Name([
         x509.NameAttribute(NameOID.COUNTRY_NAME, "PL"),
         x509.NameAttribute(NameOID.COMMON_NAME, f"TEST {NIP}"),
@@ -72,6 +74,12 @@ def _make_self_signed_p12(password: str = P12_PASSWORD) -> bytes:
 @pytest.fixture(scope="module")
 def p12_bytes() -> bytes:
     return _make_self_signed_p12()
+
+
+@pytest.fixture(scope="module")
+def p12_ec_bytes() -> bytes:
+    """PKCS#12 z kluczem EC P-256 — takie klucze mają certyfikaty KSeF."""
+    return _make_self_signed_p12(key=ec.generate_private_key(ec.SECP256R1()))
 
 
 @pytest.fixture
@@ -197,6 +205,40 @@ class TestSignAuthTokenRequest:
     def test_wrong_password_propagates_valueerror(self, p12_bytes):
         with pytest.raises(ValueError):
             build_signed_auth_request(CHALLENGE, NIP, p12_bytes, "wrong")
+
+    def test_ec_key_signs_with_ecdsa(self, p12_ec_bytes):
+        """Certyfikaty KSeF mają klucz EC P-256 — podpis musi być ECDSA, nie RSA."""
+        signed = build_signed_auth_request(CHALLENGE, NIP, p12_ec_bytes, P12_PASSWORD)
+        assert b"http://www.w3.org/2001/04/xmldsig-more#ecdsa-sha256" in signed
+        assert b"http://www.w3.org/2001/04/xmldsig-more#rsa-sha256" not in signed
+
+    @pytest.mark.parametrize("fixture_name", ["p12_bytes", "p12_ec_bytes"])
+    def test_reference_digests_use_inclusive_c14n(self, fixture_name, request):
+        """Referencje bez <Transforms> muszą mieć skrót liczony inclusive C14N.
+
+        Tak liczy je weryfikator KSeF (default wg XMLDSig). Rozjazd = błąd 9105
+        „Nieprawidłowy podpis" na POST /auth/xades-signature.
+        """
+        signed = build_signed_auth_request(
+            CHALLENGE, NIP, request.getfixturevalue(fixture_name), P12_PASSWORD
+        )
+        tree = etree.fromstring(signed)
+        refs = tree.findall(
+            ".//{http://www.w3.org/2000/09/xmldsig#}SignedInfo"
+            "/{http://www.w3.org/2000/09/xmldsig#}Reference"
+        )
+        checked = 0
+        for ref in refs:
+            if ref.find("{http://www.w3.org/2000/09/xmldsig#}Transforms") is not None:
+                continue  # referencja z jawnym transformem — weryfikator idzie za Transforms
+            target_id = ref.get("URI").lstrip("#")
+            target = next(el for el in tree.iter() if el.get("Id") == target_id)
+            canonical = etree.tostring(target, method="c14n", exclusive=False, with_comments=False)
+            expected = base64.b64encode(hashlib.sha256(canonical).digest()).decode()
+            actual = ref.find("{http://www.w3.org/2000/09/xmldsig#}DigestValue").text
+            assert actual == expected, f"skrót referencji #{target_id} niezgodny z inclusive C14N"
+            checked += 1
+        assert checked >= 2, "oczekiwano referencji do SignedProperties i KeyInfo"
 
 
 # --------------------------------------------------------------------------- #
