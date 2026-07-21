@@ -17,7 +17,11 @@ Flow (zgodny z [uwierzytelnianie.md](https://github.com/CIRFMF/ksef-api/blob/mai
    `http://ksef.mf.gov.pl/auth/token/2.1`) z `Challenge`, `ContextIdentifier/Nip`
    oraz `SubjectIdentifierType`.
 3. Podpis dokumentu w formacie **XAdES-BES, enveloped**:
-   - podpis: `rsa-sha256` (klucz min. 2048-bit)
+   - podpis: `rsa-sha256` (klucz min. 2048-bit) lub `ecdsa-sha256` (krzywa min. 256-bit),
+     dobierany automatycznie do typu klucza w PKCS#12
+   - kanonizacja: **inclusive C14N 1.0** — referencje `SignedProperties` i `KeyInfo` nie mają
+     `<ds:Transforms>`, więc KSeF liczy ich skróty algorytmem domyślnym wg XMLDSig;
+     exc-c14n kończy się błędem `9105 "Nieprawidłowy podpis"`
    - digest: `sha256`
 4. `POST /auth/xades-signature` (`Content-Type: application/xml`) z podpisanym XML
    → `referenceNumber` + `authenticationToken`.
@@ -76,7 +80,7 @@ monitor zaloguje ostrzeżenie.
 ## Certyfikat (plik .p12/.pfx)
 
 - Format: **PKCS#12** (`.p12` lub `.pfx`) zawierający klucz prywatny + certyfikat.
-- Klucz: **RSA min. 2048-bit** (akceptowane też ECDSA P-256, ale klient podpisuje RSA-SHA256).
+- Klucz: **RSA min. 2048-bit** lub **ECDSA min. 256-bit** (certyfikaty KSeF są EC P-256).
 - Zamontuj plik do kontenera (np. wolumen `-v /host/certs:/data/certs:ro`) i wskaż
   `ksef.certificate.path`.
 
@@ -96,9 +100,13 @@ Przełączenie `auth_method` na `"certificate"` i hasło runtime
 
 ## Ograniczenia / status
 
-- Weryfikacja zaimplementowana na poziomie testów jednostkowych (mock
-  `POST /auth/xades-signature` + walidacja struktury podpisanego XML,
-  `tests/test_certificate_auth.py`). **Pełny test end-to-end przeciw realnemu KSeF
-  wymaga prawdziwego certyfikatu** i nie został jeszcze wykonany.
+- **Test end-to-end wykonany 2026-07-21** na środowisku TEST certyfikatem KSeF (EC P-256):
+  logowanie XAdES, pobranie metadanych i XML faktur, parser FA(3), PDF, sesje, UPO,
+  eksport `/invoices/exports`, `refresh` i `revoke` — wszystko OK. Testy jednostkowe
+  (`tests/test_certificate_auth.py`) pokrywają dobór algorytmu podpisu i skróty referencji
+  liczone inclusive C14N.
+- Uprawnienia po zalogowaniu certyfikatem: token kontekstowy z `per: ["Owner"]` — pełne
+  uprawnienia właściciela (odczyt i wystawianie faktur, zarządzanie uprawnieniami),
+  bez możliwości zawężenia. `accessToken` ważny 15 min, `refreshToken` 7 dni.
 - Wydawanie/rotacja certyfikatów KSeF (`/certificates/*`) to osobny temat —
   nieobjęty tą funkcją.
