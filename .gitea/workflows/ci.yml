@@ -27,7 +27,7 @@ on:
 
 jobs:
   ci:
-    uses: mlotocki/ci-templates/.gitea/workflows/docker-synology.yml@v0.18.0
+    uses: mlotocki/ci-templates/.gitea/workflows/docker-synology.yml@v0.20.0
     with:
       image: ksef_monitor
       service: ksef_monitor
