@@ -322,7 +322,8 @@ Generic HTTP endpoint for custom integrations (Zapier, n8n, custom APIs).
     "Authorization": "Bearer your-token",
     "Content-Type": "application/json"
   },
-  "timeout": 10
+  "timeout": 10,
+  "allow_private_network": false
 }
 ```
 
@@ -370,12 +371,48 @@ echo "your-token" | docker secret create webhook_token -
 - `PUT` - For update operations
 - `GET` - Sends data as query parameters
 
+### Webhook w sieci prywatnej (`allow_private_network`)
+
+Domyślnie URL webhooka musi rozwiązywać się do **publicznego** adresu IP — ochrona przed SSRF
+(`app/_ssrf_guard.py`). Odbiornik w LAN-ie (`192.168.x`, `10.x`) albo w tej samej sieci Dockera
+(`172.17.x`) jest odrzucany przy starcie i przy każdym wysłaniu.
+
+Aby na to pozwolić (issue #64):
+
+```json
+"webhook": {
+  "url": "http://receiver.lan:8080/hook",
+  "allow_private_network": true
+}
+```
+
+Zakres przełącznika jest celowo wąski:
+
+- odblokowuje **tylko** zakresy prywatne (RFC1918, IPv6 ULA `fd00::/8`)
+- **nadal blokowane:** loopback (`127.0.0.1`, `::1`), link-local — w tym metadane chmury
+  `169.254.169.254` — multicast, adresy zarezerwowane i nieokreślone
+- działa **wyłącznie** dla kanału webhook; URL generatora PDF (CIRFMF) pozostaje strict
+- przy starcie loguje WARNING, że kanał ma poluzowaną walidację
+- przekierowania HTTP są nadal wyłączone (`allow_redirects=False`)
+
+Zakres CGNAT `100.64.0.0/10` (m.in. Tailscale) nie był i nie jest blokowany — tam flaga nie jest
+potrzebna.
+
+Odrzucony URL loguje teraz błąd z powodem (wcześniej tylko `debug`), np.:
+
+```
+ERROR Webhook URL rejected by SSRF guard (non-public address or unsupported scheme) —
+      notifications for this channel are disabled. Set
+      notifications.webhook.allow_private_network=true to allow a private-network endpoint.
+```
+
 ### Features
 - ✅ Fully customizable HTTP requests
 - ✅ Custom headers support
 - ✅ JSON payload
 - ✅ Configurable timeout
 - ✅ Works with Zapier, n8n, Make.com, etc.
+- ✅ Opt-in dla endpointów w sieci prywatnej (`allow_private_network`)
 
 ---
 
