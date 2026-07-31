@@ -41,8 +41,27 @@ class WebhookNotifier(BaseNotifier):
         notifications_config = config.get("notifications") or {}
         webhook_config = notifications_config.get("webhook") or {}
 
+        # Issue #64: opt-in dla webhooków w sieci prywatnej (LAN/docker bridge)
+        self.allow_private_network = bool(webhook_config.get("allow_private_network", False))
+        if self.allow_private_network:
+            logger.warning(
+                "Webhook: allow_private_network=true — private ranges (RFC1918, IPv6 ULA) "
+                "are permitted for this channel. Loopback, link-local (incl. cloud metadata), "
+                "multicast and reserved addresses remain blocked."
+            )
+
         raw_url = webhook_config.get("url")
-        self.url = raw_url if self._validate_webhook_url(raw_url) else None
+        self.url = None
+        if raw_url:
+            if self._validate_webhook_url(raw_url):
+                self.url = raw_url
+            else:
+                logger.error(
+                    "Webhook URL rejected by SSRF guard (non-public address or unsupported "
+                    "scheme) — notifications for this channel are disabled. Set "
+                    "notifications.webhook.allow_private_network=true to allow a "
+                    "private-network endpoint."
+                )
         # Disable redirects to prevent SSRF via redirect to internal IPs
         self.session.max_redirects = 0
         self.method = webhook_config.get("method", "POST").upper()
@@ -57,10 +76,9 @@ class WebhookNotifier(BaseNotifier):
         if not self.is_configured:
             logger.debug("Webhook URL not configured")
 
-    @staticmethod
-    def _validate_webhook_url(url: str) -> bool:
+    def _validate_webhook_url(self, url: str) -> bool:
         """Validate webhook URL via shared SSRF guard (app._ssrf_guard)."""
-        return is_safe_public_url(url)
+        return is_safe_public_url(url, allow_private=self.allow_private_network)
 
     def _revalidate_url(self) -> bool:
         """Re-validate webhook URL DNS at request time to prevent DNS rebinding SSRF."""

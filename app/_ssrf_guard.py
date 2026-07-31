@@ -15,12 +15,18 @@ logger = logging.getLogger(__name__)
 _ALLOWED_SCHEMES = {"http", "https"}
 
 
-def is_safe_public_url(url: Optional[str]) -> bool:
+def is_safe_public_url(url: Optional[str], allow_private: bool = False) -> bool:
     """Return True only if URL is http(s) and resolves to public routable IP(s).
 
     Rejects empty/None input, non-http(s) schemes, missing hostname,
     and any URL whose A/AAAA records resolve to private, loopback,
     link-local, multicast, reserved, or unspecified addresses.
+
+    allow_private=True relaxes ONLY the private-range check (RFC1918, IPv6 ULA)
+    for callers that must reach a LAN host — see issue #64. Loopback,
+    link-local, multicast, reserved and unspecified stay blocked: note that
+    the cloud metadata address 169.254.169.254 reports is_private == True,
+    so it is the separate is_link_local check that keeps IMDS out of reach.
     """
     if not url:
         return False
@@ -50,8 +56,9 @@ def is_safe_public_url(url: Optional[str]) -> bool:
         except ValueError:
             logger.warning("URL rejected: unparseable IP %r", ip_str[:64])
             return False
-        if (ip.is_private or ip.is_loopback or ip.is_link_local
-                or ip.is_multicast or ip.is_reserved or ip.is_unspecified):
+        if (ip.is_loopback or ip.is_link_local or ip.is_multicast
+                or ip.is_reserved or ip.is_unspecified
+                or (ip.is_private and not allow_private)):
             logger.warning("URL rejected: resolves to non-public IP")
             return False
     return True

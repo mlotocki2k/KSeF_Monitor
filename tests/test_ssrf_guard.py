@@ -69,3 +69,72 @@ class TestIsSafePublicUrl:
         """R8: IPv6 scope-id or malformed IP should reject, not silently pass."""
         mock_gai.return_value = [(10, 1, 6, "", ("fe80::1%eth0", 0, 0, 0))]
         assert is_safe_public_url("https://scoped.ipv6/") is False
+
+
+class TestAllowPrivateOverride:
+    """Issue #64: opt-in override for private ranges (webhooks on a LAN).
+
+    The override relaxes ONLY the is_private check — every other class of
+    non-public address stays blocked. Note that 169.254.169.254 (cloud
+    metadata) has is_private == True in Python's ipaddress, so a blanket
+    bypass would expose IMDS; it must stay blocked via is_link_local.
+    """
+
+    @patch("app._ssrf_guard.socket.getaddrinfo")
+    def test_default_still_rejects_private(self, mock_gai):
+        """Default arg keeps the pre-#64 behaviour."""
+        mock_gai.return_value = [(2, 1, 6, "", ("10.0.0.5", 0))]
+        assert is_safe_public_url("https://internal.local/") is False
+
+    @patch("app._ssrf_guard.socket.getaddrinfo")
+    def test_rfc1918_allowed_with_override(self, mock_gai):
+        mock_gai.return_value = [(2, 1, 6, "", ("192.168.8.10", 0))]
+        assert is_safe_public_url("https://nas.lan/hook", allow_private=True) is True
+
+    @patch("app._ssrf_guard.socket.getaddrinfo")
+    def test_docker_bridge_allowed_with_override(self, mock_gai):
+        mock_gai.return_value = [(2, 1, 6, "", ("172.17.0.2", 0))]
+        assert is_safe_public_url("http://receiver:8080/hook", allow_private=True) is True
+
+    @patch("app._ssrf_guard.socket.getaddrinfo")
+    def test_ipv6_ula_allowed_with_override(self, mock_gai):
+        mock_gai.return_value = [(10, 1, 6, "", ("fd00::1", 0, 0, 0))]
+        assert is_safe_public_url("https://ula.lan/", allow_private=True) is True
+
+    @patch("app._ssrf_guard.socket.getaddrinfo")
+    def test_cloud_metadata_still_rejected_with_override(self, mock_gai):
+        """169.254.169.254 is is_private=True — must stay blocked as link-local."""
+        mock_gai.return_value = [(2, 1, 6, "", ("169.254.169.254", 0))]
+        assert is_safe_public_url("https://metadata.internal/", allow_private=True) is False
+
+    @patch("app._ssrf_guard.socket.getaddrinfo")
+    def test_loopback_still_rejected_with_override(self, mock_gai):
+        mock_gai.return_value = [(2, 1, 6, "", ("127.0.0.1", 0))]
+        assert is_safe_public_url("https://localhost/", allow_private=True) is False
+
+    @patch("app._ssrf_guard.socket.getaddrinfo")
+    def test_ipv6_loopback_still_rejected_with_override(self, mock_gai):
+        mock_gai.return_value = [(10, 1, 6, "", ("::1", 0, 0, 0))]
+        assert is_safe_public_url("https://ipv6-local/", allow_private=True) is False
+
+    @patch("app._ssrf_guard.socket.getaddrinfo")
+    def test_multicast_still_rejected_with_override(self, mock_gai):
+        mock_gai.return_value = [(2, 1, 6, "", ("224.0.0.1", 0))]
+        assert is_safe_public_url("https://mcast.example/", allow_private=True) is False
+
+    @patch("app._ssrf_guard.socket.getaddrinfo")
+    def test_unparseable_ip_still_rejected_with_override(self, mock_gai):
+        mock_gai.return_value = [(10, 1, 6, "", ("fe80::1%eth0", 0, 0, 0))]
+        assert is_safe_public_url("https://scoped.ipv6/", allow_private=True) is False
+
+    def test_non_http_scheme_still_rejected_with_override(self):
+        assert is_safe_public_url("file:///etc/passwd", allow_private=True) is False
+
+    @patch("app._ssrf_guard.socket.getaddrinfo")
+    def test_mixed_records_reject_if_any_blocked(self, mock_gai):
+        """Public A + loopback AAAA: still rejected even with the override."""
+        mock_gai.return_value = [
+            (2, 1, 6, "", ("93.184.216.34", 0)),
+            (10, 1, 6, "", ("::1", 0, 0, 0)),
+        ]
+        assert is_safe_public_url("https://mixed.example/", allow_private=True) is False

@@ -651,6 +651,40 @@ to a public IP at validation time could switch to a private IP before the actual
 This is a defense-in-depth gap tracked at INFO level; mitigate with network-level egress
 controls in production.
 
+#### `allow_private_network` opt-in (issue #64)
+
+`notifications.webhook.allow_private_network` (default `false`) lets the **webhook channel
+only** reach a private-network endpoint — the reported use case is a receiver on the same
+LAN or docker bridge, where the guard otherwise disables the channel outright.
+
+The override relaxes **only** the `is_private` term of the guard:
+
+| Address class | `allow_private_network: false` | `allow_private_network: true` |
+|---|---|---|
+| Public routable | allowed | allowed |
+| RFC1918 / IPv6 ULA (`10/8`, `172.16/12`, `192.168/16`, `fd00::/8`) | blocked | **allowed** |
+| Loopback (`127.0.0.1`, `::1`) | blocked | blocked |
+| Link-local, incl. cloud metadata `169.254.169.254` | blocked | blocked |
+| Multicast, reserved, unspecified | blocked | blocked |
+| Non-`http(s)` scheme | blocked | blocked |
+| CGNAT `100.64.0.0/10` (Tailscale) | allowed | allowed |
+
+Note that `169.254.169.254` reports `is_private == True` in Python's `ipaddress`, so an
+implementation that skipped the whole check would expose the cloud metadata service; it is
+the separate `is_link_local` term that keeps IMDS unreachable.
+
+Threat-model assumptions behind accepting this option:
+
+- the webhook URL comes **only** from `config.json` on the data volume — no REST/UI endpoint
+  writes notification config, so setting it already requires filesystem access
+- the SSRF is blind: the response body is never surfaced, only the status code on error
+- redirects stay disabled (`max_redirects = 0`, `allow_redirects=False`)
+- the CIRFMF PDF-generator call site (which sends full invoice XML) keeps the strict default
+- enabling it logs a WARNING at startup
+
+If a config-editing API is ever added, this flag must be re-reviewed — it would become
+settable by whoever can reach that endpoint.
+
 ### Security headers (v0.5)
 
 v0.5 expands the HTTP response header set (V5-05):

@@ -43,7 +43,8 @@
         "Content-Type": "application/json"
       },
       "timeout": 10,
-      "description": "Webhook token (if needed) loaded from WEBHOOK_TOKEN (env var or Docker secret: webhook_token) into Authorization header"
+      "allow_private_network": false,
+      "description": "Webhook token (if needed) loaded from WEBHOOK_TOKEN (env var or Docker secret: webhook_token) into Authorization header. allow_private_network: opt-in for endpoints on a private network (RFC1918 / IPv6 ULA); loopback, link-local (incl. cloud metadata), multicast and reserved addresses stay blocked."
     },
     "ios_push": {
       "enabled": false,

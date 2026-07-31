@@ -11,6 +11,7 @@ from app.config_manager import ConfigManager
 from app.notifiers.email_notifier import EmailNotifier
 from app.notifiers.discord_notifier import DiscordNotifier
 from app.notifiers.slack_notifier import SlackNotifier
+from app.notifiers.webhook_notifier import WebhookNotifier
 
 
 # --- Email HTML Escaping (F-04) ---
@@ -166,6 +167,64 @@ class TestSlackRedirectBlocking:
 
         _, kwargs = notifier.session.post.call_args
         assert kwargs.get("allow_redirects") is False
+
+
+class TestWebhookAllowPrivateNetwork:
+    """Issue #64: opt-in for private-network webhook endpoints."""
+
+    def _make_notifier(self, url, allow_private=None):
+        webhook = {"url": url}
+        if allow_private is not None:
+            webhook["allow_private_network"] = allow_private
+        return WebhookNotifier({"notifications": {"webhook": webhook}})
+
+    @patch("app._ssrf_guard.socket.getaddrinfo")
+    def test_private_url_rejected_by_default(self, mock_gai):
+        mock_gai.return_value = [(2, 1, 6, "", ("192.168.8.10", 0))]
+        notifier = self._make_notifier("https://nas.lan/hook")
+        assert notifier.url is None
+        assert notifier.is_configured is False
+
+    @patch("app._ssrf_guard.socket.getaddrinfo")
+    def test_private_url_accepted_with_flag(self, mock_gai):
+        mock_gai.return_value = [(2, 1, 6, "", ("192.168.8.10", 0))]
+        notifier = self._make_notifier("https://nas.lan/hook", allow_private=True)
+        assert notifier.url == "https://nas.lan/hook"
+        assert notifier.is_configured is True
+
+    @patch("app._ssrf_guard.socket.getaddrinfo")
+    def test_cloud_metadata_rejected_with_flag(self, mock_gai):
+        """Flag must not open the IMDS address (is_private=True, is_link_local=True)."""
+        mock_gai.return_value = [(2, 1, 6, "", ("169.254.169.254", 0))]
+        notifier = self._make_notifier("https://metadata.internal/", allow_private=True)
+        assert notifier.url is None
+
+    @patch("app._ssrf_guard.socket.getaddrinfo")
+    def test_loopback_rejected_with_flag(self, mock_gai):
+        mock_gai.return_value = [(2, 1, 6, "", ("127.0.0.1", 0))]
+        notifier = self._make_notifier("https://localhost/hook", allow_private=True)
+        assert notifier.url is None
+
+    @patch("app._ssrf_guard.socket.getaddrinfo")
+    def test_revalidation_honours_flag(self, mock_gai):
+        """Per-request DNS re-validation must use the same policy as startup."""
+        mock_gai.return_value = [(2, 1, 6, "", ("192.168.8.10", 0))]
+        notifier = self._make_notifier("https://nas.lan/hook", allow_private=True)
+        notifier.session = MagicMock()
+        notifier.session.post.return_value = MagicMock(status_code=200, raise_for_status=MagicMock())
+
+        assert notifier.send_notification("Title", "Message") is True
+        _, kwargs = notifier.session.post.call_args
+        assert kwargs.get("allow_redirects") is False
+
+    @patch("app._ssrf_guard.socket.getaddrinfo")
+    def test_rejected_url_logged_as_error(self, mock_gai):
+        """Rejection must be visible — it used to be a debug-level message only."""
+        mock_gai.return_value = [(2, 1, 6, "", ("192.168.8.10", 0))]
+        with patch("app.notifiers.webhook_notifier.logger") as mock_logger:
+            self._make_notifier("https://nas.lan/hook")
+            assert mock_logger.error.called
+            assert "allow_private_network" in str(mock_logger.error.call_args)
 
 
 # --- Auth Failure Metrics Callback (N-02) ---
