@@ -2,6 +2,20 @@
 
 All notable changes to KSeF Monitor are documented here.
 
+## [0.5.6] — 2026-07-31
+
+### Security
+
+- **Runtime image no longer ships `pip`.** The Dockerfile removes `pip` and the `ensurepip`
+  wheel bundle after dependencies are installed. pip 26.2 vendors `msgpack 1.1.2` and
+  `setuptools 70.3.0` (`pip/_vendor/vendor.txt`), which the Trivy image scan reported as the
+  only two HIGH findings (GHSA-6v7p-g79w-8964, CVE-2025-47273) and which failed the
+  `docker-publish` workflow. The installed packages themselves were already clean
+  (`setuptools 83.0.0`). Verified locally: baseline image 2 HIGH → rebuilt image 0.
+
+  Operator note: `pip install` inside a running container is no longer possible — rebuild
+  the image instead.
+
 ## [0.5.5] — 2026-07-31
 
 ### Added
