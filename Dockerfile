@@ -34,6 +34,16 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Remove build-only dependencies to keep image smaller
 RUN apt-get purge -y --auto-remove gcc pkg-config libcairo2-dev
 
+# Drop pip and the ensurepip wheel bundle from the runtime image.
+# Nothing installs packages at runtime (app runs as non-root), while pip ships
+# vendored copies of msgpack/setuptools (pip/_vendor/vendor.txt) that Trivy
+# reports as HIGH: GHSA-6v7p-g79w-8964, CVE-2025-47273. Removing pip drops both
+# findings and shrinks the attack surface.
+RUN pip uninstall -y pip && \
+    rm -rf /usr/local/lib/python3.11/ensurepip \
+           /usr/local/lib/python3.11/site-packages/pip \
+           /usr/local/bin/pip /usr/local/bin/pip3 /usr/local/bin/pip3.11
+
 # Copy application structure
 COPY main.py .
 COPY db_admin.py .

@@ -416,6 +416,13 @@ docker scan ksef-invoice-monitor
 export DOCKER_CONTENT_TRUST=1
 ```
 
+**No package manager in the runtime image.** The Dockerfile removes `pip` and the
+`ensurepip` wheel bundle after dependencies are installed — nothing installs packages at
+runtime, and pip's vendored copies (`pip/_vendor/vendor.txt`: `msgpack`, `setuptools`) were
+the only remaining HIGH findings in the Trivy image scan (GHSA-6v7p-g79w-8964,
+CVE-2025-47273). Consequence for operators: you cannot `pip install` inside a running
+container — rebuild the image instead.
+
 ### Network Security
 - Use HTTPS for all API calls (enforced)
 - Enable firewall rules
