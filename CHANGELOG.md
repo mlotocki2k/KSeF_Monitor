@@ -2,6 +2,25 @@
 
 All notable changes to KSeF Monitor are documented here.
 
+## [0.6.2] — 2026-07-31
+
+### Added
+
+- **`notifications.webhook.allow_private_network`** (default `false`) — opt-in that lets the
+  webhook channel reach an endpoint on a private network (RFC1918 / IPv6 ULA), e.g. a receiver
+  on the same LAN or docker bridge. Reported as issue #64. Backported from 0.5.5 on `main`.
+
+  The switch relaxes **only** the private-range check. Loopback, link-local — including the
+  cloud metadata address `169.254.169.254`, which reports `is_private == True` in Python's
+  `ipaddress` — multicast, reserved and unspecified addresses stay blocked, redirects stay
+  disabled, and the CIRFMF PDF-generator URL keeps the strict default. Enabling it logs a
+  WARNING at startup. See `docs/SECURITY.md` § SSRF guard.
+
+### Fixed
+
+- A webhook URL rejected by the SSRF guard now logs an **error naming the reason** instead of a
+  debug-level "Webhook URL not configured" line.
+
 ## [0.6.0] (unreleased) — certificate login, UPO, Lightweight Polling, schema coverage
 
 ### Certificate login, UPO, Lightweight Polling, API 2.6.1 (2026-06-28)
