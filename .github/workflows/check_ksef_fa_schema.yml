@@ -137,6 +137,43 @@ jobs:
           REASONS: ${{ steps.cmp.outputs.reasons }}
         with:
           script: |
+            // Gitea oczekuje ID etykiet (int64), a nie ich nazw — `labels: ["x"]` daje
+            // `422 json: cannot unmarshal JSON string into Go int64 within "/labels/0"`
+            // (zweryfikowane 2026-08-10, run 1894). Mapujemy nazwy na ID, a brakujace
+            // etykiety zakladamy. Etykieta jest dodatkiem, nie trescia zgloszenia: gdyby
+            // cokolwiek tu padlo, ostrzegamy i tworzymy issue BEZ etykiet, zamiast znowu
+            // wywalic caly krok i nie zglosic niczego.
+            const _labelIds = new Map();
+            const resolveLabelIds = async (names) => {
+              try {
+                if (_labelIds.size === 0) {
+                  const { data: existing } = await github.rest.issues.listLabelsForRepo({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    per_page: 100
+                  });
+                  for (const l of existing) _labelIds.set(l.name, l.id);
+                }
+                const ids = [];
+                for (const name of names) {
+                  if (!_labelIds.has(name)) {
+                    const { data: made } = await github.rest.issues.createLabel({
+                      owner: context.repo.owner,
+                      repo: context.repo.repo,
+                      name,
+                      color: "ededed"
+                    });
+                    _labelIds.set(name, made.id);
+                  }
+                  ids.push(_labelIds.get(name));
+                }
+                return ids;
+              } catch (e) {
+                core.warning(`Nie udalo sie ustalic ID etykiet (${names.join(", ")}): ${e.message}. Tworze issue bez etykiet.`);
+                return [];
+              }
+            };
+
             const schemaName = process.env.SCHEMA_NAME;
             const sourceUrl = process.env.SOURCE_URL;
             const githubUrl = process.env.GITHUB_SCHEMA_URL;
@@ -204,7 +241,7 @@ jobs:
                 repo: context.repo.repo,
                 title,
                 body,
-                labels: ["ksef-api"]
+                labels: await resolveLabelIds(["ksef-api"])
               });
             }
 
@@ -284,6 +321,43 @@ jobs:
           NEW_SCHEMAS: ${{ steps.new_versions.outputs.schemas }}
         with:
           script: |
+            // Gitea oczekuje ID etykiet (int64), a nie ich nazw — `labels: ["x"]` daje
+            // `422 json: cannot unmarshal JSON string into Go int64 within "/labels/0"`
+            // (zweryfikowane 2026-08-10, run 1894). Mapujemy nazwy na ID, a brakujace
+            // etykiety zakladamy. Etykieta jest dodatkiem, nie trescia zgloszenia: gdyby
+            // cokolwiek tu padlo, ostrzegamy i tworzymy issue BEZ etykiet, zamiast znowu
+            // wywalic caly krok i nie zglosic niczego.
+            const _labelIds = new Map();
+            const resolveLabelIds = async (names) => {
+              try {
+                if (_labelIds.size === 0) {
+                  const { data: existing } = await github.rest.issues.listLabelsForRepo({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    per_page: 100
+                  });
+                  for (const l of existing) _labelIds.set(l.name, l.id);
+                }
+                const ids = [];
+                for (const name of names) {
+                  if (!_labelIds.has(name)) {
+                    const { data: made } = await github.rest.issues.createLabel({
+                      owner: context.repo.owner,
+                      repo: context.repo.repo,
+                      name,
+                      color: "ededed"
+                    });
+                    _labelIds.set(name, made.id);
+                  }
+                  ids.push(_labelIds.get(name));
+                }
+                return ids;
+              } catch (e) {
+                core.warning(`Nie udalo sie ustalic ID etykiet (${names.join(", ")}): ${e.message}. Tworze issue bez etykiet.`);
+                return [];
+              }
+            };
+
             const newSchemas = process.env.NEW_SCHEMAS.trim();
             const title = "New KSeF FA schema version detected";
 
@@ -327,7 +401,7 @@ jobs:
                 repo: context.repo.repo,
                 title,
                 body,
-                labels: ["ksef-api"]
+                labels: await resolveLabelIds(["ksef-api"])
               });
             }
 

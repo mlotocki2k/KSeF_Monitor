@@ -105,6 +105,43 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
+            // Gitea oczekuje ID etykiet (int64), a nie ich nazw — `labels: ["x"]` daje
+            // `422 json: cannot unmarshal JSON string into Go int64 within "/labels/0"`
+            // (zweryfikowane 2026-08-10, run 1894). Mapujemy nazwy na ID, a brakujace
+            // etykiety zakladamy. Etykieta jest dodatkiem, nie trescia zgloszenia: gdyby
+            // cokolwiek tu padlo, ostrzegamy i tworzymy issue BEZ etykiet, zamiast znowu
+            // wywalic caly krok i nie zglosic niczego.
+            const _labelIds = new Map();
+            const resolveLabelIds = async (names) => {
+              try {
+                if (_labelIds.size === 0) {
+                  const { data: existing } = await github.rest.issues.listLabelsForRepo({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    per_page: 100
+                  });
+                  for (const l of existing) _labelIds.set(l.name, l.id);
+                }
+                const ids = [];
+                for (const name of names) {
+                  if (!_labelIds.has(name)) {
+                    const { data: made } = await github.rest.issues.createLabel({
+                      owner: context.repo.owner,
+                      repo: context.repo.repo,
+                      name,
+                      color: "ededed"
+                    });
+                    _labelIds.set(name, made.id);
+                  }
+                  ids.push(_labelIds.get(name));
+                }
+                return ids;
+              } catch (e) {
+                core.warning(`Nie udalo sie ustalic ID etykiet (${names.join(", ")}): ${e.message}. Tworze issue bez etykiet.`);
+                return [];
+              }
+            };
+
             const title = "Python dependency updates available (branch: ${{ matrix.branch }})";
             const fs = require("fs");
             const body = fs.readFileSync("issue_body.md", "utf8");
@@ -171,7 +208,7 @@ jobs:
                   repo: context.repo.repo,
                   title,
                   body,
-                  labels: ['requirements']
+                  labels: await resolveLabelIds(['requirements'])
                 });
                 return;
               }
@@ -198,7 +235,7 @@ jobs:
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 issue_number,
-                labels: ['requirements']
+                labels: await resolveLabelIds(['requirements'])
               });
             } else {
               const newIssue = await github.rest.issues.create({
@@ -206,7 +243,7 @@ jobs:
                 repo: context.repo.repo,
                 title,
                 body,
-                labels: ['requirements']
+                labels: await resolveLabelIds(['requirements'])
               });
             }
 
