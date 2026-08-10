@@ -53,8 +53,10 @@ TODO.md
 # Claude Code conversation starter
 CLAUDE.md
 
-# scripts 
+# scripts
 *.sh
+# except CI/deploy scripts — must ship with the repo
+!deploy/**/*.sh
 
 
 # workspace

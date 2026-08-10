@@ -1,0 +1,13 @@
+version: '3.8'
+services:
+  ksef_monitor:
+    image: ${MKSEF_IMAGE:-gitea.krzewiny.net:3033/mlotocki/ksef_monitor}:${MKSEF_TAG:-test}
+    container_name: ksef-monitor
+    pull_policy: always
+    #restart: unless-stopped
+    ports:
+      - "8999:8000"   # Prometheus metrics
+      - "8888:8080"   # UI / API
+    volumes:
+      - ./config.json:/data/config.json:ro
+      - ./data:/data
