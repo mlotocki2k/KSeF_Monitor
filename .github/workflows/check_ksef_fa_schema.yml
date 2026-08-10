@@ -169,9 +169,26 @@ jobs:
             ].join("\n");
 
             const searchTitle = `KSeF FA schema changed — ${schemaName}`;
-            const { data: issues } = await github.rest.search.issuesAndPullRequests({
-              q: `repo:${context.repo.owner}/${context.repo.repo} is:issue is:open in:title "${searchTitle}"`
+            // Gitea NIE implementuje GitHub-owego /search/issues — zwraca `404 page not found`
+            // (zweryfikowane 2026-08-10 na Gitei 1.27). Ten krok padal za kazdym razem, gdy
+            // faktycznie mial co zglosic, wiec repo ma 0 issues mimo dziesiatek wykrytych zmian.
+            // Zamiast szukania listujemy issues repo i filtrujemy po tytule po stronie skryptu.
+            // .includes(), NIE rownosc: oryginalne `in:title "..."` dopasowywalo FRAGMENT, a
+            // searchTitle bywa prefiksem tytulu tworzonego issue (openapi: "... <env>" vs
+            // "... <env> environment") — rownosc nigdy by nie trafila w istniejace zgloszenie.
+            // Sortujemy lokalnie malejaco po numerze: Gitea ignoruje octokitowe sort/direction,
+            // a kod nizej zaklada, ze items[0] to najnowsze issue.
+            const { data: _found } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: "open",
+              per_page: 100
             });
+            const issues = {
+              items: _found
+                .filter(i => !i.pull_request && (i.title || "").includes(searchTitle))
+                .sort((a, b) => b.number - a.number)
+            };
 
             if (issues.items.length > 0) {
               const issue_number = issues.items[0].number;
@@ -283,9 +300,26 @@ jobs:
               "- zaktualizuj workflow `check_ksef_fa_schema.yml` o nową wersję"
             ].join("\n");
 
-            const { data: issues } = await github.rest.search.issuesAndPullRequests({
-              q: `repo:${context.repo.owner}/${context.repo.repo} is:issue is:open in:title "${title}"`
+            // Gitea NIE implementuje GitHub-owego /search/issues — zwraca `404 page not found`
+            // (zweryfikowane 2026-08-10 na Gitei 1.27). Ten krok padal za kazdym razem, gdy
+            // faktycznie mial co zglosic, wiec repo ma 0 issues mimo dziesiatek wykrytych zmian.
+            // Zamiast szukania listujemy issues repo i filtrujemy po tytule po stronie skryptu.
+            // .includes(), NIE rownosc: oryginalne `in:title "..."` dopasowywalo FRAGMENT, a
+            // searchTitle bywa prefiksem tytulu tworzonego issue (openapi: "... <env>" vs
+            // "... <env> environment") — rownosc nigdy by nie trafila w istniejace zgloszenie.
+            // Sortujemy lokalnie malejaco po numerze: Gitea ignoruje octokitowe sort/direction,
+            // a kod nizej zaklada, ze items[0] to najnowsze issue.
+            const { data: _found } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: "open",
+              per_page: 100
             });
+            const issues = {
+              items: _found
+                .filter(i => !i.pull_request && (i.title || "").includes(title))
+                .sort((a, b) => b.number - a.number)
+            };
 
             if (issues.items.length === 0) {
               await github.rest.issues.create({
