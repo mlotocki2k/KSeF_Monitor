@@ -20,7 +20,7 @@ dependencies = [
     "requests>=2.32.5,<3.0.0",
     "urllib3>=2.6.3,<3.0.0",            # CVE-2025-66418, CVE-2025-66471, CVE-2026-21441 (fix in 2.6.3)
     "python-dateutil==2.9.0.post0",
-    "cryptography==49.0.0",             # latest; GHSA-537c-gmf6-5ccf (OpenSSL) fixed in 48.0.1; only symmetric AES + RSA-OAEP/PKCS12 used here
+    "cryptography==50.0.0",             # CVE-2026-69247 (pkcs7 oracle); only symmetric AES + RSA-OAEP/PKCS12 used here
     "prometheus-client==0.24.1",
     "pytz==2026.2",
     "Jinja2>=3.1.6,<4.0.0",
