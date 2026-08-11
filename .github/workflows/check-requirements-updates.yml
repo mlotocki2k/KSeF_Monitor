@@ -105,58 +105,51 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
-            // GitHub chce NAZW etykiet, Gitea 1.27 chce ID (int64) — to samo wywolanie
-            // API, sprzeczne kontrakty. Repo jest mirrorowane na GitHub, wiec workflow
-            // musi dzialac na obu. Oba odrzucenia zmierzone na zywo:
-            //   Gitea  {"labels":["requirements"]}  -> 422 cannot unmarshal JSON string into Go int64
-            //   GitHub {"labels":[10161376789]}     -> 422 "not a string or object" (run 31439773758)
-            // Kolejnosc: najpierw nazwy, przy bledzie mapowanie na ID. Etykieta jest
-            // dodatkiem, nie trescia zgloszenia — gdy oba warianty padna, ostrzegamy
-            // i zostawiamy issue bez etykiet, zamiast wywalic krok i nie zglosic niczego.
-            const _labelIds = new Map();
-            const resolveLabelIds = async (names) => {
-              if (_labelIds.size === 0) {
+            // Etykietowanie musi dzialac na Gitei I na GitHubie — repo jest mirrorowane
+            // i oba uruchamiaja te same workflowy. Kontrakty zmierzone na zywo:
+            //   issues.create({labels})    Gitea: nazwy -> 422 (chce int64 ID)
+            //                              GitHub: ID -> 422 (chce nazw), run 31439773758
+            //   issues.addLabels({labels}) po NAZWACH dziala na obu
+            // Dlatego create nie dostaje juz etykiet — nadajemy je osobnym addLabels.
+            //
+            // Pulapka Gitei, zmierzona probem 2026-08-11: addLabels z nazwa, ktorej
+            // w repo NIE MA, zwraca 200 i po cichu NIC nie robi — bez bledu i bez
+            // etykiety. Zielony run, zero efektu. Dlatego najpierw upewniamy sie, ze
+            // etykieta w repo istnieje. Etykieta jest dodatkiem, nie trescia zgloszenia:
+            // gdy cokolwiek tu padnie, ostrzegamy i zostawiamy issue bez etykiet,
+            // zamiast wywalic krok i nie zglosic niczego.
+            let _repoLabels = null;
+            const ensureLabels = async (names) => {
+              if (_repoLabels === null) {
                 const { data: existing } = await github.rest.issues.listLabelsForRepo({
                   owner: context.repo.owner,
                   repo: context.repo.repo,
                   per_page: 100
                 });
-                for (const l of existing) _labelIds.set(l.name, l.id);
+                _repoLabels = new Set(existing.map(l => l.name));
               }
-              const ids = [];
               for (const name of names) {
-                if (!_labelIds.has(name)) {
-                  const { data: made } = await github.rest.issues.createLabel({
-                    owner: context.repo.owner,
-                    repo: context.repo.repo,
-                    name,
-                    color: "ededed"
-                  });
-                  _labelIds.set(name, made.id);
-                }
-                ids.push(_labelIds.get(name));
+                if (_repoLabels.has(name)) continue;
+                await github.rest.issues.createLabel({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  name,
+                  color: "ededed"
+                });
+                _repoLabels.add(name);
               }
-              return ids;
             };
             const applyLabels = async (issue_number, names) => {
               try {
+                await ensureLabels(names);
                 await github.rest.issues.addLabels({
                   owner: context.repo.owner,
                   repo: context.repo.repo,
                   issue_number,
                   labels: names
                 });
-              } catch (eNames) {
-                try {
-                  await github.rest.issues.addLabels({
-                    owner: context.repo.owner,
-                    repo: context.repo.repo,
-                    issue_number,
-                    labels: await resolveLabelIds(names)
-                  });
-                } catch (eIds) {
-                  core.warning(`Nie udalo sie nadac etykiet (${names.join(", ")}) na #${issue_number}: nazwy -> ${eNames.message}; ID -> ${eIds.message}. Zgloszenie zostaje bez etykiet.`);
-                }
+              } catch (e) {
+                core.warning(`Nie udalo sie nadac etykiet (${names.join(", ")}) na #${issue_number}: ${e.message}. Zgloszenie zostaje bez etykiet.`);
               }
             };
 
