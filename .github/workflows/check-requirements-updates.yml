@@ -105,40 +105,51 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
-            // Gitea oczekuje ID etykiet (int64), a nie ich nazw — `labels: ["x"]` daje
-            // `422 json: cannot unmarshal JSON string into Go int64 within "/labels/0"`
-            // (zweryfikowane 2026-08-10, run 1894). Mapujemy nazwy na ID, a brakujace
-            // etykiety zakladamy. Etykieta jest dodatkiem, nie trescia zgloszenia: gdyby
-            // cokolwiek tu padlo, ostrzegamy i tworzymy issue BEZ etykiet, zamiast znowu
-            // wywalic caly krok i nie zglosic niczego.
-            const _labelIds = new Map();
-            const resolveLabelIds = async (names) => {
+            // Etykietowanie musi dzialac na Gitei I na GitHubie — repo jest mirrorowane
+            // i oba uruchamiaja te same workflowy. Kontrakty zmierzone na zywo:
+            //   issues.create({labels})    Gitea: nazwy -> 422 (chce int64 ID)
+            //                              GitHub: ID -> 422 (chce nazw), run 31439773758
+            //   issues.addLabels({labels}) po NAZWACH dziala na obu
+            // Dlatego create nie dostaje juz etykiet — nadajemy je osobnym addLabels.
+            //
+            // Pulapka Gitei, zmierzona probem 2026-08-11: addLabels z nazwa, ktorej
+            // w repo NIE MA, zwraca 200 i po cichu NIC nie robi — bez bledu i bez
+            // etykiety. Zielony run, zero efektu. Dlatego najpierw upewniamy sie, ze
+            // etykieta w repo istnieje. Etykieta jest dodatkiem, nie trescia zgloszenia:
+            // gdy cokolwiek tu padnie, ostrzegamy i zostawiamy issue bez etykiet,
+            // zamiast wywalic krok i nie zglosic niczego.
+            let _repoLabels = null;
+            const ensureLabels = async (names) => {
+              if (_repoLabels === null) {
+                const { data: existing } = await github.rest.issues.listLabelsForRepo({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  per_page: 100
+                });
+                _repoLabels = new Set(existing.map(l => l.name));
+              }
+              for (const name of names) {
+                if (_repoLabels.has(name)) continue;
+                await github.rest.issues.createLabel({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  name,
+                  color: "ededed"
+                });
+                _repoLabels.add(name);
+              }
+            };
+            const applyLabels = async (issue_number, names) => {
               try {
-                if (_labelIds.size === 0) {
-                  const { data: existing } = await github.rest.issues.listLabelsForRepo({
-                    owner: context.repo.owner,
-                    repo: context.repo.repo,
-                    per_page: 100
-                  });
-                  for (const l of existing) _labelIds.set(l.name, l.id);
-                }
-                const ids = [];
-                for (const name of names) {
-                  if (!_labelIds.has(name)) {
-                    const { data: made } = await github.rest.issues.createLabel({
-                      owner: context.repo.owner,
-                      repo: context.repo.repo,
-                      name,
-                      color: "ededed"
-                    });
-                    _labelIds.set(name, made.id);
-                  }
-                  ids.push(_labelIds.get(name));
-                }
-                return ids;
+                await ensureLabels(names);
+                await github.rest.issues.addLabels({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number,
+                  labels: names
+                });
               } catch (e) {
-                core.warning(`Nie udalo sie ustalic ID etykiet (${names.join(", ")}): ${e.message}. Tworze issue bez etykiet.`);
-                return [];
+                core.warning(`Nie udalo sie nadac etykiet (${names.join(", ")}) na #${issue_number}: ${e.message}. Zgloszenie zostaje bez etykiet.`);
               }
             };
 
@@ -203,13 +214,13 @@ jobs:
                   return;
                 }
                 console.log(`Issue #${issue_number} wontfix but new pkgs appeared (${novel.join(", ")}) — creating new issue.`);
-                await github.rest.issues.create({
+                const escalated = await github.rest.issues.create({
                   owner: context.repo.owner,
                   repo: context.repo.repo,
                   title,
-                  body,
-                  labels: await resolveLabelIds(['requirements'])
+                  body
                 });
+                await applyLabels(escalated.data.number, ['requirements']);
                 return;
               }
 
@@ -231,20 +242,15 @@ jobs:
                 body
               });
               // Add 'requirements' label to trigger update-requirements workflow
-              await github.rest.issues.addLabels({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number,
-                labels: await resolveLabelIds(['requirements'])
-              });
+              await applyLabels(issue_number, ['requirements']);
             } else {
               const newIssue = await github.rest.issues.create({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 title,
-                body,
-                labels: await resolveLabelIds(['requirements'])
+                body
               });
+              await applyLabels(newIssue.data.number, ['requirements']);
             }
 
       - name: Summary
