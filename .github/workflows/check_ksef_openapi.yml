@@ -123,40 +123,58 @@ jobs:
           LOCAL_FILE: ${{ matrix.local_file }}
         with:
           script: |
-            // Gitea oczekuje ID etykiet (int64), a nie ich nazw — `labels: ["x"]` daje
-            // `422 json: cannot unmarshal JSON string into Go int64 within "/labels/0"`
-            // (zweryfikowane 2026-08-10, run 1894). Mapujemy nazwy na ID, a brakujace
-            // etykiety zakladamy. Etykieta jest dodatkiem, nie trescia zgloszenia: gdyby
-            // cokolwiek tu padlo, ostrzegamy i tworzymy issue BEZ etykiet, zamiast znowu
-            // wywalic caly krok i nie zglosic niczego.
+            // GitHub chce NAZW etykiet, Gitea 1.27 chce ID (int64) — to samo wywolanie
+            // API, sprzeczne kontrakty. Repo jest mirrorowane na GitHub, wiec workflow
+            // musi dzialac na obu. Oba odrzucenia zmierzone na zywo:
+            //   Gitea  {"labels":["ksef-api"]}  -> 422 cannot unmarshal JSON string into Go int64
+            //   GitHub {"labels":[10161376789]} -> 422 "not a string or object" (run 31439773758)
+            // Kolejnosc: najpierw nazwy, przy bledzie mapowanie na ID. Etykieta jest
+            // dodatkiem, nie trescia zgloszenia — gdy oba warianty padna, ostrzegamy
+            // i zostawiamy issue bez etykiet, zamiast wywalic krok i nie zglosic niczego.
             const _labelIds = new Map();
             const resolveLabelIds = async (names) => {
-              try {
-                if (_labelIds.size === 0) {
-                  const { data: existing } = await github.rest.issues.listLabelsForRepo({
+              if (_labelIds.size === 0) {
+                const { data: existing } = await github.rest.issues.listLabelsForRepo({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  per_page: 100
+                });
+                for (const l of existing) _labelIds.set(l.name, l.id);
+              }
+              const ids = [];
+              for (const name of names) {
+                if (!_labelIds.has(name)) {
+                  const { data: made } = await github.rest.issues.createLabel({
                     owner: context.repo.owner,
                     repo: context.repo.repo,
-                    per_page: 100
+                    name,
+                    color: "ededed"
                   });
-                  for (const l of existing) _labelIds.set(l.name, l.id);
+                  _labelIds.set(name, made.id);
                 }
-                const ids = [];
-                for (const name of names) {
-                  if (!_labelIds.has(name)) {
-                    const { data: made } = await github.rest.issues.createLabel({
-                      owner: context.repo.owner,
-                      repo: context.repo.repo,
-                      name,
-                      color: "ededed"
-                    });
-                    _labelIds.set(name, made.id);
-                  }
-                  ids.push(_labelIds.get(name));
+                ids.push(_labelIds.get(name));
+              }
+              return ids;
+            };
+            const applyLabels = async (issue_number, names) => {
+              try {
+                await github.rest.issues.addLabels({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number,
+                  labels: names
+                });
+              } catch (eNames) {
+                try {
+                  await github.rest.issues.addLabels({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    issue_number,
+                    labels: await resolveLabelIds(names)
+                  });
+                } catch (eIds) {
+                  core.warning(`Nie udalo sie nadac etykiet (${names.join(", ")}) na #${issue_number}: nazwy -> ${eNames.message}; ID -> ${eIds.message}. Zgloszenie zostaje bez etykiet.`);
                 }
-                return ids;
-              } catch (e) {
-                core.warning(`Nie udalo sie ustalic ID etykiet (${names.join(", ")}): ${e.message}. Tworze issue bez etykiet.`);
-                return [];
               }
             };
 
@@ -221,13 +239,13 @@ jobs:
                 body
               });
             } else {
-              await github.rest.issues.create({
+              const created = await github.rest.issues.create({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 title,
-                body,
-                labels: await resolveLabelIds(["ksef-api"])
+                body
               });
+              await applyLabels(created.data.number, ["ksef-api"]);
             }
 
       - name: Send Pushover notification if changed
