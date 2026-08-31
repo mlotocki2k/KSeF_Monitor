@@ -63,6 +63,11 @@ Endpoint `POST /v2/invoices/query/metadata` akceptuje `dateRange` o maksymalnym 
 
 **Obsługa w aplikacji:** `invoice_monitor.py` automatycznie obcina `date_from` do max 90 dni wstecz (`MAX_DATE_RANGE_DAYS = 90`).
 
+> **KSeF API 2.7.1 — limit podniesiony do 100 dni (liczonych w UTC)** dla `POST /invoices/query/metadata`
+> i `POST /invoices/exports`. Zmiana kompatybilna wstecznie. Wdrożenia: TEST 26.08.2026,
+> DEMO 15.09.2026, **PRD 23.09.2026**. Aplikacja pozostaje przy 90 dniach — podniesienie
+> `MAX_DATE_RANGE_DAYS` / `MAX_WINDOW_DAYS` dopiero po wdrożeniu na PRD.
+
 ### Rozmiar strony — 10 do 250 rekordów
 
 | Parametr | Min | Max | Default w aplikacji |
@@ -188,7 +193,7 @@ KSeF API działa w trzech środowiskach z oddzielnymi specyfikacjami:
 | Rate limit metadata /hour | **20 req/h** | `ksef_client.py` → retry 429 |
 | Rate limit XML /hour | 64 req/h | `ksef_client.py` → retry 429 |
 | Minimalny bezpieczny polling interval | 4 min (1 subject) / 7 min (2 subjects) | `scheduler.py` config |
-| Max zakres dat | 90 dni | `invoice_monitor.py` → cap |
+| Max zakres dat | 90 dni (API od 2.7.1: 100 dni UTC — PRD od 23.09.2026) | `invoice_monitor.py` → cap |
 | Max rekordów per query | 10 000 | `ksef_client.py` → truncation narrowing |
 | Max pageSize | 250 | `ksef_client.py` → `PAGINATION_PAGE_SIZE` |
 | Min pageSize | 10 | API spec |
