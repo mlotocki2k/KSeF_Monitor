@@ -497,6 +497,8 @@ Rollout PRD 2.7.1 + 2.8.0 + 2.8.1 zapowiedziany na 23.09.2026; w dniu zapowiedzi
 - [x] Eksport: jawne `compressionType: "Zip"` + odrzucenie paczki o innej kompresji (`InvoicePackage.compressionType`) (0.6.4)
 - [x] Log nagłówka `X-System-Warning` — raz na wartość, sanityzowany (0.6.4)
 - [x] Test regresji 403 `problem+json` bez `timestamp` (0.6.4)
+- [x] Eksport: `package: null` przy statusie 200 = nieudane okno zamiast wyjątku całego joba (0.6.4; znalezione w cross-review Codex)
+- [x] Cross-review gałęzi: Codex (GPT) + lokalny qwen3-coder w pętli do zera uwag (2026-09-23)
 - [ ] Sonda granicy `dateRange` na TEST (100 dni UTC — dokładny span do zmierzenia; „3 miesiące” dawały empirycznie 89 dni)
 - [ ] `dateRange` 90 → 100 dni w `invoice_monitor` i `initial_load_manager` — **dopiero po** rolloucie PRD (0.6.5); wcześniej PRD odrzuci zakres błędem 21405
 - [ ] Baseline `openapi.json` (PRD) → 2.8.x po rolloucie (0.6.5)

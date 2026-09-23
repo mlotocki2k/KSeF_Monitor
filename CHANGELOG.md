@@ -7,14 +7,24 @@ All notable changes to KSeF Monitor are documented here.
 ### Changed
 
 - **Invoice export requests `compressionType: "Zip"` explicitly** (the request field is already in
-  the PROD 2.6.1 spec; KSeF API 2.7.1 added `InvoicePackage.compressionType` to the response). A package reported as anything other than Zip now fails
-  the export with `Unsupported export compression: <type>` instead of a `BadZipFile` deep in
-  decryption. Responses without the field (PROD, API 2.6.1) behave as before.
+  the PROD 2.6.1 spec; KSeF API 2.7.1 added `InvoicePackage.compressionType` to the response).
+  A package reported as anything other than Zip now fails the export with
+  `Unsupported export compression: <type>` instead of a `BadZipFile` deep in decryption.
+  Responses without the field (PROD, API 2.6.1) behave as before.
+
+### Fixed
+
+- **Completed export with `package: null` no longer crashes the initial-load job.** The spec marks
+  `InvoiceExportStatusResponse.package` as nullable; such a response used to raise in status
+  polling and fail the whole job. It now fails only that window with
+  `Export completed without package` (it is not treated as an empty, successful import).
 
 ### Added
 
 - **`X-System-Warning` is logged** (WARNING, once per distinct value, control characters replaced,
-  max 500 chars). KSeF has sent this header since API 2.6.0; it was ignored until now.
+  max 500 chars). Deduplication uses a SHA-256 of the full value, so warnings that differ only
+  after the 500-char cut are logged separately. KSeF has sent this header since API 2.6.0; it was
+  ignored until now.
 
 ### Maintenance
 
