@@ -153,7 +153,14 @@ class InvoiceExportManager:
                 reference_number=ref,
             )
 
-        package = status_data.get("package") or {}
+        package = status_data.get("package")
+        # package jest nullable w spec — sukces bez paczki to błąd okna, nie pusty import
+        if not isinstance(package, dict):
+            return ExportResult(
+                success=False,
+                error="Export completed without package",
+                reference_number=ref,
+            )
 
         # InvoicePackage.compressionType (v2.7.1+); brak pola = starsze API = ZIP
         compression = package.get("compressionType", EXPORT_COMPRESSION)

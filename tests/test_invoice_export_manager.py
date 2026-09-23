@@ -330,10 +330,13 @@ class TestExportCompression:
             manager, {"invoiceCount": 1, "parts": [], "compressionType": "Zip"})
         assert result.success
 
-    def test_null_package_does_not_raise(self, manager):
-        # package jest nullable w spec — null nie może wysadzić całego joba initial load
-        result, _ = self._run_with_package(manager, None)
-        assert isinstance(result, ExportResult)
+    def test_null_package_fails_window_without_raising(self, manager):
+        # package jest nullable w spec — null nie może wysadzić joba ani udawać pustego sukcesu
+        result, dl = self._run_with_package(manager, None)
+        assert not result.success
+        assert "without package" in result.error
+        assert result.reference_number == "REF-123"
+        dl.assert_not_called()
 
     def test_poll_status_with_null_package_does_not_raise(self, manager, mock_ksef):
         # Ścieżka przez prawdziwy polling (nie mock _poll_export_status)
