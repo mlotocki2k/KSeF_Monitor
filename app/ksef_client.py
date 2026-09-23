@@ -203,13 +203,14 @@ class KSeFClient:
         raw = response.headers.get("X-System-Warning")
         if not raw:
             return
+        # Dedup po pełnej wartości (skrót), żeby obcięcie nie zlewało różnych ostrzeżeń
+        digest = hashlib.sha256(str(raw).encode("utf-8", "replace")).hexdigest()
+        if digest in self._seen_system_warnings:
+            return
+        self._seen_system_warnings.add(digest)
         # Nagłówek pochodzi z zewnątrz — bez znaków sterujących (log injection), z limitem długości
         value = "".join(ch if ch.isprintable() else " " for ch in str(raw))
-        value = value[: self.SYSTEM_WARNING_MAX_LEN]
-        if value in self._seen_system_warnings:
-            return
-        self._seen_system_warnings.add(value)
-        logger.warning("KSeF X-System-Warning: %s", value)
+        logger.warning("KSeF X-System-Warning: %s", value[: self.SYSTEM_WARNING_MAX_LEN])
 
     @staticmethod
     def _extract_api_error_details(response: requests.Response) -> str:

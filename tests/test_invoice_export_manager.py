@@ -335,6 +335,15 @@ class TestExportCompression:
         result, _ = self._run_with_package(manager, None)
         assert isinstance(result, ExportResult)
 
+    def test_poll_status_with_null_package_does_not_raise(self, manager, mock_ksef):
+        # Ścieżka przez prawdziwy polling (nie mock _poll_export_status)
+        response = MagicMock(status_code=200)
+        response.json.return_value = {
+            "status": {"code": STATUS_SUCCESS, "description": "ok"}, "package": None}
+        mock_ksef._make_authenticated_request.return_value = response
+        data = manager._poll_export_status("REF-1")
+        assert data["package"] is None
+
     def test_package_targz_fails_cleanly(self, manager):
         result, dl = self._run_with_package(
             manager, {"invoiceCount": 1, "parts": [], "compressionType": "TarGz"})

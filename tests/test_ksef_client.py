@@ -241,6 +241,13 @@ class TestKSeFClientSystemWarning:
             "KSeF X-System-Warning: %s", "Planned maintenance 2026-10-01")
 
     @patch("app.ksef_client.logger")
+    def test_values_differing_after_cap_are_logged_separately(self, mock_logger, client):
+        prefix = "W" * 600
+        client._log_system_warning(self._resp({"X-System-Warning": prefix + "-one"}))
+        client._log_system_warning(self._resp({"X-System-Warning": prefix + "-two"}))
+        assert mock_logger.warning.call_count == 2
+
+    @patch("app.ksef_client.logger")
     def test_no_header_no_log(self, mock_logger, client):
         client._log_system_warning(self._resp({}))
         mock_logger.warning.assert_not_called()

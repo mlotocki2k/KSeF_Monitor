@@ -342,7 +342,7 @@ class InvoiceExportManager:
                 continue
 
             if code == STATUS_SUCCESS:
-                inv_count = data.get("package", {}).get("invoiceCount", "?")
+                inv_count = (data.get("package") or {}).get("invoiceCount", "?")
                 logger.info("Export completed: ref=%s, invoices=%s", reference_number, inv_count)
                 return data
 
