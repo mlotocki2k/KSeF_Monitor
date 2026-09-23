@@ -2,6 +2,26 @@
 
 All notable changes to KSeF Monitor are documented here.
 
+## [0.6.4] — 2026-09-23
+
+### Changed
+
+- **Invoice export requests `compressionType: "Zip"` explicitly** (KSeF API 2.7.1 added the field
+  and `InvoicePackage.compressionType`). A package reported as anything other than Zip now fails
+  the export with `Unsupported export compression: <type>` instead of a `BadZipFile` deep in
+  decryption. Responses without the field (PROD, API 2.6.1) behave as before.
+
+### Added
+
+- **`X-System-Warning` is logged** (WARNING, once per distinct value, control characters replaced,
+  max 500 chars). KSeF has sent this header since API 2.6.0; it was ignored until now.
+
+### Maintenance
+
+- OpenAPI baselines for TEST and DEMO refreshed to API 2.8.1. PROD baseline unchanged (live PROD
+  still serves the 2.6.1 surface as of 2026-09-23).
+- Regression test: 403 `problem+json` without `timestamp` (no longer required from API 2.8.x).
+
 ## [0.6.3] — 2026-07-31
 
 ### Security

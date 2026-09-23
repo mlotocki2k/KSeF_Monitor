@@ -490,6 +490,21 @@ _Pełna lista zmian: `CHANGELOG.md` [0.5.3]. Siedem defektów wykrytych w pre-me
 
 > *(Osobny temat, poza tym wpisem)* Zarządzanie certyfikatami KSeF: `/certificates/enrollments`, `/certificates/query`, `/certificates/retrieve`, `/certificates/{serial}/revoke` — wydawanie i rotacja certyfikatów KSeF.
 
+### 8) Adaptacja KSeF API 2.7.x/2.8.x
+Rollout PRD 2.7.1 + 2.8.0 + 2.8.1 zapowiedziany na 23.09.2026; w dniu zapowiedzi live spec PRD nadal miał powierzchnię 2.6.1 (build `2.8.0-pr-20260917.3`). TEST i DEMO: 2.8.1.
+
+- [x] Baseline OpenAPI TEST/DEMO → 2.8.1 (0.6.4)
+- [x] Eksport: jawne `compressionType: "Zip"` + odrzucenie paczki o innej kompresji (`InvoicePackage.compressionType`) (0.6.4)
+- [x] Log nagłówka `X-System-Warning` — raz na wartość, sanityzowany (0.6.4)
+- [x] Test regresji 403 `problem+json` bez `timestamp` (0.6.4)
+- [ ] Sonda granicy `dateRange` na TEST (100 dni UTC — dokładny span do zmierzenia; „3 miesiące” dawały empirycznie 89 dni)
+- [ ] `dateRange` 90 → 100 dni w `invoice_monitor` i `initial_load_manager` — **dopiero po** rolloucie PRD (0.6.5); wcześniej PRD odrzuci zakres błędem 21405
+- [ ] Baseline `openapi.json` (PRD) → 2.8.x po rolloucie (0.6.5)
+- Radar: `EffectiveApiRateLimits.global` (`GET /rate-limits`) — przyszłe limity per IP, dziś wyłączone; docker monitor działa z jednego IP.
+- Poza zakresem: wrapper `/testdata/rate-limits` (endpoint już dostępny na TEST — patrz status v0.6), identyfikatory zbiorcze IZ, limity zamykania sesji, błąd 21184.
+
+Plan: [2026-09-23-ksef-api-2.8-adaptation.md](superpowers/plans/2026-09-23-ksef-api-2.8-adaptation.md)
+
 **Zależności:** v0.5
 **DoD:** monitor wykrywa nowe faktury i wysyła push w jednym tanim API call; artefakty pobierane niezależnie; konfigurowalny interwał pollingu; UPO faktur sprzedażowych pobierane i zapisywane gdy `fetch_upo=true`; klient wysyła `publicKeyId` w `/auth/ksef-token` przed PRD 11.05.2026; logowanie certyfikatem XAdES przez `POST /auth/xades-signature` jako alternatywa dla tokenu; specy demo i prod zaktualizowane; testy aktualne.
 
