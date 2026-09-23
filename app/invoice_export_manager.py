@@ -38,8 +38,8 @@ STATUS_RANGE_ERROR = 420
 STATUS_UNKNOWN_ERROR = 500
 STATUS_CANCELLED = 550
 
-# Prosimy KSeF jawnie o ZIP (pole InvoiceExportRequest.compressionType od v2.7.1,
-# akceptowane na wszystkich env). Dekoder TarGz celowo nie istnieje.
+# Prosimy KSeF jawnie o ZIP (InvoiceExportRequest.compressionType — obecne już w spec
+# PRD 2.6.1; InvoicePackage.compressionType w odpowiedzi od v2.7.1). Dekoder TarGz celowo nie istnieje.
 EXPORT_COMPRESSION = "Zip"
 
 _TERMINAL_ERRORS = {STATUS_EXPIRED, STATUS_DECRYPT_ERROR, STATUS_RANGE_ERROR, STATUS_CANCELLED}
@@ -153,7 +153,7 @@ class InvoiceExportManager:
                 reference_number=ref,
             )
 
-        package = status_data.get("package", {})
+        package = status_data.get("package") or {}
 
         # InvoicePackage.compressionType (v2.7.1+); brak pola = starsze API = ZIP
         compression = package.get("compressionType", EXPORT_COMPRESSION)

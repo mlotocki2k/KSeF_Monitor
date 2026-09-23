@@ -71,8 +71,8 @@ Endpoint `POST /v2/invoices/query/metadata` akceptuje `dateRange` o maksymalnym 
 
 ### Eksport faktur — kompresja paczki
 
-Od KSeF API 2.7.1 `POST /invoices/exports` przyjmuje `compressionType` (`Zip` | `TarGz`), a status eksportu
-zwraca `package.compressionType`. Aplikacja (od 0.6.4) wysyła jawnie `"Zip"`; paczka zgłoszona z inną
+`POST /invoices/exports` przyjmuje `compressionType` (`Zip` | `TarGz`, domyślnie `Zip`) — pole jest już
+w spec PRD 2.6.1. Od KSeF API 2.7.1 status eksportu zwraca też `package.compressionType`. Aplikacja (od 0.6.4) wysyła jawnie `"Zip"`; paczka zgłoszona z inną
 kompresją kończy eksport błędem `Unsupported export compression: <typ>`. Brak pola (PRD 2.6.1) = ZIP.
 
 ### Nagłówek `X-System-Warning`

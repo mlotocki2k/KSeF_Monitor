@@ -330,6 +330,11 @@ class TestExportCompression:
             manager, {"invoiceCount": 1, "parts": [], "compressionType": "Zip"})
         assert result.success
 
+    def test_null_package_does_not_raise(self, manager):
+        # package jest nullable w spec — null nie może wysadzić całego joba initial load
+        result, _ = self._run_with_package(manager, None)
+        assert isinstance(result, ExportResult)
+
     def test_package_targz_fails_cleanly(self, manager):
         result, dl = self._run_with_package(
             manager, {"invoiceCount": 1, "parts": [], "compressionType": "TarGz"})

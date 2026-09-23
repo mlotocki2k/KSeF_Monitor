@@ -6,8 +6,8 @@ All notable changes to KSeF Monitor are documented here.
 
 ### Changed
 
-- **Invoice export requests `compressionType: "Zip"` explicitly** (KSeF API 2.7.1 added the field
-  and `InvoicePackage.compressionType`). A package reported as anything other than Zip now fails
+- **Invoice export requests `compressionType: "Zip"` explicitly** (the request field is already in
+  the PROD 2.6.1 spec; KSeF API 2.7.1 added `InvoicePackage.compressionType` to the response). A package reported as anything other than Zip now fails
   the export with `Unsupported export compression: <type>` instead of a `BadZipFile` deep in
   decryption. Responses without the field (PROD, API 2.6.1) behave as before.
 
