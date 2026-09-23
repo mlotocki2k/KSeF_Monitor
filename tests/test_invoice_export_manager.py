@@ -287,3 +287,53 @@ class TestRunExport:
         result = InvoiceExportManager._fmt_dt(dt)
         assert result.endswith("Z")
         assert "2024-03-15" in result
+
+
+class TestExportCompression:
+    """compressionType (KSeF API v2.7.1+) — żądamy Zip, inne formaty odrzucamy."""
+
+    def test_create_export_requests_zip(self, manager, mock_ksef):
+        response = MagicMock(status_code=201)
+        response.json.return_value = {"referenceNumber": "REF-1"}
+        mock_ksef._make_authenticated_request.return_value = response
+
+        ref = manager._create_export(
+            "Subject1", datetime(2024, 1, 1), datetime(2024, 1, 31),
+            "Invoicing", True, "a2V5", "aXY=",
+        )
+
+        assert ref == "REF-1"
+        payload = mock_ksef._make_authenticated_request.call_args.kwargs["json"]
+        assert payload["compressionType"] == "Zip"
+
+    def _run_with_package(self, manager, package):
+        status = {"status": {"code": STATUS_SUCCESS, "description": "ok"}, "package": package}
+        with patch.object(manager, "_create_export", return_value="REF-123"), \
+             patch.object(manager, "_poll_export_status", return_value=status), \
+             patch.object(manager, "_download_and_decrypt", return_value=[{"ksefNumber": "X"}]) as dl:
+            manager._sym_key_cert_public_key = _make_rsa_public_key()
+            result = manager.run_export(
+                subject_type="Subject1",
+                date_from=datetime(2024, 1, 1),
+                date_to=datetime(2024, 1, 31),
+            )
+        return result, dl
+
+    def test_package_without_compression_field_is_treated_as_zip(self, manager):
+        # PROD 2.6.1 nie zwraca pola — zachowanie jak dotąd
+        result, dl = self._run_with_package(manager, {"invoiceCount": 1, "parts": []})
+        assert result.success
+        dl.assert_called_once()
+
+    def test_package_zip_is_accepted(self, manager):
+        result, _ = self._run_with_package(
+            manager, {"invoiceCount": 1, "parts": [], "compressionType": "Zip"})
+        assert result.success
+
+    def test_package_targz_fails_cleanly(self, manager):
+        result, dl = self._run_with_package(
+            manager, {"invoiceCount": 1, "parts": [], "compressionType": "TarGz"})
+        assert not result.success
+        assert "Unsupported export compression: TarGz" in result.error
+        assert result.reference_number == "REF-123"
+        dl.assert_not_called()

@@ -38,6 +38,10 @@ STATUS_RANGE_ERROR = 420
 STATUS_UNKNOWN_ERROR = 500
 STATUS_CANCELLED = 550
 
+# Prosimy KSeF jawnie o ZIP (pole InvoiceExportRequest.compressionType od v2.7.1,
+# akceptowane na wszystkich env). Dekoder TarGz celowo nie istnieje.
+EXPORT_COMPRESSION = "Zip"
+
 _TERMINAL_ERRORS = {STATUS_EXPIRED, STATUS_DECRYPT_ERROR, STATUS_RANGE_ERROR, STATUS_CANCELLED}
 _RETRIABLE_ERRORS = {STATUS_UNKNOWN_ERROR}
 
@@ -151,6 +155,15 @@ class InvoiceExportManager:
 
         package = status_data.get("package", {})
 
+        # InvoicePackage.compressionType (v2.7.1+); brak pola = starsze API = ZIP
+        compression = package.get("compressionType", EXPORT_COMPRESSION)
+        if compression != EXPORT_COMPRESSION:
+            return ExportResult(
+                success=False,
+                error=f"Unsupported export compression: {compression}",
+                reference_number=ref,
+            )
+
         # Step 4: download + decrypt + parse
         try:
             invoices = self._download_and_decrypt(package, aes_key, iv)
@@ -254,6 +267,7 @@ class InvoiceExportManager:
                 "initializationVector": iv_b64,
             },
             "onlyMetadata": only_metadata,
+            "compressionType": EXPORT_COMPRESSION,
             "filters": {
                 "subjectType": subject_type,
                 "dateRange": {
