@@ -36,6 +36,7 @@ class KSeFClient:
     # Rate limit retry settings
     MAX_429_RETRIES = 5
     DEFAULT_RETRY_AFTER = 30  # seconds
+    SYSTEM_WARNING_MAX_LEN = 500
     MAX_RETRY_AFTER = 1800  # cap: 30 minutes
 
     # Pagination settings for metadata queries
@@ -91,6 +92,7 @@ class KSeFClient:
         # Spójny format błędów (application/problem+json) także dla 400/429 —
         # _extract_api_error_details parsuje problem+json. (KSeF v2.5.0+)
         self.session.headers["X-Error-Format"] = "problem-details"
+        self._seen_system_warnings: set = set()
 
         date_type = config.get("monitoring", "date_type")
         if date_type not in self.VALID_DATE_TYPES:
@@ -148,6 +150,7 @@ class KSeFClient:
             start_time = time.monotonic()
             response = self.session.request(method, url, **kwargs)
             elapsed = time.monotonic() - start_time
+            self._log_system_warning(response)
 
             # Record API request metrics
             if self.prometheus_metrics:
@@ -194,6 +197,19 @@ class KSeFClient:
                            retry_after, attempt + 1, self.MAX_429_RETRIES, details)
             time.sleep(retry_after)
         return response  # unreachable, but satisfies type checker
+
+    def _log_system_warning(self, response: requests.Response) -> None:
+        """Log KSeF X-System-Warning header (v2.6.0+) once per distinct value."""
+        raw = response.headers.get("X-System-Warning")
+        if not raw:
+            return
+        # Nagłówek pochodzi z zewnątrz — bez znaków sterujących (log injection), z limitem długości
+        value = "".join(ch if ch.isprintable() else " " for ch in str(raw))
+        value = value[: self.SYSTEM_WARNING_MAX_LEN]
+        if value in self._seen_system_warnings:
+            return
+        self._seen_system_warnings.add(value)
+        logger.warning("KSeF X-System-Warning: %s", value)
 
     @staticmethod
     def _extract_api_error_details(response: requests.Response) -> str:
