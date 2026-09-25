@@ -468,6 +468,11 @@ class InvoiceMonitor:
         if self.lazy_artifacts and use_db and invoice_id and (self.save_xml or self.save_pdf):
             self._enqueue_artifacts(db_session, invoice_id)
         else:
+            # The invoice row and its notification log are final — commit before
+            # the download (KSeF 429 back-off can take minutes) so the SQLite
+            # write lock does not block UI logins and the initial load.
+            if use_db:
+                db_session.commit()
             # The notification is already out: a file-system error here (no
             # space, permissions on a new month folder…) must not roll back the
             # invoice row — the next cycle would find it "new" and notify again.
@@ -618,6 +623,8 @@ class InvoiceMonitor:
                     continue
 
                 subject_type = inv.subject_type or self.subject_types[0]
+                # no open write transaction during the download
+                session.commit()
                 try:
                     self._save_invoice_artifacts(
                         invoice, subject_type, invoice_id=invoice_id, db_session=session
@@ -735,6 +742,8 @@ class InvoiceMonitor:
                        .filter_by(invoice_id=inv.id, artifact_type="upo").first())
                 if art and (art.download_attempts or 0) >= 3:
                     continue  # próby wyczerpane
+                # no open write transaction during session listing / UPO download
+                session.commit()
 
                 if session_map is None:
                     map_fresh = self._session_map_is_stale()
