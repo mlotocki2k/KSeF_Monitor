@@ -266,7 +266,7 @@ def main():
                                 logger.warning(
                                     "Fresh install detected (auto-generated auth_token, "
                                     "no UI users) — open /ui/setup to create the first "
-                                    "admin account."
+                                    "admin account (install code: /data/api_token.txt)."
                                 )
                     except Exception:
                         pass

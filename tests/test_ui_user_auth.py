@@ -319,6 +319,7 @@ class TestSetupWizard:
                 "username": "alice",
                 "password": "SolidPass_88!",
                 "password_confirm": "SolidPass_88!",
+                "setup_code": "a" * 32,
             },
         )
         assert resp.status_code == 303
@@ -336,6 +337,7 @@ class TestSetupWizard:
                 "username": "alice",
                 "password": "short",
                 "password_confirm": "short",
+                "setup_code": "a" * 32,
             },
         )
         assert resp.status_code == 303
@@ -348,6 +350,7 @@ class TestSetupWizard:
                 "username": "alice",
                 "password": "SolidPass_88!",
                 "password_confirm": "Different_99!",
+                "setup_code": "a" * 32,
             },
         )
         assert resp.status_code == 303
@@ -393,6 +396,7 @@ class TestSetupWizard:
                 "username": "alice",
                 "password": "SolidPass_88!",
                 "password_confirm": "SolidPass_88!",
+                "setup_code": "a" * 32,
             },
         )
         client.cookies.clear()
@@ -402,6 +406,7 @@ class TestSetupWizard:
                 "username": "bob",
                 "password": "SolidPass_99!",
                 "password_confirm": "SolidPass_99!",
+                "setup_code": "a" * 32,
             },
         )
         assert resp.status_code == 303

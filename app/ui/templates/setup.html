@@ -42,9 +42,17 @@
     {% endif %}
 
     <form method="post" action="/ui/setup" autocomplete="off">
+      <label for="setup_code" class="label">Kod instalacyjny</label>
+      <input id="setup_code" name="setup_code" type="password" class="input mb-1"
+        required autofocus autocomplete="off">
+      <p class="text-[11px] mb-3" style="color: var(--text-muted);">
+        Zawartość pliku <code>/data/api_token.txt</code> w wolumenie danych
+        (albo <code>api.auth_token</code> z konfiguracji).
+      </p>
+
       <label for="username" class="label">Nazwa użytkownika</label>
       <input id="username" name="username" type="text" class="input mb-3"
-        placeholder="np. admin" required autofocus
+        placeholder="np. admin" required
         minlength="3" maxlength="64" pattern="[A-Za-z0-9._\-]+">
 
       <label for="password" class="label">Hasło (min. 8 znaków)</label>

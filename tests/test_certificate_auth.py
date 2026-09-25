@@ -486,6 +486,7 @@ class TestCertificateUploadRoute:
         saved = Path(cert_path)
         assert saved.is_file()
         assert saved.read_bytes() == p12_bytes
+        assert saved.stat().st_mode & 0o777 == 0o600
 
     def test_upload_wrong_password_rejected_and_no_file(self, client, cert_path, p12_bytes):
         files = {"certificate": ("ksef.p12", p12_bytes, "application/x-pkcs12")}

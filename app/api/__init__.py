@@ -152,6 +152,47 @@ def create_app(
     else:
         logger.warning("API running without authentication - set api.auth_token for production")
 
+    # CSRF defense in depth for the cookie session (SameSite=Strict already
+    # blocks cross-site requests, but "same-site" includes sibling subdomains).
+    # A browser state change carrying the session cookie must come from this
+    # origin. Requests without Origin/Referer (non-browser clients) and Bearer
+    # requests (no ambient credential) are not affected.
+    _SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
+
+    @app.middleware("http")
+    async def same_origin_for_cookie_session(request: Request, call_next):
+        if (
+            request.method not in _SAFE_METHODS
+            and request.cookies.get(_SESSION_COOKIE)
+            and not request.headers.get("authorization", "").startswith("Bearer ")
+        ):
+            source = request.headers.get("origin") or request.headers.get("referer")
+            if source:
+                from urllib.parse import urlparse
+
+                try:
+                    source_host = urlparse(source).netloc.lower()
+                except ValueError:
+                    source_host = ""
+                allowed = {
+                    h.strip().lower()
+                    for h in (
+                        request.headers.get("host", ""),
+                        request.headers.get("x-forwarded-host", ""),
+                    )
+                    if h.strip()
+                }
+                if source_host not in allowed:
+                    logger.warning(
+                        "Cross-origin %s %s rejected (cookie session)",
+                        request.method, request.url.path,
+                    )
+                    return JSONResponse(
+                        status_code=403,
+                        content={"detail": "Cross-origin request rejected"},
+                    )
+        return await call_next(request)
+
     # Session resolver — ALWAYS runs, registered AFTER auth gate so it runs
     # FIRST in request flow (Starlette: last-registered = outermost).
     # Populates request.state.ui_user_id / ui_username whenever a valid

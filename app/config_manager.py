@@ -4,6 +4,7 @@ Handles loading and validation of JSON configuration with secrets support
 """
 
 import json
+import os
 import re
 import secrets
 import sys
@@ -541,7 +542,10 @@ class ConfigManager:
             # Write full token to file so user can retrieve it without it appearing in logs
             token_file = Path("/data/api_token.txt")
             try:
-                token_file.write_text(generated_token + "\n", encoding="utf-8")
+                # Created 0600 from the start (no umask window), never via a symlink
+                fd = os.open(token_file, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, 0o600)
+                with os.fdopen(fd, "w", encoding="utf-8") as f:
+                    f.write(generated_token + "\n")
                 token_file.chmod(0o600)
                 token_file_msg = f"Full token saved to: {token_file}"
             except Exception:

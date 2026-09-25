@@ -462,8 +462,17 @@ def ui_setup_submit(
     username: str = Form(...),
     password: str = Form(...),
     password_confirm: str = Form(...),
+    setup_code: str = Form(""),
 ):
-    """Create the initial user atomically (race-safe). Auto-login on success."""
+    """Create the initial user atomically (race-safe). Auto-login on success.
+
+    Requires the install code (api.auth_token, auto-generated into
+    /data/api_token.txt on a fresh install): otherwise whoever reaches the port
+    first after installation becomes the administrator.
+    """
+    import hmac
+    from urllib.parse import quote
+
     from app.ui_auth import (
         create_first_admin_atomic,
         validate_password,
@@ -474,6 +483,17 @@ def ui_setup_submit(
     if db is None:
         return RedirectResponse(url="/ui/setup?error=db", status_code=303)
 
+    expected = _auth_token(request)
+    if expected and not hmac.compare_digest(
+        setup_code.strip().encode("utf-8"), expected.encode("utf-8")
+    ):
+        client_host = request.client.host if request.client else "unknown"
+        logger.warning("UI setup rejected: invalid install code from %s", client_host)
+        return RedirectResponse(
+            url=f"/ui/setup?error={quote('Nieprawidłowy kod instalacyjny.')}",
+            status_code=303,
+        )
+
     username = username.strip()
     err = (
         validate_username(username)
@@ -481,8 +501,6 @@ def ui_setup_submit(
         or (None if password == password_confirm else "Hasła nie są takie same.")
     )
     if err:
-        from urllib.parse import quote
-
         return RedirectResponse(
             url=f"/ui/setup?error={quote(err)}", status_code=303
         )
@@ -782,7 +800,10 @@ async def ui_certificate_upload(
         target = Path(cert_path)
         target.parent.mkdir(parents=True, exist_ok=True)
         tmp = target.with_name(target.name + ".tmp")
-        tmp.write_bytes(data)
+        # 0600 from creation (the file holds a private key), never via a symlink
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, 0o600)
+        with os.fdopen(fd, "wb") as f:
+            f.write(data)
         os.chmod(tmp, 0o600)
         os.replace(tmp, target)
     except OSError as e:
