@@ -402,6 +402,9 @@ class KSeFClient:
             # Step 4: Poll status using the temporary authenticationToken
             if not self._wait_for_auth_status(reference_number, authentication_token):
                 logger.error("Authentication status check failed")
+                # KSeF reports a bad encryption key asynchronously (status 4xx)
+                self._ksef_public_key = None
+                self._ksef_public_key_id = None
                 return False
 
             # Step 5: Redeem for accessToken + refreshToken
@@ -414,6 +417,8 @@ class KSeFClient:
 
         except Exception as e:
             logger.error(f"Authentication failed: {e}")
+            self._ksef_public_key = None
+            self._ksef_public_key_id = None
             if self.on_auth_failure:
                 self.on_auth_failure(0)
             return False

@@ -604,6 +604,18 @@ class TestKSeFClientPublicKeyId:
             assert client.authenticate() is False
         assert client._ksef_public_key is None and client._ksef_public_key_id is None
 
+    def test_failed_auth_status_drops_cached_key(self, client):
+        """KSeF accepts POST /auth/ksef-token (202) and reports a wrong key later."""
+        client._ksef_public_key = self._rsa_public_key()
+        client._ksef_public_key_id = "OLD"
+        client.auth_method = "token"
+        with patch.object(client, "_get_challenge", return_value={"challenge": "c" * 20, "timestampMs": 1}), \
+             patch.object(client, "_authenticate_with_token",
+                          return_value={"referenceNumber": "R", "authenticationToken": {"token": "T"}}), \
+             patch.object(client, "_wait_for_auth_status", return_value=False):
+            assert client.authenticate() is False
+        assert client._ksef_public_key is None and client._ksef_public_key_id is None
+
 
 class TestKSeFClientUPO:
     """v0.6 §4 — UPO download (sessions listing + SHA-256 integrity verification)."""
