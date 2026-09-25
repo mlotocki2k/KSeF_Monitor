@@ -55,7 +55,15 @@ either header (non-browser clients) pass.
 
 **Reverse proxy:** set `api.forwarded_allow_ips` to the proxy's IP so rate
 limits and login-failure tracking see the real client address instead of the
-proxy's.
+proxy's. If the proxy rewrites `Host` and sends no `X-Forwarded-Host`, list the
+public origin in `api.trusted_origins` (e.g. `["https://ksef.example.com"]`).
+
+**Bearer brute force:** 10 failed Bearer attempts per client IP within 15
+minutes answer 429 for that IP.
+
+**Bootstrap admin:** an `admin` account with password = `api.auth_token` is
+created only for a token of at least 32 characters that passes the password
+policy; otherwise use `/ui/setup` with the token as the install code.
 
 **Public paths:** `/ui/login`, `/ui/logout`, `/ui/setup`, `/ui/static/*`
 (stylesheet and icons of the login page), `/api/v1/monitor/health`, docs.

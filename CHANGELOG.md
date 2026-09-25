@@ -40,6 +40,11 @@ All notable changes to KSeF Monitor are documented here.
 - **Login page** loads its stylesheet and icons before signing in.
 - **Scheduler:** no extra run right after startup in `daily`/`weekly` mode.
 - **Webhook signature** is computed over the exact bytes sent.
+- A subject whose query keeps failing no longer stops the artifact/UPO downloads of the
+  others; the same error is pushed at most every 6 hours instead of every cycle.
+- **iOS push:** a failed registration (Worker down during a reset) is no longer reported as
+  registered; it is retried on startup and `POST /push/reset` answers 502.
+- `db_admin delete-invoices` works for invoices with artifacts.
 
 ### Security
 
@@ -59,7 +64,16 @@ All notable changes to KSeF Monitor are documented here.
 - xhtml2pdf resource blocking actually blocks (`''` from `link_callback` kept the URI).
 - `api_token.txt` and uploaded certificates are created `0600` with `O_NOFOLLOW`; stale
   login-attempt rows are pruned; KSeF error text is stripped of control characters.
-- New `api.forwarded_allow_ips` for a trusted reverse proxy.
+- New `api.forwarded_allow_ips` for a trusted reverse proxy and `api.trusted_origins` for
+  the same-origin check behind a proxy that rewrites `Host`.
+- 10 failed Bearer attempts per IP in 15 minutes lock Bearer auth for that IP (the global
+  rate limit counted each path separately).
+- The automatic `admin` account (password = `api.auth_token`) needs a token of 32+ chars
+  that passes the password policy; otherwise `/ui/setup` with the token as install code.
+- UI shows only known message codes from `?error=`/`?ok=` (no text injection via links);
+  paired device names are HTML-escaped on the push page.
+- Uncached `/invoices/{n}/xml|pdf` answers 503 instead of blocking in the KSeF limiter.
+- `db_admin export-invoices` CSV neutralizes spreadsheet formulas.
 - Docker image installs a hash-pinned `requirements.lock` (`--require-hashes`); the
   Synology compose drops all capabilities except CHOWN/DAC_READ_SEARCH/FOWNER/SETUID/SETGID and sets
   `no-new-privileges`. GitHub workflows: external values whitelisted, actions pinned to
