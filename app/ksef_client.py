@@ -874,6 +874,9 @@ class KSeFClient:
 
                 if not has_more:
                     break
+                if not page_invoices:
+                    # hasMore with an empty page would page forever
+                    raise KSeFQueryError("hasMore=true with an empty page — cannot continue")
 
                 if is_truncated:
                     # Hit 10,000 record limit — narrow dateRange using last record's date

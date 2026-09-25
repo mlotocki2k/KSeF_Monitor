@@ -3,6 +3,7 @@ A failed or incomplete KSeF query must never advance last_check — otherwise th
 queried window is skipped for good and its invoices are lost.
 """
 
+import json
 from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock
 
@@ -230,3 +231,58 @@ def test_api_error_details_non_dict_body(client):
     resp.headers = {"Content-Type": "application/json"}
     resp.json.return_value = ["unexpected"]
     assert client._extract_api_error_details(resp) == "status=500"
+
+
+# ── Round 2 ──────────────────────────────────────────────────────────────────
+
+
+def test_failed_subject_does_not_skip_artifact_and_upo_drain(mock_config, tmp_path):
+    m, _db = _monitor(mock_config, tmp_path)
+    m.lazy_artifacts = True
+    m.fetch_upo = True
+    m.check_for_new_invoices = MagicMock(side_effect=KSeFQueryError("Subject3: 403"))
+    m.process_pending_artifacts = MagicMock(return_value=0)
+    m.process_pending_upo = MagicMock(return_value=0)
+    with pytest.raises(KSeFQueryError):
+        m._check_and_drain()
+    m.process_pending_artifacts.assert_called_once()
+    m.process_pending_upo.assert_called_once()
+
+
+def test_repeated_error_notification_throttled(mock_config, tmp_path):
+    m, _db = _monitor(mock_config, tmp_path)
+    assert m._should_notify_error("Error occurred: KSeF 503") is True
+    assert m._should_notify_error("Error occurred: KSeF 503") is False
+    assert m._should_notify_error("Error occurred: other") is True
+
+
+def test_has_more_with_empty_page_raises(client):
+    client._make_authenticated_request = MagicMock(return_value=_page([], has_more=True))
+    with pytest.raises(KSeFQueryError):
+        _query(client)
+
+
+def test_json_mode_per_subject_last_check(mock_config, tmp_path, sample_invoice):
+    mock_config.config["monitoring"]["subject_types"] = ["Subject1", "Subject2"]
+    ksef = MagicMock()
+    ksef.environment = "test"
+    ksef.nip = "1234567890"
+    m = InvoiceMonitor(mock_config, ksef, MagicMock(), MagicMock())
+    m.state_file = tmp_path / "last_check.json"
+    m.state_file.write_text(json.dumps({"last_check": "2026-09-20T08:00:00+02:00"}), encoding="utf-8")
+
+    def fake(date_from, date_to, subject_type):
+        if subject_type == "Subject1":
+            raise KSeFQueryError("KSeF 500")
+        return []
+
+    ksef.get_invoices_metadata.side_effect = fake
+    with pytest.raises(KSeFQueryError):
+        m.check_for_new_invoices()
+    state = m.load_state()
+    assert state["last_check"] == "2026-09-20T08:00:00+02:00"
+    assert "Subject2" in state["last_check_by_subject"]
+    assert "Subject1" not in state["last_check_by_subject"]
+    s2 = m._get_last_check(None, "Subject2", state)
+    s1 = m._get_last_check(None, "Subject1", state)
+    assert s2 > s1

@@ -295,6 +295,7 @@ class InvoiceMonitor:
         # Subjects whose KSeF query failed — their last_check must stay put so
         # the same window is queried again next cycle (no invoice loss).
         failed = {}
+        polled_ok = []
 
         # JSON-based dedup — only used when DB is not available
         seen_entries = state.get("seen_invoices", []) if not use_db else []
@@ -329,6 +330,7 @@ class InvoiceMonitor:
                         )
                     continue
 
+                polled_ok.append(subject_type)
                 if new_count > 0:
                     found_any = True
                     new_invoices_count[subject_type] = new_count
@@ -360,7 +362,7 @@ class InvoiceMonitor:
             logger.info("No new invoices found")
 
         self._finalize_check_cycle(use_db, state, seen_entries, now, new_invoices_count,
-                                   advance_last_check=not failed)
+                                   advance_last_check=not failed, polled_ok=polled_ok)
 
         if failed:
             raise KSeFQueryError(
@@ -669,7 +671,8 @@ class InvoiceMonitor:
 
     def _finalize_check_cycle(self, use_db: bool, state: Dict, seen_entries: list,
                               now: datetime, new_invoices_count: Dict,
-                              advance_last_check: bool = True) -> None:
+                              advance_last_check: bool = True,
+                              polled_ok: Optional[List[str]] = None) -> None:
         """Save state and update Prometheus metrics after a check cycle.
 
         advance_last_check=False (a KSeF query failed): JSON mode keeps the old
@@ -680,6 +683,11 @@ class InvoiceMonitor:
         if not use_db:
             if advance_last_check:
                 state["last_check"] = now.isoformat()
+            # Per-subject progress: a subject that keeps failing must not pin
+            # the window of the others (global last_check stays for compat).
+            per_subject = state.setdefault("last_check_by_subject", {})
+            for st in polled_ok or []:
+                per_subject[st] = now.isoformat()
             state["seen_invoices"] = seen_entries[-1000:]
             self.save_state(state)
 
@@ -723,9 +731,11 @@ class InvoiceMonitor:
                     dt = dt.astimezone(self.timezone)
                 return dt
 
-        if json_state.get("last_check"):
+        per_subject = json_state.get("last_check_by_subject") or {}
+        raw = per_subject.get(subject_type) or json_state.get("last_check")
+        if raw:
             try:
-                return self._parse_datetime(json_state["last_check"])
+                return self._parse_datetime(raw)
             except (ValueError, TypeError):
                 logger.warning("Invalid last_check date, using 24h ago")
 
@@ -1256,8 +1266,16 @@ class InvoiceMonitor:
 
     def _check_and_drain(self) -> None:
         """Jeden przebieg: detekcja nowych faktur + (w trybie lazy) Faza 2 — pobranie
-        zakolejkowanych artefaktów. Błąd Fazy 2 nie przerywa detekcji."""
-        self.check_for_new_invoices()
+        zakolejkowanych artefaktów. Błąd Fazy 2 nie przerywa detekcji.
+
+        Nieudane zapytanie KSeF dla jednego subjectu nie blokuje pobierania
+        artefaktów/UPO zapisanych przez pozostałe — błąd jest zgłaszany po drenażu.
+        """
+        query_error = None
+        try:
+            self.check_for_new_invoices()
+        except KSeFQueryError as e:
+            query_error = e
         if self.lazy_artifacts:
             try:
                 self.process_pending_artifacts()
@@ -1268,6 +1286,8 @@ class InvoiceMonitor:
                 self.process_pending_upo()
             except Exception as e:
                 logger.error("UPO: pobieranie nie powiodło się: %s", e, exc_info=True)
+        if query_error is not None:
+            raise query_error
 
     def run(self):
         """
@@ -1316,12 +1336,26 @@ class InvoiceMonitor:
                 if not isinstance(e, KSeFQueryError):
                     self._record_cycle_error(e)
 
-                # Send error notification
+                # Send error notification (throttled: a persisting error — KSeF
+                # outage, one subject without permission — must not page every cycle)
                 error_msg = f"Error occurred: {str(e)[:200]}"
-                self.notifier.send_error_notification(error_msg)
+                if self._should_notify_error(error_msg):
+                    self.notifier.send_error_notification(error_msg)
 
             # Wait until next scheduled run
             self.scheduler.wait_until_next_run()
+
+    ERROR_NOTIFY_REPEAT_SECONDS = 6 * 3600
+
+    def _should_notify_error(self, message: str) -> bool:
+        """Notify a new error at once; repeat the same one at most every 6 h."""
+        now = time.monotonic()
+        last = getattr(self, "_last_error_notice", None)
+        if last and last[0] == message and now - last[1] < self.ERROR_NOTIFY_REPEAT_SECONDS:
+            logger.info("Error notification suppressed (same error repeated)")
+            return False
+        self._last_error_notice = (message, now)
+        return True
 
     def _record_cycle_error(self, error: Exception) -> None:
         """Record a failed cycle in monitor_state without touching last_check.
