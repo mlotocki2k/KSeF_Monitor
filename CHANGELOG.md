@@ -61,7 +61,7 @@ All notable changes to KSeF Monitor are documented here.
   login-attempt rows are pruned; KSeF error text is stripped of control characters.
 - New `api.forwarded_allow_ips` for a trusted reverse proxy.
 - Docker image installs a hash-pinned `requirements.lock` (`--require-hashes`); the
-  Synology compose drops all capabilities except CHOWN/FOWNER/SETUID/SETGID and sets
+  Synology compose drops all capabilities except CHOWN/DAC_READ_SEARCH/FOWNER/SETUID/SETGID and sets
   `no-new-privileges`. GitHub workflows: external values whitelisted, actions pinned to
   SHAs, image pushed only after the Trivy gate.
 
