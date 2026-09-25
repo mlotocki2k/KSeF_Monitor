@@ -18,6 +18,7 @@ from .notifiers import NotificationManager
 from .invoice_pdf_generator import generate_invoice_pdf, REPORTLAB_AVAILABLE
 from .invoice_xml_parser import detect_schema_type, SCHEMA_TYPE_UNKNOWN
 from .database import Database, Invoice, InvoiceArtifact
+from .ksef_client import KSeFQueryError
 
 # Optional timezone support
 try:
@@ -291,6 +292,9 @@ class InvoiceMonitor:
         state = {} if use_db else self.load_state()
         found_any = False
         new_invoices_count = {}
+        # Subjects whose KSeF query failed — their last_check must stay put so
+        # the same window is queried again next cycle (no invoice loss).
+        failed = {}
 
         # JSON-based dedup — only used when DB is not available
         seen_entries = state.get("seen_invoices", []) if not use_db else []
@@ -305,9 +309,25 @@ class InvoiceMonitor:
                     )
                     continue
 
-                new_count, last_ksef_number = self._poll_subject_type(
-                    subject_type, db_session, state, seen_hashes, seen_entries, now
-                )
+                try:
+                    new_count, last_ksef_number = self._poll_subject_type(
+                        subject_type, db_session, state, seen_hashes, seen_entries, now
+                    )
+                except KSeFQueryError as e:
+                    failed[subject_type] = str(e)
+                    logger.error(
+                        "Zapytanie KSeF [%s] nieudane — last_check bez zmian: %s",
+                        subject_type, e,
+                    )
+                    if use_db:
+                        self.db.update_monitor_state(
+                            session=db_session,
+                            nip=self.nip,
+                            subject_type=subject_type,
+                            last_check=None,
+                            error=str(e),
+                        )
+                    continue
 
                 if new_count > 0:
                     found_any = True
@@ -336,10 +356,16 @@ class InvoiceMonitor:
             if db_session:
                 db_session.close()
 
-        if not found_any:
+        if not found_any and not failed:
             logger.info("No new invoices found")
 
-        self._finalize_check_cycle(use_db, state, seen_entries, now, new_invoices_count)
+        self._finalize_check_cycle(use_db, state, seen_entries, now, new_invoices_count,
+                                   advance_last_check=not failed)
+
+        if failed:
+            raise KSeFQueryError(
+                "; ".join(f"{st}: {msg}" for st, msg in failed.items())
+            )
 
     def _poll_subject_type(self, subject_type: str, db_session, json_state: Dict,
                            seen_hashes: set, seen_entries: list,
@@ -642,17 +668,25 @@ class InvoiceMonitor:
         return processed
 
     def _finalize_check_cycle(self, use_db: bool, state: Dict, seen_entries: list,
-                              now: datetime, new_invoices_count: Dict) -> None:
-        """Save state and update Prometheus metrics after a check cycle."""
+                              now: datetime, new_invoices_count: Dict,
+                              advance_last_check: bool = True) -> None:
+        """Save state and update Prometheus metrics after a check cycle.
+
+        advance_last_check=False (a KSeF query failed): JSON mode keeps the old
+        global last_check so the window is re-queried; seen invoices are still
+        saved so the retry does not re-notify.
+        """
         # Save JSON state only when DB is not active (fallback mode)
         if not use_db:
-            state["last_check"] = now.isoformat()
+            if advance_last_check:
+                state["last_check"] = now.isoformat()
             state["seen_invoices"] = seen_entries[-1000:]
             self.save_state(state)
 
         # Update Prometheus metrics
         if self.metrics:
-            self.metrics.update_last_check(now)
+            if advance_last_check:
+                self.metrics.update_last_check(now)
             for subject_type, count in new_invoices_count.items():
                 self.metrics.increment_new_invoices(subject_type, count)
 
@@ -681,7 +715,10 @@ class InvoiceMonitor:
             if ms and ms.last_check:
                 dt = ms.last_check
                 if dt.tzinfo is None and self.timezone:
-                    dt = self.timezone.localize(dt)
+                    # Stored as naive local time. In the repeated autumn hour pick
+                    # the earlier instant: re-querying a little overlaps (dedup
+                    # handles it); the later one would skip up to an hour.
+                    dt = self.timezone.localize(dt, is_dst=True)
                 elif dt.tzinfo is not None and self.timezone:
                     dt = dt.astimezone(self.timezone)
                 return dt
@@ -1275,23 +1312,9 @@ class InvoiceMonitor:
             except Exception as e:
                 logger.error(f"Error during check: {e}", exc_info=True)
 
-                # Record error in DB monitor_state
-                if self.db:
-                    try:
-                        err_session = self.db.get_session()
-                        for st in self.subject_types:
-                            self.db.update_monitor_state(
-                                session=err_session,
-                                nip=self.nip,
-                                subject_type=st,
-                                last_check=self._get_now(),
-                                error=str(e),
-                            )
-                        err_session.commit()
-                    except Exception as db_err:
-                        logger.error(f"Failed to record error in DB: {db_err}")
-                    finally:
-                        err_session.close()
+                # KSeFQueryError is already recorded per subject by check_for_new_invoices
+                if not isinstance(e, KSeFQueryError):
+                    self._record_cycle_error(e)
 
                 # Send error notification
                 error_msg = f"Error occurred: {str(e)[:200]}"
@@ -1299,6 +1322,30 @@ class InvoiceMonitor:
 
             # Wait until next scheduled run
             self.scheduler.wait_until_next_run()
+
+    def _record_cycle_error(self, error: Exception) -> None:
+        """Record a failed cycle in monitor_state without touching last_check.
+
+        The cycle's transaction was rolled back, so invoices from the queried
+        window were not saved — advancing last_check here would skip them.
+        """
+        if not self.db:
+            return
+        err_session = self.db.get_session()
+        try:
+            for st in self.subject_types:
+                self.db.update_monitor_state(
+                    session=err_session,
+                    nip=self.nip,
+                    subject_type=st,
+                    last_check=None,
+                    error=str(error),
+                )
+            err_session.commit()
+        except Exception as db_err:
+            logger.error(f"Failed to record error in DB: {db_err}")
+        finally:
+            err_session.close()
 
     def trigger_check(self):
         """Set flag to run an immediate check on next loop iteration."""

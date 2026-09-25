@@ -654,16 +654,22 @@ class Database:
         session: Session,
         nip: str,
         subject_type: str,
-        last_check: datetime,
+        last_check: Optional[datetime],
         last_invoice_at: Optional[datetime] = None,
         last_ksef_number: Optional[str] = None,
         new_invoices: int = 0,
         error: Optional[str] = None,
-    ) -> MonitorState:
-        """Create or update monitor state for NIP + subject_type."""
+    ) -> Optional[MonitorState]:
+        """Create or update monitor state for NIP + subject_type.
+
+        last_check=None leaves the stored last_check untouched (used when a
+        cycle failed); with no existing row there is nothing to record then.
+        """
         state = self.get_monitor_state(session, nip, subject_type)
 
         if state is None:
+            if last_check is None:
+                return None
             state = MonitorState(
                 nip=nip,
                 subject_type=subject_type,
@@ -671,7 +677,8 @@ class Database:
             )
             session.add(state)
 
-        state.last_check = last_check
+        if last_check is not None:
+            state.last_check = last_check
         state.updated_at = datetime.now(timezone.utc)
 
         if last_invoice_at:

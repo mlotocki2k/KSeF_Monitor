@@ -27,6 +27,14 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
+class KSeFQueryError(Exception):
+    """Invoice query failed or returned an incomplete result.
+
+    Raised instead of returning a partial/empty list so the caller does not
+    advance its last_check past invoices it never received.
+    """
+
+
 class KSeFClient:
     """Client for KSeF API v2.2/v2.3 interactions"""
     
@@ -41,7 +49,9 @@ class KSeFClient:
 
     # Pagination settings for metadata queries
     PAGINATION_PAGE_SIZE = 250  # max allowed by KSeF API spec (min=10, max=250)
-    PAGINATION_MAX_RECORDS = 10_000  # safety limit (matches KSeF truncation limit)
+    # Safety limit for one query incl. all truncation narrowings (KSeF itself
+    # truncates at 10,000 per dateRange; narrowing continues past that).
+    PAGINATION_MAX_RECORDS = 200_000
 
     # Mapping from dateType config value to InvoiceMetadata field name
     _DATE_TYPE_TO_FIELD = {
@@ -752,14 +762,18 @@ class KSeFClient:
             subject_type: Single subjectType value (e.g. Subject1, Subject2)
 
         Returns:
-            List of invoice metadata dictionaries
+            List of invoice metadata dictionaries (complete for the date range)
+
+        Raises:
+            KSeFQueryError: authentication, transport or API failure, or a
+                result that cannot be fetched completely. Never returns a
+                partial list — the caller must not advance its state then.
         """
         try:
             # Ensure we're authenticated
             if not self.access_token:
                 if not self.authenticate():
-                    logger.error("Cannot query invoices: authentication failed")
-                    return []
+                    raise KSeFQueryError("Cannot query invoices: authentication failed")
 
             url = f"{self.base_url}/{self.API_VERSION}/invoices/query/metadata"
 
@@ -810,7 +824,9 @@ class KSeFClient:
 
                 # If auth failed, _make_authenticated_request returns on_failure (all_invoices)
                 if response is all_invoices:
-                    return all_invoices
+                    raise KSeFQueryError(
+                        "Cannot query invoices: authentication failed during pagination"
+                    )
 
                 response.raise_for_status()
 
@@ -833,16 +849,20 @@ class KSeFClient:
                 if is_truncated:
                     # Hit 10,000 record limit — narrow dateRange using last record's date
                     if not page_invoices:
-                        logger.error("isTruncated=true but no invoices returned — aborting pagination")
-                        break
+                        raise KSeFQueryError(
+                            "isTruncated=true but no invoices returned — cannot continue"
+                        )
                     last_invoice = page_invoices[-1]
                     last_date = last_invoice.get(date_field)
                     if not last_date:
-                        logger.error(
-                            "Cannot narrow dateRange: field '%s' missing in last invoice — aborting",
-                            date_field
+                        raise KSeFQueryError(
+                            f"Cannot narrow dateRange: field '{date_field}' missing in last invoice"
                         )
-                        break
+                    if last_date == current_from_str:
+                        # >10,000 invoices share one timestamp — narrowing cannot progress
+                        raise KSeFQueryError(
+                            f"Cannot narrow dateRange past {last_date} (truncated result)"
+                        )
                     logger.info(
                         "Truncation limit reached — narrowing dateRange.from to %s (field: %s)",
                         last_date, date_field
@@ -853,24 +873,27 @@ class KSeFClient:
                     # More pages available — increment pageOffset
                     page_offset += 1
 
-            if len(all_invoices) >= self.PAGINATION_MAX_RECORDS:
-                logger.warning(
-                    "Safety limit reached: %d records fetched (max: %d). "
-                    "Some invoices may be missing.",
-                    len(all_invoices), self.PAGINATION_MAX_RECORDS
+            else:
+                # Loop ended on the safety limit, not on hasMore=false
+                raise KSeFQueryError(
+                    f"Safety limit reached: {len(all_invoices)} records fetched "
+                    f"(max: {self.PAGINATION_MAX_RECORDS}) — result incomplete"
                 )
 
             logger.info("Found %d invoice(s) total", len(all_invoices))
             return all_invoices
 
+        except KSeFQueryError as e:
+            logger.error("Failed to get invoices: %s", e)
+            raise
         except requests.exceptions.RequestException as e:
             logger.error("Failed to get invoices: %s", e)
             if hasattr(e, 'response') and e.response is not None:
                 logger.error("API error: %s", self._extract_api_error_details(e.response))
-            return []
+            raise KSeFQueryError(f"Failed to get invoices: {type(e).__name__}") from e
         except Exception as e:
             logger.error("Unexpected error while getting invoices: %s", e)
-            return []
+            raise KSeFQueryError(f"Unexpected error while getting invoices: {type(e).__name__}") from e
     
     def get_current_sessions(self) -> List[Dict]:
         """
