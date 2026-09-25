@@ -69,11 +69,15 @@ jobs:
             type=ref,event=tag
             type=sha,format=long
 
-      - name: Build & push
+      # Build into the local daemon first; the image is pushed only after
+      # the Trivy gate below passes (a failed scan must not leave `latest`
+      # already published).
+      - name: Build (local, not pushed)
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8  # v6
         with:
           context: .
-          push: true
+          load: true
+          push: false
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
 
@@ -88,3 +92,11 @@ jobs:
           severity: CRITICAL,HIGH
           exit-code: 1
           ignore-unfixed: true
+
+      - name: Push (after the scan passed)
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8  # v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
