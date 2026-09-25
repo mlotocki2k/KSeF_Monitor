@@ -30,13 +30,21 @@ from app.ui_auth import (
 )
 
 
+_CONFIG_CANDIDATES = ("/config/config.json", "/data/config.json", "config.json")
+
+
 def _open_db() -> Database:
-    config_path = Path(os.environ.get("CONFIG_PATH", "config.json"))
-    if not config_path.exists():
-        print(f"Config not found: {config_path}", file=sys.stderr)
+    # Same lookup and default DB path as main.py — otherwise the documented
+    # `python -m app.user_admin reset-password` in the container found no config
+    # or silently worked on an empty database.
+    env_path = os.environ.get("CONFIG_PATH")
+    candidates = (env_path,) if env_path else _CONFIG_CANDIDATES
+    config_path = next((Path(p) for p in candidates if Path(p).exists()), None)
+    if config_path is None:
+        print(f"Config not found (tried: {', '.join(candidates)})", file=sys.stderr)
         sys.exit(2)
     cfg = json.loads(config_path.read_text())
-    db_path = cfg.get("database", {}).get("path", "data/ksef_monitor.db")
+    db_path = cfg.get("database", {}).get("path", "/data/invoices.db")
     return Database(db_path)
 
 
