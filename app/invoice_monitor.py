@@ -1004,6 +1004,39 @@ class InvoiceMonitor:
 
         return path
 
+    def _collision_free_base(self, target_dir: Path, base_name: str, ksef_number: str,
+                             invoice_id: Optional[int], db_session,
+                             xml_content=None) -> str:
+        """File base name that cannot point at another invoice's artifact.
+
+        The default pattern ({type}_{date}_{invoice_number}) collides for two
+        invoices with the same number and date from different sellers; with the
+        `skip` strategy the second invoice used to be linked to the first one's
+        file (the API then served the wrong PDF/XML). A file owned by another
+        invoice (per DB) or an XML with different content means a collision:
+        this invoice gets `<base>_<ksef number>` instead.
+        """
+        alt = f"{base_name}_{self._sanitize_filename_value(ksef_number)}"
+        for suffix in (".xml", ".pdf"):
+            path = target_dir / f"{base_name}{suffix}"
+            if not path.exists():
+                continue
+            if db_session is not None and invoice_id is not None:
+                owner = (db_session.query(InvoiceArtifact.invoice_id)
+                         .filter(InvoiceArtifact.file_path == str(path),
+                                 InvoiceArtifact.invoice_id != invoice_id)
+                         .first())
+                if owner is not None:
+                    return alt
+            if suffix == ".xml" and xml_content is not None:
+                expected = xml_content if isinstance(xml_content, bytes) else xml_content.encode("utf-8")
+                try:
+                    if path.read_bytes() != expected:
+                        return alt
+                except OSError:
+                    return alt
+        return base_name
+
     @staticmethod
     def _sanitize_filename_value(value: str) -> str:
         """Sanitize a value for safe use in filenames."""
@@ -1013,6 +1046,8 @@ class InvoiceMonitor:
         for ch in r'/\:*?"<>|':
             result = result.replace(ch, '_')
         result = result.replace('\x00', '')
+        # other control characters (\n, \r…) from invoice fields: file names and logs
+        result = "".join(ch if ch.isprintable() else "_" for ch in result)
         result = result.strip('. ')
         return result[:100] or "unknown"
 
@@ -1102,6 +1137,8 @@ class InvoiceMonitor:
             return
 
         xml_content = xml_result['xml_content']
+        base_name = self._collision_free_base(target_dir, base_name, ksef_number,
+                                              invoice_id, db_session, xml_content)
 
         # Detect schema type for logging and downstream decisions
         schema_type = detect_schema_type(xml_content)
@@ -1241,6 +1278,10 @@ class InvoiceMonitor:
             logger.error(f"save_artifact: path traversal blocked for {ksef_number}")
             return None
 
+        base_name = self._collision_free_base(
+            target_dir, base_name, ksef_number, invoice_id, db_session,
+            content if artifact_type == "xml" else None,
+        )
         suffix = ".xml" if artifact_type == "xml" else ".pdf"
         orig_path = target_dir / f"{base_name}{suffix}"
         write_path = self._resolve_safe_path(orig_path)
