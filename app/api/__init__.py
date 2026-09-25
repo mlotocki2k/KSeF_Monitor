@@ -309,6 +309,7 @@ def create_app(
         return response
 
     # REST API Prometheus metrics middleware
+    _METRIC_METHODS = {"GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"}
     if prometheus_metrics:
         @app.middleware("http")
         async def track_rest_metrics(request: Request, call_next):
@@ -323,7 +324,9 @@ def create_app(
             else:
                 endpoint = "unmatched"
             prometheus_metrics.rest_api_requests_total.labels(
-                endpoint=endpoint, method=request.method
+                endpoint=endpoint,
+                # arbitrary tokens are valid methods over HTTP — keep the label set bounded
+                method=request.method if request.method in _METRIC_METHODS else "OTHER",
             ).inc()
             return response
 

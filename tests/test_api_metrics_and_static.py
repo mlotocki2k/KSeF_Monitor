@@ -60,3 +60,9 @@ def test_static_traversal_not_exposed(client):
 def test_ui_still_requires_session(client):
     r = client.get("/ui", follow_redirects=False)
     assert r.status_code == 303
+
+
+def test_metrics_method_label_bounded(client, seen_labels):
+    for i in range(3):
+        client.request(f"AUDIT{i}", "/api/v1/monitor/health")
+    assert {kw["method"] for kw in seen_labels} == {"OTHER"}
