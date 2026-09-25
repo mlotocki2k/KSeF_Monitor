@@ -1581,8 +1581,9 @@ class InvoiceMonitor:
     def _record_cycle_error(self, error: Exception) -> None:
         """Record a failed cycle in monitor_state without touching last_check.
 
-        The cycle's transaction was rolled back, so invoices from the queried
-        window were not saved — advancing last_check here would skip them.
+        The cycle failed part-way: invoices processed before the error are
+        committed, the rest of the queried window is not — advancing last_check
+        here would skip them (re-querying is safe, known invoices are deduped).
         """
         if not self.db:
             return
