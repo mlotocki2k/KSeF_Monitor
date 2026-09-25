@@ -55,6 +55,26 @@ def test_polling_releases_write_lock_before_xml_download(mock_config, tmp_path, 
     assert results == [True]
 
 
+def test_lazy_polling_commits_each_invoice(mock_config, tmp_path, sample_invoice):
+    """The next invoice's notification must not run inside the previous one's
+    write transaction (lock would grow with the number of new invoices)."""
+    m, _db, db_path = _monitor(mock_config, tmp_path)
+    m.lazy_artifacts = True
+    second = dict(sample_invoice, ksefNumber=sample_invoice["ksefNumber"] + "2")
+    m.ksef.get_invoices_metadata.return_value = [sample_invoice, second]
+    results = []
+    probe = _probe(db_path, results)
+    original = m._save_invoice_to_db
+
+    def _save(*a, **k):
+        probe()
+        return original(*a, **k)
+
+    m._save_invoice_to_db = _save
+    m.check_for_new_invoices()
+    assert results == [True, True]
+
+
 def test_artifact_drain_releases_write_lock_before_download(mock_config, tmp_path, sample_invoice):
     m, db, db_path = _monitor(mock_config, tmp_path)
     with db.get_session() as s:

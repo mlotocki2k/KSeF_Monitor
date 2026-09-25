@@ -482,6 +482,9 @@ class InvoiceMonitor:
                 raise
             except Exception as e:
                 logger.error("Saving artifacts for %s failed (invoice kept): %s", safe_ksef_log, e)
+        # the next invoice's notification must not run inside this transaction
+        if use_db:
+            db_session.commit()
 
     def retry_failed_notifications(self) -> int:
         """Re-send invoice notifications that failed on every channel.
