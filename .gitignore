@@ -61,3 +61,6 @@ CLAUDE.md
 
 # workspace
 *.code-workspace
+
+# uv lockfile (lokalny; obraz instaluje z requirements.txt)
+uv.lock
