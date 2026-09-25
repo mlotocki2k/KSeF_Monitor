@@ -22,6 +22,36 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["invoices"])
 
+# KSeF calls per hour kept for the monitor itself when the API fetches
+# uncached XML on demand (shares the monitor's KSeF rate limiter).
+_KSEF_HOURLY_RESERVE = 10
+
+
+def _ksef_busy_response(monitor) -> Optional[JSONResponse]:
+    """503 instead of blocking a server thread in the KSeF rate limiter.
+
+    The limiter may wait up to an hour for a free slot; an API request must
+    not hold a worker thread that long or eat the monitor's hourly budget.
+    """
+    limiter_ = getattr(getattr(monitor, "ksef", None), "rate_limiter", None)
+    if limiter_ is None or not hasattr(limiter_, "remaining"):
+        return None
+    try:
+        remaining = limiter_.remaining()
+    except Exception:
+        return None
+    if not isinstance(remaining, dict):
+        return None
+    windows = {k: v for k, v in remaining.items() if k in ("1s", "60s", "3600s")}
+    if any(v <= 0 for v in windows.values()) or windows.get("3600s", _KSEF_HOURLY_RESERVE + 1) <= _KSEF_HOURLY_RESERVE:
+        retry = "60" if windows.get("60s", 1) <= 0 or windows.get("1s", 1) <= 0 else "600"
+        return JSONResponse(
+            status_code=503,
+            content={"detail": "KSeF rate limit budget exhausted — try again later"},
+            headers={"Retry-After": retry},
+        )
+    return None
+
 # Validation patterns
 _NIP_PATTERN = re.compile(r"^\d{10}$")
 
@@ -165,6 +195,9 @@ def get_invoice_xml(request: Request, ksef_number: KsefNumberPath):
     # Fallback: fetch live from KSeF API
     if not monitor or not hasattr(monitor, 'ksef'):
         return JSONResponse(status_code=503, content={"detail": "KSeF client not available"})
+    busy = _ksef_busy_response(monitor)
+    if busy is not None:
+        return busy
 
     try:
         result = monitor.ksef.get_invoice_xml(ksef_number)
@@ -270,6 +303,9 @@ def get_invoice_pdf(request: Request, ksef_number: KsefNumberPath):
     # Need to generate PDF: fetch XML first
     if not monitor or not hasattr(monitor, 'ksef'):
         return JSONResponse(status_code=503, content={"detail": "KSeF client not available"})
+    busy = _ksef_busy_response(monitor)
+    if busy is not None:
+        return busy
 
     try:
         xml_result = monitor.ksef.get_invoice_xml(ksef_number)
