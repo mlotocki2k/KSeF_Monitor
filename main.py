@@ -285,6 +285,7 @@ def main():
                     ui_public=api_config.get("ui_public", False),
                     cookie_secure_mode=api_config.get("cookie_secure_mode", "auto"),
                     session_strict_binding=api_config.get("session_strict_binding", False),
+                    trusted_origins=api_config.get("trusted_origins"),
                 )
                 api_server = APIServer(
                     api_app,

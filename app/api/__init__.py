@@ -43,6 +43,7 @@ def create_app(
     ui_public: bool = False,     # V5-01 — opt-in bypass for legacy/reverse-proxy
     cookie_secure_mode: str = "auto",  # U-01 — "auto" | "always" | "never"
     session_strict_binding: bool = False,  # U-04 — opt-in UA fingerprint
+    trusted_origins: Optional[list] = None,  # extra origins for the same-origin check
 ) -> FastAPI:
     """Create and configure FastAPI application.
 
@@ -94,6 +95,14 @@ def create_app(
         # V5-01: narrow whitelist — docs + health only. UI requires auth.
         # V5-12: HttpOnly cookie session for browser UI.
         # V5-13: cookie is opaque DB session ID; /ui/setup public for first-launch wizard.
+        # Failed Bearer attempts per client IP (independent of api.rate_limit)
+        from limits import parse as _parse_limit
+        from limits.storage import MemoryStorage
+        from limits.strategies import MovingWindowRateLimiter
+
+        _BEARER_FAIL_LIMIT = _parse_limit("10/15minutes")
+        _bearer_failures = MovingWindowRateLimiter(MemoryStorage())
+
         _EXEMPT_EXACT = {
             "/docs", "/redoc", "/openapi.json",
             "/api/v1/monitor/health",
@@ -119,13 +128,20 @@ def create_app(
 
             auth_header = request.headers.get("Authorization", "")
             if auth_header.startswith("Bearer "):
+                client_ip = request.client.host if request.client else "unknown"
+                # Brute-force guard: the global rate limit is per path, so
+                # guesses spread over many paths were not limited at all.
+                if not _bearer_failures.test(_BEARER_FAIL_LIMIT, "bearer-fail", client_ip):
+                    return JSONResponse(
+                        status_code=429,
+                        content={"detail": "Too many failed authentication attempts"},
+                        headers={"Retry-After": "900"},
+                    )
                 provided = auth_header[7:]
-                if hmac.compare_digest(provided, auth_token):
+                if hmac.compare_digest(provided.encode("utf-8"), auth_token.encode("utf-8")):
                     return await call_next(request)
-                logger.warning(
-                    "Failed auth attempt from %s",
-                    request.client.host if request.client else "unknown",
-                )
+                _bearer_failures.hit(_BEARER_FAIL_LIMIT, "bearer-fail", client_ip)
+                logger.warning("Failed auth attempt from %s", client_ip)
                 return JSONResponse(
                     status_code=401,
                     content={"detail": "Invalid authentication token"},
@@ -154,35 +170,45 @@ def create_app(
 
     # CSRF defense in depth for the cookie session (SameSite=Strict already
     # blocks cross-site requests, but "same-site" includes sibling subdomains).
-    # A browser state change carrying the session cookie must come from this
-    # origin. Requests without Origin/Referer (non-browser clients) and Bearer
-    # requests (no ambient credential) are not affected.
+    # A browser state change made with a valid session must come from this
+    # host. Compared by host name (ports differ behind proxies); the proxy's
+    # public name comes from Host or the first X-Forwarded-Host entry, or from
+    # api.trusted_origins when the proxy rewrites both. Requests without
+    # Origin/Referer (non-browser clients), Bearer requests and requests
+    # without a valid session are not affected.
     _SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
+    from urllib.parse import urlsplit as _urlsplit
+
+    def _hostname(value: str) -> Optional[str]:
+        value = (value or "").strip()
+        if not value:
+            return None
+        try:
+            return _urlsplit(value if "//" in value else f"//{value}").hostname
+        except ValueError:
+            return None
+
+    _trusted_hosts = {h for h in (_hostname(o) for o in (trusted_origins or [])) if h}
 
     @app.middleware("http")
     async def same_origin_for_cookie_session(request: Request, call_next):
         if (
             request.method not in _SAFE_METHODS
-            and request.cookies.get(_SESSION_COOKIE)
+            and getattr(request.state, "ui_user_id", None) is not None
             and not request.headers.get("authorization", "").startswith("Bearer ")
         ):
             source = request.headers.get("origin") or request.headers.get("referer")
             if source:
-                from urllib.parse import urlparse
-
-                try:
-                    source_host = urlparse(source).netloc.lower()
-                except ValueError:
-                    source_host = ""
-                allowed = {
-                    h.strip().lower()
-                    for h in (
-                        request.headers.get("host", ""),
-                        request.headers.get("x-forwarded-host", ""),
-                    )
-                    if h.strip()
-                }
-                if source_host not in allowed:
+                source_host = _hostname(source)
+                allowed = set(_trusted_hosts)
+                for h in (
+                    request.headers.get("host", ""),
+                    request.headers.get("x-forwarded-host", "").split(",")[0],
+                ):
+                    name = _hostname(h)
+                    if name:
+                        allowed.add(name)
+                if source_host is None or source_host not in allowed:
                     logger.warning(
                         "Cross-origin %s %s rejected (cookie session)",
                         request.method, request.url.path,

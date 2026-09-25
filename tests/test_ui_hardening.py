@@ -115,3 +115,47 @@ def test_stale_login_attempt_rows_pruned(db):
         record_login_failure(s, "someone")
         remaining = {r.username for r in s.query(UiLoginAttempt).all()}
     assert remaining == {"someone"}
+
+
+# ── Round 2: proxies, trusted origins, Bearer brute force ────────────────────
+
+
+def test_proxy_forwarded_host_list_and_port(logged_in):
+    r = logged_in.post("/ui/logout", headers={
+        "Host": "ksef-monitor:8080",
+        "X-Forwarded-Host": "ksef.example, internal-proxy",
+        "Origin": "https://ksef.example:4443",
+    }, follow_redirects=False)
+    assert r.status_code == 303
+
+
+def test_trusted_origins_when_proxy_rewrites_host(db):
+    c = TestClient(create_app(db=db, auth_token=TOKEN, trusted_origins=["https://ksef.example"]))
+    with db.get_session() as s:
+        create_user(s, "bob", "SolidPass_88!")
+    c.post("/ui/login", data={"username": "bob", "password": "SolidPass_88!"})
+    r = c.post("/ui/logout", headers={"Host": "upstream:8080", "Origin": "https://ksef.example"},
+               follow_redirects=False)
+    assert r.status_code == 303
+
+
+def test_stale_cookie_does_not_block_login(client, db):
+    with db.get_session() as s:
+        create_user(s, "carol", "SolidPass_88!")
+    client.cookies.set("mksef_session", "0" * 64)
+    r = client.post("/ui/login", data={"username": "carol", "password": "SolidPass_88!"},
+                    headers={"Origin": "https://other.example"}, follow_redirects=False)
+    assert r.status_code == 303
+
+
+def test_bearer_bruteforce_across_paths_is_locked(client):
+    for i in range(10):
+        r = client.get(f"/api/v1/x{i}", headers={"Authorization": "Bearer wrong"})
+        assert r.status_code == 401
+    r = client.get("/api/v1/x99", headers={"Authorization": "Bearer wrong"})
+    assert r.status_code == 429
+
+
+def test_bearer_non_ascii_token_is_401_not_500(client):
+    r = client.get("/api/v1/invoices", headers={"Authorization": "Bearer zażółć".encode("utf-8")})
+    assert r.status_code == 401
