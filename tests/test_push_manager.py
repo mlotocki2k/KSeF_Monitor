@@ -638,3 +638,18 @@ class TestPushStorageErrors:
              patch.object(PushManager, "_register_instance", return_value=True):
             pm2 = PushManager(_make_config(), data_dir=str(tmp_path), db=db)
         assert pm2.instance_id == pm.instance_id
+
+
+def test_credentials_survive_restarts_without_db(tmp_path):
+    """Round 10: with db=None the JSON store was renamed away on every second start."""
+    ids = set()
+
+    def register(self):  # like the real one: marks the instance registered
+        self.registered_at = "2026-09-25T00:00:00+00:00"
+        return True
+
+    with patch.object(PushManager, "_register_instance", register):
+        for _ in range(4):
+            ids.add(PushManager(_make_config(), data_dir=str(tmp_path), db=None).instance_id)
+    assert len(ids) == 1
+    assert (tmp_path / "push_config.json").exists()

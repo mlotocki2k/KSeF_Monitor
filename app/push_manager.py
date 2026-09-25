@@ -110,8 +110,12 @@ class PushManager:
         if self.push_config_path.exists():
             self._load_from_json()
             if self.instance_id and self.instance_key:
-                self._save_to_db()
-                self._rename_legacy_json()
+                # Migrate only into a real DB. Without one the JSON file IS the
+                # storage: renaming it lost the credentials (and unpaired every
+                # device) on every second restart.
+                if self.db:
+                    self._save_to_db()
+                    self._rename_legacy_json()
                 self._ensure_registered()
                 return
 
