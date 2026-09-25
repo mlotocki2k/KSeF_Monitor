@@ -105,6 +105,10 @@ def create_app(
             path = request.url.path
             if path in _EXEMPT_EXACT:
                 return await call_next(request)
+            # CSS/icons used by the login and setup pages — public assets;
+            # StaticFiles itself refuses paths outside its directory.
+            if ui_enabled and path.startswith("/ui/static/"):
+                return await call_next(request)
             if ui_public and path.startswith("/ui"):
                 return await call_next(request)
 
@@ -222,8 +226,17 @@ def create_app(
         @app.middleware("http")
         async def track_rest_metrics(request: Request, call_next):
             response = await call_next(request)
+            # Route template, not the raw path: raw paths carry invoice numbers
+            # (seller NIP) and let unauthenticated clients mint unlimited series.
+            route = request.scope.get("route")
+            template = getattr(route, "path", None)
+            if template:
+                prefix = "/api/v1" if request.url.path.startswith("/api/v1/") else ""
+                endpoint = prefix + template
+            else:
+                endpoint = "unmatched"
             prometheus_metrics.rest_api_requests_total.labels(
-                endpoint=request.url.path, method=request.method
+                endpoint=endpoint, method=request.method
             ).inc()
             return response
 

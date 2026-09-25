@@ -194,3 +194,21 @@ def test_ambiguous_dst_last_check_resolves_to_earlier_instant(mock_config, tmp_p
     with db.get_session() as s:
         last = m._get_last_check(s, "Subject1", {})
     assert last.astimezone(timezone.utc) == datetime(2026, 10, 25, 0, 30, tzinfo=timezone.utc)
+
+
+# ── Prometheus endpoint labels ───────────────────────────────────────────────
+
+
+@pytest.mark.parametrize("path,label", [
+    ("/v2/invoices/ksef/1234567890-20260901-ABCDEF123456-7F", "/v2/invoices/ksef/{id}"),
+    ("/v2/auth/20260925-AU-2A4B6C8D10-1A2B3C4D5E-6F", "/v2/auth/{id}"),
+    ("/v2/sessions/20260925-SO-ABC123-00/invoices?pageSize=10", "/v2/sessions/{id}/invoices"),
+    ("/v2/invoices/query/metadata", "/v2/invoices/query/metadata"),
+    ("/v2/auth/token/refresh", "/v2/auth/token/refresh"),
+])
+def test_metrics_endpoint_label_bounded(client, path, label):
+    assert client._metrics_endpoint(client.base_url + path) == label
+
+
+def test_metrics_endpoint_label_external_url(client):
+    assert client._metrics_endpoint("https://blob.example/x?sig=SECRET") == "external"

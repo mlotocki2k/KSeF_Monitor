@@ -121,6 +121,23 @@ class KSeFClient:
         logger.info(f"KSeF client initialized for {self.environment} environment")
         logger.info(f"Base URL: {self.base_url}, date_type: {self.date_type}")
 
+    # Path segment that is an identifier (KSeF number, reference number) —
+    # anything with a digit except the API version segment.
+    _ID_SEGMENT = re.compile(r"^(?!v\d+$).*\d.*$")
+
+    def _metrics_endpoint(self, url: str) -> str:
+        """Bounded Prometheus label for a request URL.
+
+        Identifiers are replaced with {id}: KSeF numbers carry the seller NIP
+        and each one would otherwise create a new time series.
+        """
+        if not url.startswith(self.base_url):
+            return "external"
+        path = url[len(self.base_url):].split("?")[0]
+        return "/".join(
+            "{id}" if self._ID_SEGMENT.match(seg) else seg for seg in path.split("/")
+        )
+
     def _request_with_retry(self, method: str, url: str, **kwargs) -> requests.Response:
         """
         Send HTTP request with automatic 429 (Too Many Requests) retry.
@@ -138,8 +155,7 @@ class KSeFClient:
         Raises:
             requests.HTTPError: If non-429 error or retries exhausted
         """
-        # Extract endpoint path for metrics (strip base URL and query params)
-        endpoint = url.replace(self.base_url, "").split("?")[0] if self.base_url in url else url
+        endpoint = self._metrics_endpoint(url)
 
         for attempt in range(self.MAX_429_RETRIES + 1):
             # Proactive rate limiting — acquire slot before sending request
