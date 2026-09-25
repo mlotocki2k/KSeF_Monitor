@@ -568,7 +568,7 @@ REST API (FastAPI) + browser UI (v0.6.0).
 **Browser UI auth (V5-13/V5-14, hardened w v0.5.2):** osobne konta user/pass
 w DB (bcrypt 12 rounds, SHA-256+b64 pre-hash dla haseł >72B → bcrypt 5.0-ready),
 HttpOnly + SameSite=strict cookie session, 7 dni rolling z absolute cap 30 dni
-(U-09). Pierwszy start: `/ui/setup` (race-safe via `BEGIN IMMEDIATE` — U-06)
+(U-09). Pierwszy start: `/ui/setup` z kodem instalacyjnym z `/data/api_token.txt` (od 0.6.5; race-safe via `BEGIN IMMEDIATE` — U-06)
 lub auto-bootstrap `admin` z `auth_token` (upgrade-friendly z v0.5.0). Bearer
 nadal działa dla curl/integracji. V5-14: session resolver niezależny od
 auth gate — `/ui/account` i navbar (username + Wyloguj) działają też gdy
@@ -646,12 +646,12 @@ Eksport metryk dla systemów monitorowania (Prometheus, Grafana, etc.)
 | `ksef_new_invoices_total{subject_type}` | Counter | Łączna liczba nowych faktur per `subject_type` (`Subject1`, `Subject2`) |
 | `ksef_monitor_up` | Gauge | Status monitora: `1` = running, `0` = stopped |
 | `ksef_auth_failures_total{status_code}` | Counter | Błędy autentykacji KSeF API |
-| `ksef_api_requests_total{endpoint,status_code}` | Counter | Łączna liczba żądań do KSeF API (v0.4) |
+| `ksef_api_requests_total{endpoint,status_code}` | Counter | Łączna liczba żądań do KSeF API (v0.4); identyfikatory w ścieżce (numery KSeF, referencje) zastąpione `{id}` — od 0.6.5 |
 | `ksef_api_response_time_seconds{endpoint}` | Histogram | Czas odpowiedzi KSeF API (v0.4) |
 | `ksef_api_rate_limit_waits_total` | Counter | Liczba oczekiwań rate limitera (v0.4) |
 | `ksef_api_rate_limit_remaining{window}` | Gauge | Pozostałe żądania w oknie rate limitera (v0.4) |
 | `ksef_artifacts_pending_total{type}` | Gauge | Artefakty oczekujące na pobranie (v0.4) |
-| `ksef_rest_api_requests_total{endpoint,method}` | Counter | Żądania REST API monitora (v0.4) |
+| `ksef_rest_api_requests_total{endpoint,method}` | Counter | Żądania REST API monitora (v0.4); `endpoint` = szablon trasy (np. `/api/v1/invoices/{ksef_number}`) albo `unmatched` — od 0.6.5 |
 
 **Przykład konfiguracji:**
 

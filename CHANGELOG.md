@@ -18,6 +18,54 @@ All notable changes to KSeF Monitor are documented here.
 - **docker-compose:** the default network is pinned to `10.90.26.0/24` so Docker does not pick a
   192.168.x range that collides with the LAN.
 
+### Fixed (full audit, 2026-09-25)
+
+- **No more lost invoices after a failed check.** A KSeF query error (network, 5xx, auth)
+  returned an empty or partial list that the monitor treated as success, the run loop's
+  error handler moved `last_check` forward after the cycle had been rolled back, and
+  pagination stopped at 10,000 records before following `isTruncated`. The failed subject
+  now keeps its `last_check` (other subjects still advance), the query raises instead of
+  returning partial data, and truncation is followed past 10,000. In the repeated autumn
+  DST hour `last_check` resolves to the earlier instant.
+- **Polish characters in invoice PDFs.** With xhtml2pdf 0.2.20 the DejaVu font was refused
+  by the default resource policy and PDFs fell back to Helvetica (letters like ą, ł, ź came
+  out blank). PDFs are rendered with an explicit policy that allows the font directory.
+- **Certificate (XAdES) login** works against KSeF: inclusive C14N for the references and
+  ECDSA for EC keys (verified on KSeF TEST with an EC P-256 certificate).
+- **Initial load:** a failed DB write or a truncated package without a last date is a
+  failed window instead of a silent "success"; the resume cursor follows the queried
+  `date_type`; `Issue`/`PermanentStorage` accepted (`IssueDate` kept as an alias); a job
+  cancelled before its thread started stays cancelled.
+- **Logs:** startup schema migration no longer disables the app's loggers.
+- **Login page** loads its stylesheet and icons before signing in.
+- **CIRFMF PDF sidecar** (`http://ksef-pdf-generator:8080`) is reachable (private address).
+- **Scheduler:** no extra run right after startup in `daily`/`weekly` mode.
+- **Webhook signature** is computed over the exact bytes sent.
+
+### Security
+
+- `/ui/setup` requires the **install code** (`api.auth_token` / `/data/api_token.txt`).
+- Cookie-authenticated state changes must be same-origin (`Origin`/`Referer`).
+- Notification JSON templates escape every field (a buyer identifier typed by the invoice
+  issuer could inject JSON keys); `json_number` filter for amounts. `entrypoint.sh` refreshes
+  unmodified template copies in `/data` so the fix reaches existing installs; it seeds as
+  `ksef` and skips symlinks.
+- Slack/Discord/webhook URLs no longer appear in error logs; ios_push `worker_url` must be
+  https; plain-http webhook URLs and SMTP login without TLS log a warning.
+- SSRF guard rejects every non-global address (CGNAT 100.64/10 passed before).
+- Prometheus labels use route templates / `{id}` — no invoice numbers (seller NIP) on
+  `/metrics`, and unauthenticated requests cannot create unbounded series.
+- Invoice XML is decoded from raw bytes and checked against `x-ms-meta-hash`; export parts
+  are https-only, size-capped, hash-required; `_metadata.json` zip-bomb guard.
+- xhtml2pdf resource blocking actually blocks (`''` from `link_callback` kept the URI).
+- `api_token.txt` and uploaded certificates are created `0600` with `O_NOFOLLOW`; stale
+  login-attempt rows are pruned; KSeF error text is stripped of control characters.
+- New `api.forwarded_allow_ips` for a trusted reverse proxy.
+- Docker image installs a hash-pinned `requirements.lock` (`--require-hashes`); the
+  Synology compose drops all capabilities except CHOWN/FOWNER/SETUID/SETGID and sets
+  `no-new-privileges`. GitHub workflows: external values whitelisted, actions pinned to
+  SHAs, image pushed only after the Trivy gate.
+
 ### Maintenance
 
 - PROD OpenAPI baseline refreshed to API 2.8.1 (build `2.8.1-pr-20260923.3`).
