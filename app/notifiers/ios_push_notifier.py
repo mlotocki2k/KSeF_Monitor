@@ -48,9 +48,27 @@ class IosPushNotifier(BaseNotifier):
         self.worker_url = ios_push_config.get(
             "worker_url", "https://push.monitorksef.com"
         )
-        self.instance_id = ios_push_config.get("instance_id")
-        self.instance_key = ios_push_config.get("instance_key")
+        # Credentials are read from the shared config dict on every send:
+        # PushManager.reset() replaces them there, and a copy taken here would
+        # keep pushing invoices to the old (unpaired) instance until restart.
+        self._push_config = ios_push_config
         self.timeout = ios_push_config.get("timeout", 15)
+
+    @property
+    def instance_id(self):
+        return self._push_config.get("instance_id")
+
+    @instance_id.setter
+    def instance_id(self, value):
+        self._push_config["instance_id"] = value
+
+    @property
+    def instance_key(self):
+        return self._push_config.get("instance_key")
+
+    @instance_key.setter
+    def instance_key(self, value):
+        self._push_config["instance_key"] = value
 
     @property
     def is_configured(self) -> bool:

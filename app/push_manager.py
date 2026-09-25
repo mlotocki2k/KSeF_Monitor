@@ -73,6 +73,7 @@ class PushManager:
             data_dir: Directory for legacy push_config.json (default: /data)
             db: Database instance for credential storage (optional, falls back to JSON)
         """
+        self._config = config  # shared with IosPushNotifier (credentials live there)
         self.central_push_url = config.get("worker_url", "https://push.monitorksef.com")
         self.timeout = config.get("timeout", 15)
         self.push_config_path = Path(data_dir) / "push_config.json"
@@ -566,6 +567,9 @@ class PushManager:
         self._generate_credentials()
         registered = self._register_instance()
         self._save_to_db()
+        # the notifier reads these on every send — stop using the old instance now
+        self._config["instance_id"] = self.instance_id
+        self._config["instance_key"] = self.instance_key
         self._log_pairing_info()
         if registered:
             logger.info("Push credentials reset — new pairing code generated")
