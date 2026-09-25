@@ -11,7 +11,7 @@
             "type": "section",
             "text": {
                 "type": "mrkdwn",
-                "text": "{% if subject_type == 'Subject1' %}Do: {{ buyer_name | json_escape }} - NIP {{ buyer_nip | json_escape }}{% elif subject_type == 'Subject2' %}Od: {{ seller_name | json_escape }} - NIP {{ seller_nip | json_escape }}{% else %}Od: {{ seller_name | json_escape }} - NIP {{ seller_nip | json_escape }}\nDo: {{ buyer_name | json_escape }} - NIP {{ buyer_nip | json_escape }}{% endif %}\nNr Faktury: {{ invoice_number | json_escape }}\nData: {{ issue_date | date | json_escape }}\nBrutto: *{{ gross_amount | money_raw | json_escape }} {{ currency | json_escape }}*\nNumer KSeF: {{ ksef_number | json_escape }}"
+                "text": "{% if subject_type == 'Subject1' %}Do: {{ buyer_name | slack_escape | json_escape }} - NIP {{ buyer_nip | slack_escape | json_escape }}{% elif subject_type == 'Subject2' %}Od: {{ seller_name | slack_escape | json_escape }} - NIP {{ seller_nip | slack_escape | json_escape }}{% else %}Od: {{ seller_name | slack_escape | json_escape }} - NIP {{ seller_nip | slack_escape | json_escape }}\nDo: {{ buyer_name | slack_escape | json_escape }} - NIP {{ buyer_nip | slack_escape | json_escape }}{% endif %}\nNr Faktury: {{ invoice_number | slack_escape | json_escape }}\nData: {{ issue_date | date | slack_escape | json_escape }}\nBrutto: *{{ gross_amount | money_raw | json_escape }} {{ currency | slack_escape | json_escape }}*\nNumer KSeF: {{ ksef_number | slack_escape | json_escape }}"
             }
         }
         {% if url %}

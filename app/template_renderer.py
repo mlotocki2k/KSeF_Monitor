@@ -99,6 +99,31 @@ def json_escape_filter(value) -> str:
     return json.dumps(str(value))[1:-1]
 
 
+def slack_escape_filter(value) -> str:
+    """
+    Escape Slack mrkdwn control characters (per Slack docs: & < >).
+
+    Invoice fields come from the issuer; unescaped, `<!channel>` pings the
+    channel and `<https://evil|label>` shows a link under a fake label.
+
+    Usage in template: {{ seller_name | slack_escape | json_escape }}
+    """
+    return str(value).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
+_DISCORD_MARKDOWN = set("\\*_~`|>[]()")
+
+
+def discord_escape_filter(value) -> str:
+    """
+    Backslash-escape Discord markdown so invoice fields render as plain text
+    (no masked links `[label](url)`, headers or formatting).
+
+    Usage in template: {{ seller_name | discord_escape | json_escape }}
+    """
+    return "".join("\\" + ch if ch in _DISCORD_MARKDOWN else ch for ch in str(value))
+
+
 def json_number_filter(value) -> str:
     """
     Render a value as a JSON number literal; anything non-numeric becomes 0.
@@ -166,6 +191,8 @@ class TemplateRenderer:
         self.env.filters["date"] = date_filter
         self.env.filters["json_escape"] = json_escape_filter
         self.env.filters["json_number"] = json_number_filter
+        self.env.filters["slack_escape"] = slack_escape_filter
+        self.env.filters["discord_escape"] = discord_escape_filter
 
         logger.info(f"TemplateRenderer initialized, search paths: {search_paths}")
 

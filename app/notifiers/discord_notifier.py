@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 from .base_notifier import BaseNotifier, describe_request_error
+from ..template_renderer import discord_escape_filter
 
 logger = logging.getLogger(__name__)
 
@@ -79,7 +80,8 @@ class DiscordNotifier(BaseNotifier):
             # Build embed
             embed = {
                 "title": title[:256],  # Discord title max length
-                "description": message[:4096],  # Discord description max length
+                # may carry invoice fields (template fallback) — render as plain text
+                "description": discord_escape_filter(message)[:4096],  # Discord max length
                 "color": color,
                 "timestamp": datetime.now(timezone.utc).isoformat(),
                 "footer": {

@@ -9,6 +9,7 @@ import requests
 from typing import Any, Dict, Optional
 
 from .base_notifier import BaseNotifier, describe_request_error
+from ..template_renderer import slack_escape_filter
 
 logger = logging.getLogger(__name__)
 
@@ -96,7 +97,8 @@ class SlackNotifier(BaseNotifier):
                     "type": "section",
                     "text": {
                         "type": "mrkdwn",
-                        "text": message
+                        # may carry invoice fields (template fallback) — no mrkdwn controls
+                        "text": slack_escape_filter(message)
                     }
                 }
             ]
@@ -126,7 +128,7 @@ class SlackNotifier(BaseNotifier):
                 "attachments": [
                     {
                         "color": color,
-                        "fallback": message
+                        "fallback": slack_escape_filter(message)
                     }
                 ]
             }
