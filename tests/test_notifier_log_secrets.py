@@ -105,3 +105,16 @@ def test_webhook_signature_matches_sent_body(path):
     assert kwargs["headers"]["X-Signature"] == f"sha256={expected}"
     assert kwargs["headers"]["Content-Type"] == "application/json"
     assert json.loads(body)["title"] == "tytuł"
+
+
+def test_webhook_get_keeps_nested_invoice_and_sends_no_signature():
+    n = _make("webhook", method="GET", signing_secret="s3cret")
+    resp = MagicMock()
+    resp.raise_for_status.return_value = None
+    n.session.get = MagicMock(return_value=resp)
+    rendered = json.dumps({"title": "t", "invoice": {"ksef_number": "K1", "gross_amount": 10}})
+    assert n._send_rendered(rendered, {"title": "t"}) is True
+    kwargs = n.session.get.call_args.kwargs
+    assert json.loads(kwargs["params"]["invoice"]) == {"ksef_number": "K1", "gross_amount": 10}
+    assert kwargs["params"]["title"] == "t"
+    assert "X-Signature" not in kwargs["headers"]
