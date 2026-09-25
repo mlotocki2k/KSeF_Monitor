@@ -53,3 +53,28 @@ def test_webhook_public_http_warns_even_with_private_flag(cm, caplog):
         cm._validate_channel("webhook", {"url": "http://public.example/hook",
                                          "allow_private_network": True})
     assert "not https" in caplog.text
+
+
+@pytest.mark.parametrize("monitoring", [
+    {"subject_poll_intervals": {"Subject1": "240"}},
+    {"subject_poll_intervals": {"Subject9": 60}},
+    {"subject_types": ["Subject1", "Bogus"]},
+    {"subject_types": []},
+    {"artifact_batch_size": "50"},
+    {"artifact_batch_size": True},
+])
+def test_invalid_monitoring_values_rejected(cm, monitoring):
+    with pytest.raises(ValueError):
+        cm._validate_monitoring({"monitoring": monitoring})
+
+
+def test_single_subject_type_string_accepted(cm):
+    cfg = {"monitoring": {"subject_types": "Subject2"}}
+    cm._validate_monitoring(cfg)
+    assert cfg["monitoring"]["subject_types"] == ["Subject2"]
+
+
+def test_valid_monitoring_values_pass(cm):
+    cm._validate_monitoring({"monitoring": {"subject_types": ["Subject1", "Subject2"],
+                                            "subject_poll_intervals": {"Subject2": 420.5},
+                                            "artifact_batch_size": 50}})

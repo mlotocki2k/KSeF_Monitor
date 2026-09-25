@@ -169,6 +169,10 @@ class ConfigManager:
         # Validate timezone (optional, defaults to Europe/Warsaw)
         self._validate_timezone(config)
 
+        # Monitoring values used in every cycle — a wrong type must stop the
+        # start, not raise in each cycle while the container looks healthy
+        self._validate_monitoring(config)
+
         # Set database defaults
         self._apply_database_defaults(config)
 
@@ -183,6 +187,45 @@ class ConfigManager:
 
         # Set initial load defaults
         self._apply_initial_load_defaults(config)
+
+    _SUBJECT_TYPES = ("Subject1", "Subject2", "Subject3", "SubjectAuthorized")
+
+    @staticmethod
+    def _is_positive_number(value) -> bool:
+        return isinstance(value, (int, float)) and not isinstance(value, bool) and value > 0
+
+    def _validate_monitoring(self, config: Dict[str, Any]):
+        """Validate monitoring.subject_types / subject_poll_intervals / artifact_batch_size."""
+        monitoring = config.get("monitoring")
+        if not isinstance(monitoring, dict):
+            return
+
+        subject_types = monitoring.get("subject_types")
+        if subject_types is not None:
+            if isinstance(subject_types, str):
+                # a single value — iterating the string would query "S", "u", …
+                subject_types = monitoring["subject_types"] = [subject_types]
+            if (not isinstance(subject_types, list) or not subject_types
+                    or any(st not in self._SUBJECT_TYPES for st in subject_types)):
+                raise ValueError(
+                    f"monitoring.subject_types must be a non-empty list of "
+                    f"{', '.join(self._SUBJECT_TYPES)}"
+                )
+
+        intervals = monitoring.get("subject_poll_intervals")
+        if intervals is not None:
+            if not isinstance(intervals, dict) or any(
+                k not in self._SUBJECT_TYPES or not self._is_positive_number(v)
+                for k, v in intervals.items()
+            ):
+                raise ValueError(
+                    "monitoring.subject_poll_intervals must map subject types to "
+                    "positive numbers of seconds"
+                )
+
+        batch = monitoring.get("artifact_batch_size")
+        if batch is not None and not (isinstance(batch, int) and not isinstance(batch, bool) and batch > 0):
+            raise ValueError("monitoring.artifact_batch_size must be a positive integer")
 
     def _validate_schedule(self, schedule: Dict[str, Any]):
         """
