@@ -12,6 +12,17 @@ import requests
 logger = logging.getLogger(__name__)
 
 
+def describe_request_error(error: Exception) -> str:
+    """Loggable summary of a requests exception without its URL.
+
+    requests puts the full request URL in exception messages; for Slack,
+    Discord and generic webhooks that URL is the credential.
+    """
+    status = getattr(getattr(error, "response", None), "status_code", None)
+    name = type(error).__name__
+    return f"{name} (HTTP {status})" if status else name
+
+
 class BaseNotifier(ABC):
     """
     Abstract base class for all notification channels

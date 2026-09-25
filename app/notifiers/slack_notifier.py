@@ -8,7 +8,7 @@ import logging
 import requests
 from typing import Any, Dict, Optional
 
-from .base_notifier import BaseNotifier
+from .base_notifier import BaseNotifier, describe_request_error
 
 logger = logging.getLogger(__name__)
 
@@ -144,7 +144,7 @@ class SlackNotifier(BaseNotifier):
             return True
 
         except requests.exceptions.RequestException as e:
-            logger.error(f"Failed to send Slack notification: {e}")
+            logger.error("Failed to send Slack notification: %s", describe_request_error(e))
             if hasattr(e, 'response') and e.response is not None:
                 logger.error(f"Slack API response status: {e.response.status_code}")
             return False
@@ -173,7 +173,7 @@ class SlackNotifier(BaseNotifier):
             logger.error(f"Invalid JSON from Slack template: {e}")
             return False
         except requests.exceptions.RequestException as e:
-            logger.error(f"Failed to send Slack notification: {e}")
+            logger.error("Failed to send Slack notification: %s", describe_request_error(e))
             if hasattr(e, 'response') and e.response is not None:
                 logger.error(f"Slack API response status: {e.response.status_code}")
             return False

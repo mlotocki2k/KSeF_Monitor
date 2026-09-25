@@ -535,7 +535,7 @@ class PushManager:
         self._register_instance()
         self._save_to_db()
         self._log_pairing_info()
-        logger.info("Push credentials reset — new pairing code: %s", self.pairing_code)
+        logger.info("Push credentials reset — new pairing code generated")
         return True
 
     # ── Properties ───────────────────────────────────────────────────────

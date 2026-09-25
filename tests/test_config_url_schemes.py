@@ -1,0 +1,37 @@
+"""Channel URLs carrying credentials must use https (or loopback)."""
+
+import logging
+
+import pytest
+
+from app.config_manager import ConfigManager
+
+
+@pytest.fixture
+def cm():
+    return object.__new__(ConfigManager)
+
+
+def test_ios_push_worker_url_http_rejected(cm):
+    with pytest.raises(ValueError, match="https"):
+        cm._validate_channel("ios_push", {"worker_url": "http://push.example.com"})
+
+
+@pytest.mark.parametrize("url", ["https://push.monitorksef.com", "http://localhost:8787",
+                                 "http://127.0.0.1:8787"])
+def test_ios_push_worker_url_ok(cm, url):
+    cm._validate_channel("ios_push", {"worker_url": url})
+
+
+def test_slack_http_warns(cm, caplog):
+    caplog.set_level(logging.WARNING)
+    cm._validate_channel("slack", {"webhook_url": "http://chat.lan/hooks/x"})
+    assert "not https" in caplog.text
+
+
+def test_email_plaintext_login_warns(cm, caplog):
+    caplog.set_level(logging.WARNING)
+    cm._validate_channel("email", {"smtp_server": "s", "username": "u", "password": "p",
+                                   "from_address": "a@b.c", "to_addresses": ["a@b.c"],
+                                   "use_tls": False})
+    assert "unencrypted" in caplog.text

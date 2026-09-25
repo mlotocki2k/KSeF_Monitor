@@ -138,3 +138,11 @@ class TestAllowPrivateOverride:
             (10, 1, 6, "", ("::1", 0, 0, 0)),
         ]
         assert is_safe_public_url("https://mixed.example/", allow_private=True) is False
+
+
+@patch("app._ssrf_guard.socket.getaddrinfo")
+def test_cgnat_rejected_without_override(mock_gai):
+    """100.64.0.0/10 is neither private nor global (is_private is False)."""
+    mock_gai.return_value = [(2, 1, 6, "", ("100.100.100.200", 0))]
+    assert is_safe_public_url("https://cgnat.example/") is False
+    assert is_safe_public_url("https://cgnat.example/", allow_private=True) is True

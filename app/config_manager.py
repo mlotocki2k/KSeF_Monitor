@@ -304,15 +304,29 @@ class ConfigManager:
     # Data-driven channel validation rules
     _CHANNEL_VALIDATORS = {
         "pushover": {"required_warn": ["user_key", "api_token"]},
-        "discord":  {"required_warn": ["webhook_url"]},
-        "slack":    {"required_warn": ["webhook_url"]},
+        # Webhook URLs are credentials — plain http exposes them on the wire
+        "discord":  {"required_warn": ["webhook_url"], "https_warn": ["webhook_url"]},
+        "slack":    {"required_warn": ["webhook_url"], "https_warn": ["webhook_url"]},
         "email":    {"required_warn": ["smtp_server", "username", "password",
                                         "from_address", "to_addresses"],
                      "list_fields": ["to_addresses"]},
         "webhook":  {"required_warn": ["url"],
-                     "enum_fields": {"method": ["GET", "POST", "PUT"]}},
-        "ios_push": {"required_warn": ["worker_url"]},
+                     "enum_fields": {"method": ["GET", "POST", "PUT"]},
+                     "https_warn": ["url"]},
+        # X-Instance-Key header is sent to the worker on every push
+        "ios_push": {"required_warn": ["worker_url"], "https_required": ["worker_url"]},
     }
+
+    @staticmethod
+    def _is_https_or_loopback(url: str) -> bool:
+        from urllib.parse import urlparse
+        try:
+            parsed = urlparse(url)
+        except ValueError:
+            return False
+        if parsed.scheme == "https":
+            return True
+        return parsed.scheme == "http" and parsed.hostname in ("localhost", "127.0.0.1", "::1")
 
     def _validate_channel(self, channel_name: str, channel_config: Dict[str, Any]):
         """Validate a notification channel config against its rules."""
@@ -322,6 +336,26 @@ class ConfigManager:
         for field in rules.get("required_warn", []):
             if not channel_config.get(field):
                 logger.warning(f"{channel_name.capitalize()} enabled but '{field}' not configured")
+
+        # URL scheme: secrets travel in the URL or headers
+        for field in rules.get("https_required", []):
+            val = channel_config.get(field)
+            if val and not self._is_https_or_loopback(val):
+                raise ValueError(f"Field '{channel_name}.{field}' must be an https:// URL")
+        for field in rules.get("https_warn", []):
+            val = channel_config.get(field)
+            if val and not self._is_https_or_loopback(val):
+                logger.warning(
+                    f"{channel_name.capitalize()} '{field}' is not https:// — "
+                    f"the URL and payload are sent unencrypted"
+                )
+
+        # Email: credentials must not go over an unencrypted SMTP session
+        if (channel_name == "email" and channel_config.get("username")
+                and channel_config.get("use_tls") is False):
+            logger.warning(
+                "Email: use_tls=false with SMTP login — the password is sent unencrypted"
+            )
 
         # Check list fields
         for field in rules.get("list_fields", []):

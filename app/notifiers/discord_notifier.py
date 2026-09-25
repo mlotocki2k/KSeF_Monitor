@@ -9,7 +9,7 @@ import requests
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
-from .base_notifier import BaseNotifier
+from .base_notifier import BaseNotifier, describe_request_error
 
 logger = logging.getLogger(__name__)
 
@@ -113,7 +113,7 @@ class DiscordNotifier(BaseNotifier):
             return True
 
         except requests.exceptions.RequestException as e:
-            logger.error(f"Failed to send Discord notification: {e}")
+            logger.error("Failed to send Discord notification: %s", describe_request_error(e))
             if hasattr(e, 'response') and e.response is not None:
                 logger.error(f"Discord API response status: {e.response.status_code}")
             return False
@@ -146,7 +146,7 @@ class DiscordNotifier(BaseNotifier):
             logger.error(f"Invalid JSON from Discord template: {e}")
             return False
         except requests.exceptions.RequestException as e:
-            logger.error(f"Failed to send Discord notification: {e}")
+            logger.error("Failed to send Discord notification: %s", describe_request_error(e))
             if hasattr(e, 'response') and e.response is not None:
                 logger.error(f"Discord API response status: {e.response.status_code}")
             return False

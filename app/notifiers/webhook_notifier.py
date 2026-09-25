@@ -13,7 +13,7 @@ from typing import Any, Dict, Optional
 
 from app._ssrf_guard import is_safe_public_url
 
-from .base_notifier import BaseNotifier
+from .base_notifier import BaseNotifier, describe_request_error
 
 logger = logging.getLogger(__name__)
 
@@ -141,19 +141,20 @@ class WebhookNotifier(BaseNotifier):
             if url:
                 payload["url"] = url
 
-            # Compute HMAC signature if signing_secret is configured
+            # Compute HMAC signature if signing_secret is configured; the body
+            # sent is exactly the signed bytes so receivers can verify it
             payload_bytes = json.dumps(payload, separators=(',', ':')).encode('utf-8')
             headers = {**self.headers, **self._sign_payload(payload_bytes)}
 
             # Send request based on configured method (redirects disabled for SSRF protection)
             if self.method == "POST":
                 response = self.session.post(
-                    self.url, json=payload, headers=headers, timeout=self.timeout,
+                    self.url, data=payload_bytes, headers=headers, timeout=self.timeout,
                     allow_redirects=False
                 )
             elif self.method == "PUT":
                 response = self.session.put(
-                    self.url, json=payload, headers=headers, timeout=self.timeout,
+                    self.url, data=payload_bytes, headers=headers, timeout=self.timeout,
                     allow_redirects=False
                 )
             elif self.method == "GET":
@@ -172,7 +173,7 @@ class WebhookNotifier(BaseNotifier):
             return True
 
         except requests.exceptions.RequestException as e:
-            logger.error(f"Failed to send webhook notification: {e}")
+            logger.error("Failed to send webhook notification: %s", describe_request_error(e))
             if hasattr(e, 'response') and e.response is not None:
                 logger.error(f"Webhook response status: {e.response.status_code}")
             return False
@@ -196,9 +197,9 @@ class WebhookNotifier(BaseNotifier):
             headers = {**self.headers, **self._sign_payload(payload_bytes)}
 
             if self.method == "POST":
-                response = self.session.post(self.url, json=payload, headers=headers, timeout=self.timeout, allow_redirects=False)
+                response = self.session.post(self.url, data=payload_bytes, headers=headers, timeout=self.timeout, allow_redirects=False)
             elif self.method == "PUT":
-                response = self.session.put(self.url, json=payload, headers=headers, timeout=self.timeout, allow_redirects=False)
+                response = self.session.put(self.url, data=payload_bytes, headers=headers, timeout=self.timeout, allow_redirects=False)
             elif self.method == "GET":
                 response = self.session.get(self.url, params=payload, headers=headers, timeout=self.timeout, allow_redirects=False)
             else:
@@ -214,7 +215,7 @@ class WebhookNotifier(BaseNotifier):
             logger.error(f"Invalid JSON from webhook template: {e}")
             return False
         except requests.exceptions.RequestException as e:
-            logger.error(f"Failed to send webhook notification: {e}")
+            logger.error("Failed to send webhook notification: %s", describe_request_error(e))
             if hasattr(e, 'response') and e.response is not None:
                 logger.error(f"Webhook response status: {e.response.status_code}")
             return False
