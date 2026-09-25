@@ -480,7 +480,7 @@ class TestCertificateUploadRoute:
         files = {"certificate": ("ksef.p12", p12_bytes, "application/x-pkcs12")}
         resp = client.post("/ui/certificate", files=files, data={"password": P12_PASSWORD})
         assert resp.status_code == 303
-        assert "ok=" in resp.headers["location"]
+        assert resp.headers["location"] == "/ui/certificate?ok=saved"
         from pathlib import Path
 
         saved = Path(cert_path)
@@ -491,8 +491,8 @@ class TestCertificateUploadRoute:
     def test_upload_wrong_password_rejected_and_no_file(self, client, cert_path, p12_bytes):
         files = {"certificate": ("ksef.p12", p12_bytes, "application/x-pkcs12")}
         resp = client.post("/ui/certificate", files=files, data={"password": "wrong"})
-        assert resp.status_code == 303
-        assert "error=" in resp.headers["location"]
+        assert resp.status_code == 400
+        assert "Błąd" in resp.text
         from pathlib import Path
 
         assert not Path(cert_path).exists()
@@ -500,8 +500,8 @@ class TestCertificateUploadRoute:
     def test_upload_bad_extension_rejected(self, client, cert_path):
         files = {"certificate": ("evil.txt", b"hello", "text/plain")}
         resp = client.post("/ui/certificate", files=files, data={"password": ""})
-        assert resp.status_code == 303
-        assert "error=" in resp.headers["location"]
+        assert resp.status_code == 400
+        assert "Błąd" in resp.text
         from pathlib import Path
 
         assert not Path(cert_path).exists()

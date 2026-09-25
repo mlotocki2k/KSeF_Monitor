@@ -340,8 +340,8 @@ class TestSetupWizard:
                 "setup_code": "a" * 32,
             },
         )
-        assert resp.status_code == 303
-        assert "/ui/setup?error=" in resp.headers["location"]
+        assert resp.status_code == 400
+        assert 'name="setup_code"' in resp.text  # setup form re-rendered with the error
 
     def test_setup_rejects_mismatched_passwords(self, client):
         resp = client.post(
@@ -353,8 +353,8 @@ class TestSetupWizard:
                 "setup_code": "a" * 32,
             },
         )
-        assert resp.status_code == 303
-        assert "/ui/setup?error=" in resp.headers["location"]
+        assert resp.status_code == 400
+        assert 'name="setup_code"' in resp.text  # setup form re-rendered with the error
 
     # U-06 — atomic helper guarantees a single first admin even if the handler
     # path is bypassed or invoked twice.
@@ -907,8 +907,8 @@ class TestAccountPasswordChange:
                 "new_password_confirm": "new-password-456",
             },
         )
-        assert resp.status_code == 303
-        assert "error" in resp.headers["location"]
+        assert resp.status_code == 400
+        assert "Błąd" in resp.text
 
     def test_change_password_rejects_mismatch(self, db, client):
         self._login(db, client)
@@ -920,8 +920,8 @@ class TestAccountPasswordChange:
                 "new_password_confirm": "different",
             },
         )
-        assert resp.status_code == 303
-        assert "error" in resp.headers["location"]
+        assert resp.status_code == 400
+        assert "Błąd" in resp.text
 
     def test_change_password_succeeds_and_logs_out(self, db, client):
         self._login(db, client)

@@ -38,15 +38,15 @@ def _users(db):
 
 def test_setup_without_code_rejected(client, db):
     r = client.post("/ui/setup", data=SETUP, follow_redirects=False)
-    assert r.status_code == 303
-    assert "/ui/setup?error=" in r.headers["location"]
+    assert r.status_code == 400
+    assert "Nieprawidłowy kod instalacyjny." in r.text
     assert _users(db) == 0
 
 
 def test_setup_with_wrong_code_rejected(client, db):
     r = client.post("/ui/setup", data={**SETUP, "setup_code": "b" * 32},
                     follow_redirects=False)
-    assert "/ui/setup?error=" in r.headers["location"]
+    assert r.status_code == 400
     assert _users(db) == 0
 
 
@@ -159,3 +159,21 @@ def test_bearer_bruteforce_across_paths_is_locked(client):
 def test_bearer_non_ascii_token_is_401_not_500(client):
     r = client.get("/api/v1/invoices", headers={"Authorization": "Bearer zażółć".encode("utf-8")})
     assert r.status_code == 401
+
+
+
+@pytest.mark.parametrize("url", [
+    "/ui/login?error=Konto+zablokowane.+Zadzwo%C5%84+pod+123",
+    "/ui/setup?error=Zadzwo%C5%84+pod+123",
+])
+def test_error_param_free_text_not_rendered(client, url):
+    r = client.get(url)
+    assert "Zadzwoń pod" not in r.text
+
+
+def test_account_and_certificate_ignore_free_text(logged_in):
+    for url in ("/ui/account?error=Zadzwo%C5%84+pod+123&ok=Zadzwo%C5%84+pod+123",
+                "/ui/certificate?error=Zadzwo%C5%84+pod+123&ok=Zadzwo%C5%84+pod+123"):
+        r = logged_in.get(url)
+        assert r.status_code == 200
+        assert "Zadzwoń pod" not in r.text
