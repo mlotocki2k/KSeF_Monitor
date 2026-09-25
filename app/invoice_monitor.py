@@ -19,6 +19,7 @@ from .invoice_pdf_generator import generate_invoice_pdf, REPORTLAB_AVAILABLE
 from .invoice_xml_parser import detect_schema_type, SCHEMA_TYPE_UNKNOWN
 from .database import Database, Invoice, InvoiceArtifact
 from .ksef_client import KSeFQueryError
+from sqlalchemy.exc import SQLAlchemyError
 
 # Optional timezone support
 try:
@@ -449,7 +450,15 @@ class InvoiceMonitor:
         if self.lazy_artifacts and use_db and invoice_id and (self.save_xml or self.save_pdf):
             self._enqueue_artifacts(db_session, invoice_id)
         else:
-            self._save_invoice_artifacts(invoice, subject_type, invoice_id=invoice_id, db_session=db_session)
+            # The notification is already out: a file-system error here (no
+            # space, permissions on a new month folder…) must not roll back the
+            # invoice row — the next cycle would find it "new" and notify again.
+            try:
+                self._save_invoice_artifacts(invoice, subject_type, invoice_id=invoice_id, db_session=db_session)
+            except SQLAlchemyError:
+                raise
+            except Exception as e:
+                logger.error("Saving artifacts for %s failed (invoice kept): %s", safe_ksef_log, e)
 
     def _enqueue_artifacts(self, db_session, invoice_id: int) -> None:
         """Faza 1 (lazy): zarejestruj artefakty jako pending — pobranie w Fazie 2."""
@@ -892,9 +901,9 @@ class InvoiceMonitor:
             "net_amount": invoice.get("netAmount"),
             "vat_amount": invoice.get("vatAmount"),
             "currency": s(invoice.get("currency", "PLN"), 10),
-            "seller_name": s(invoice.get("seller", {}).get("name", "N/A")),
+            "seller_name": s((invoice.get("seller") or {}).get("name") or "N/A"),
             "seller_nip": s(invoice.get("seller", {}).get("nip", "N/A"), 20),
-            "buyer_name": s(invoice.get("buyer", {}).get("name", "N/A")),
+            "buyer_name": s((invoice.get("buyer") or {}).get("name") or "N/A"),
             "buyer_nip": s(
                 invoice.get("buyer", {}).get("identifier", {}).get("value")
                 or invoice.get("buyer", {}).get("nip", "N/A"),
@@ -1033,7 +1042,13 @@ class InvoiceMonitor:
                          .filter(InvoiceArtifact.file_path == str(path),
                                  InvoiceArtifact.invoice_id != invoice_id)
                          .first())
-                if owner is not None:
+                # rows older than the invoice_artifacts mirror (pre-0.5.3)
+                # carry the path only on the invoice itself
+                legacy_owner = (db_session.query(Invoice.id)
+                                .filter((Invoice.xml_path == str(path)) | (Invoice.pdf_path == str(path)),
+                                        Invoice.id != invoice_id)
+                                .first())
+                if owner is not None or legacy_owner is not None:
                     return alt
             if suffix == ".xml" and xml_content is not None:
                 expected = xml_content if isinstance(xml_content, bytes) else xml_content.encode("utf-8")
@@ -1182,11 +1197,17 @@ class InvoiceMonitor:
                     try:
                         tz_name = self.config.get_timezone() if hasattr(self.config, 'get_timezone') else ''
                         template_dir = self.config.get("storage", "pdf_templates_dir", default=None)
-                        generate_invoice_pdf(xml_content, ksef_number=ksef_number,
-                                             output_path=str(pdf_path), environment=self.ksef.environment,
-                                             timezone=tz_name, template_dir=template_dir)
-                        logger.info(f"Invoice PDF saved: {pdf_path}")
-                        self._update_artifact_in_db(db_session, invoice_id, "pdf", pdf_path)
+                        result = generate_invoice_pdf(xml_content, ksef_number=ksef_number,
+                                                      output_path=str(pdf_path), environment=self.ksef.environment,
+                                                      timezone=tz_name, template_dir=template_dir,
+                                                      ksef_generator_url=self.config.get(
+                                                          "storage", "pdf_ksef_generator_url", default=None))
+                        # None = schema without a PDF renderer: nothing was written
+                        if result is not None and pdf_path.exists():
+                            logger.info(f"Invoice PDF saved: {pdf_path}")
+                            self._update_artifact_in_db(db_session, invoice_id, "pdf", pdf_path)
+                        else:
+                            logger.warning(f"No PDF generated for {ksef_number} (unsupported schema)")
                     except Exception as e:
                         logger.error(f"Failed to generate PDF for {ksef_number}: {e}")
                 elif pdf_orig_path.exists():

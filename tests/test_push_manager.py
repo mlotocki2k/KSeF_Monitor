@@ -601,3 +601,40 @@ class TestPushRegistrationRecovery:
         with patch.object(PushManager, "_register_instance", return_value=False) as again:
             PushManager(_make_config(), data_dir=str(tmp_path), db=db)
         again.assert_not_called()  # registration persisted
+
+
+class TestPushStorageErrors:
+    def test_db_error_does_not_replace_credentials(self, tmp_path):
+        from app.push_manager import PushStorageUnavailable
+        db = Database(str(tmp_path / "e.db"))
+        db.create_tables()
+        with patch.object(PushManager, "_register_instance", return_value=True):
+            pm = PushManager(_make_config(), data_dir=str(tmp_path), db=db)
+        original = pm.instance_id
+        with patch.object(db, "get_push_instance", side_effect=RuntimeError("database is locked")), \
+             patch("app.push_manager.time.sleep"), \
+             patch.object(PushManager, "_register_instance", return_value=True):
+            with pytest.raises(PushStorageUnavailable):
+                PushManager(_make_config(), data_dir=str(tmp_path), db=db)
+        with db.get_session() as s:
+            assert db.get_push_instance(s).instance_id == original
+
+    def test_transient_db_error_retried(self, tmp_path):
+        db = Database(str(tmp_path / "t.db"))
+        db.create_tables()
+        with patch.object(PushManager, "_register_instance", return_value=True):
+            pm = PushManager(_make_config(), data_dir=str(tmp_path), db=db)
+        real = db.get_push_instance
+        calls = {"n": 0}
+
+        def flaky(session):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise RuntimeError("database is locked")
+            return real(session)
+
+        with patch.object(db, "get_push_instance", side_effect=flaky), \
+             patch("app.push_manager.time.sleep"), \
+             patch.object(PushManager, "_register_instance", return_value=True):
+            pm2 = PushManager(_make_config(), data_dir=str(tmp_path), db=db)
+        assert pm2.instance_id == pm.instance_id

@@ -77,3 +77,22 @@ def test_local_image_outside_roots_not_embedded(tmp_path):
 def test_policy_denies_network():
     policy = _pdf_resource_policy()
     assert policy.allow_remote is False
+
+
+def test_custom_template_dir_asset_allowed(tmp_path):
+    """docs/PDF_TEMPLATES.md: <img src="/data/pdf_templates/logo.png"> next to a custom template."""
+    logo = tmp_path / "logo.png"
+    logo.write_bytes(PNG)
+    assert _pdf_link_callback(str(logo), None) == "data:,"
+    assert _pdf_link_callback(str(logo), None, (str(tmp_path),)) == str(logo.resolve())
+    out = BytesIO()
+    html = f"<html><body><img src=\"{logo}\" width=\"10\" height=\"10\"></body></html>"
+    pisa.CreatePDF(html, dest=out, link_callback=lambda u, r: _pdf_link_callback(u, r, (str(tmp_path),)),
+                   resource_policy=_pdf_resource_policy((str(tmp_path),)))
+    assert b"/Subtype /Image" in out.getvalue()
+
+
+def test_renderer_passes_custom_dir(tmp_path):
+    from app.invoice_pdf_template import InvoicePDFTemplateRenderer
+    assert InvoicePDFTemplateRenderer(str(tmp_path))._extra_dirs == (str(tmp_path),)
+    assert InvoicePDFTemplateRenderer(str(tmp_path / "missing"))._extra_dirs == ()

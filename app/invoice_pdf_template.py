@@ -65,15 +65,19 @@ TEMPLATE_NAME_FA_RR = "invoice_pdf_fa_rr.html.j2"
 _BLOCKED_URI = "data:,"
 
 
-def _pdf_allowed_roots() -> tuple:
-    """Directories invoice PDFs may read: bundled templates and the font dir."""
+def _pdf_allowed_roots(extra_dirs=()) -> tuple:
+    """Directories invoice PDFs may read: bundled templates, the font dir and
+    the configured custom template dir (e.g. a logo next to a custom template)."""
     roots = {DEFAULT_TEMPLATES_DIR.resolve()}
+    for d in extra_dirs:
+        if d:
+            roots.add(Path(d).resolve())
     for font_path in find_font_paths().values():
         roots.add(Path(font_path).resolve().parent)
     return tuple(sorted(roots))
 
 
-def _pdf_resource_policy():
+def _pdf_resource_policy(extra_dirs=()):
     """xhtml2pdf access policy: no network, local reads only under allowed roots.
 
     The default policy confines reads to the working directory, which blocks
@@ -84,17 +88,17 @@ def _pdf_resource_policy():
     return ResourceAccessPolicy(
         allow_remote=False,
         base_dir=None,
-        extra_roots=_pdf_allowed_roots(),
+        extra_roots=_pdf_allowed_roots(extra_dirs),
     )
 
 
-def _pdf_link_callback(uri, rel):
+def _pdf_link_callback(uri, rel, extra_dirs=()):
     """Block external resources when rendering invoice PDFs (V5-08).
 
     Allowed:
       - data: URIs (QR code image embedded in template context)
-      - files under the bundled templates dir or the font dir (resolved path,
-        so ../ and symlinks cannot leave them)
+      - files under the bundled templates dir, the font dir or the configured
+        custom template dir (resolved path, so ../ and symlinks cannot leave them)
 
     Everything else is replaced with an empty data: URI.
     """
@@ -109,7 +113,7 @@ def _pdf_link_callback(uri, rel):
         except (OSError, ValueError):
             resolved = None
         if resolved is not None and any(
-            resolved.is_relative_to(root) for root in _pdf_allowed_roots()
+            resolved.is_relative_to(root) for root in _pdf_allowed_roots(extra_dirs)
         ):
             return str(resolved)
     logger.warning("xhtml2pdf: blocked external resource %s", uri[:120])
@@ -162,11 +166,14 @@ class InvoicePDFTemplateRenderer:
 
     def __init__(self, custom_templates_dir: Optional[str] = None):
         search_paths = []
+        # Custom template dir may hold assets the template references (logo)
+        self._extra_dirs: tuple = ()
 
         if custom_templates_dir:
             custom_path = Path(custom_templates_dir)
             if custom_path.is_dir():
                 search_paths.append(str(custom_path))
+                self._extra_dirs = (str(custom_path),)
                 logger.info(f"Custom PDF templates directory: {custom_path}")
             else:
                 logger.warning(
@@ -233,8 +240,8 @@ class InvoicePDFTemplateRenderer:
             html_content,
             dest=buffer,
             encoding='utf-8',
-            link_callback=_pdf_link_callback,
-            resource_policy=_pdf_resource_policy(),
+            link_callback=lambda uri, rel: _pdf_link_callback(uri, rel, self._extra_dirs),
+            resource_policy=_pdf_resource_policy(self._extra_dirs),
         )
 
         if pisa_status.err:

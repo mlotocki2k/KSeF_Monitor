@@ -19,6 +19,7 @@ import hashlib
 import json
 import logging
 import secrets
+import time
 import uuid
 from datetime import datetime, timezone
 from io import BytesIO
@@ -34,6 +35,10 @@ except ImportError:
     QRCODE_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
+
+
+class PushStorageUnavailable(RuntimeError):
+    """Stored push credentials could not be read (as opposed to: none stored)."""
 
 # QR code prefix for pairing codes (validated by iOS app)
 QR_PREFIX = "MKSEF:"
@@ -85,8 +90,18 @@ class PushManager:
 
     def _load_or_generate(self):
         """Load credentials from DB/JSON or generate new ones on first run."""
-        # Try DB first
-        if self._load_from_db():
+        # Try DB first (a transient error is retried; persisting errors abort
+        # the push setup instead of replacing the stored credentials)
+        for attempt in range(3):
+            try:
+                loaded = self._load_from_db()
+                break
+            except PushStorageUnavailable as e:
+                logger.warning("Push config load failed (attempt %d/3): %s", attempt + 1, e)
+                if attempt == 2:
+                    raise
+                time.sleep(1)
+        if loaded:
             self._ensure_registered()
             return
 
@@ -131,8 +146,10 @@ class PushManager:
             finally:
                 session.close()
         except Exception as e:
-            logger.warning("Failed to load push config from DB: %s", e)
-            return False
+            # Not "no row": the DB is unreadable right now (locked, I/O…).
+            # Generating new credentials here would overwrite the existing
+            # row and silently unpair every device.
+            raise PushStorageUnavailable(f"push config unreadable: {e}") from e
 
     def _save_to_db(self):
         """Save credentials to push_instances table."""

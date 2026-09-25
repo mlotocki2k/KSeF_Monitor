@@ -117,7 +117,7 @@ Lista faktur z paginacją, filtrowaniem i sortowaniem.
 |----------|-----|---------|------|
 | `page` | int | 1 | Numer strony (1–10000) |
 | `per_page` | int | 20 | Elementów na stronę (1–100) |
-| `subject_type` | string | — | Filtr: `subject1` (sprzedaż) lub `subject2` (zakup) |
+| `subject_type` | string | — | Filtr: `Subject1` (sprzedaż), `Subject2` (zakup), `Subject3`, `SubjectAuthorized` — wielkość liter bez znaczenia |
 | `seller_nip` | string | — | Filtr po NIP sprzedawcy (10 cyfr) |
 | `buyer_nip` | string | — | Filtr po NIP nabywcy (10 cyfr) |
 | `issue_date_from` | string | — | Filtr: data od (ISO, np. `2026-01-01`) |

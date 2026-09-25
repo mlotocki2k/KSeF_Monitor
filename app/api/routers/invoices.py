@@ -22,6 +22,8 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["invoices"])
 
+_SUBJECT_TYPES = {s.lower(): s for s in ("Subject1", "Subject2", "Subject3", "SubjectAuthorized")}
+
 # KSeF calls per hour kept for the monitor itself when the API fetches
 # uncached XML on demand (shares the monitor's KSeF rate limiter).
 _KSEF_HOURLY_RESERVE = 10
@@ -69,7 +71,7 @@ def list_invoices(
     request: Request,
     page: int = Query(1, ge=1, le=10000),
     per_page: int = Query(20, ge=1, le=100),
-    subject_type: Optional[str] = Query(None, pattern="^(subject[12])$"),
+    subject_type: Optional[str] = Query(None, pattern="(?i)^(subject1|subject2|subject3|subjectauthorized)$"),
     seller_nip: Optional[str] = None,
     buyer_nip: Optional[str] = None,
     issue_date_from: Optional[str] = None,
@@ -97,7 +99,8 @@ def list_invoices(
 
         # Apply filters
         if subject_type:
-            query = query.filter(Invoice.subject_type == subject_type)
+            # Stored as KSeF spells it (Subject1…); accept any case (docs used subject1)
+            query = query.filter(Invoice.subject_type == _SUBJECT_TYPES[subject_type.lower()])
         if seller_nip:
             query = query.filter(Invoice.seller_nip == seller_nip)
         if buyer_nip:
@@ -340,7 +343,11 @@ def get_invoice_pdf(request: Request, ksef_number: KsefNumberPath):
                         if monitor and hasattr(monitor, 'config') else None)
         buf = generate_invoice_pdf(xml_content, ksef_number=ksef_number,
                                    environment=environment, timezone=tz_name,
-                                   ksef_generator_url=ksef_gen_url)
+                                   ksef_generator_url=ksef_gen_url,
+                                   # same renderer inputs as the monitor, so the cached
+                                   # PDF does not depend on which path produced it
+                                   template_dir=(monitor.config.get('storage', 'pdf_templates_dir')
+                                                 if monitor and hasattr(monitor, 'config') else None))
         if buf is None:
             return JSONResponse(
                 status_code=422,
