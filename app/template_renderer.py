@@ -9,6 +9,7 @@ directory in config (notifications.templates_dir).
 
 import json
 import logging
+import math
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -98,6 +99,28 @@ def json_escape_filter(value) -> str:
     return json.dumps(str(value))[1:-1]
 
 
+def json_number_filter(value) -> str:
+    """
+    Render a value as a JSON number literal; anything non-numeric becomes 0.
+
+    Amounts come from the KSeF API and may be missing ("N/A") or malformed —
+    emitting them raw would break the payload or inject JSON.
+
+    Usage in template: "gross_amount": {{ gross_amount | json_number }}
+    """
+    if isinstance(value, bool):
+        return "0"
+    if isinstance(value, int):
+        return json.dumps(value)
+    try:
+        num = float(value)
+    except (ValueError, TypeError):
+        return "0"
+    if not math.isfinite(num):
+        return "0"
+    return json.dumps(num)
+
+
 class TemplateRenderer:
     """
     Jinja2 template renderer for notification channels.
@@ -142,6 +165,7 @@ class TemplateRenderer:
         self.env.filters["money_raw"] = money_raw_filter
         self.env.filters["date"] = date_filter
         self.env.filters["json_escape"] = json_escape_filter
+        self.env.filters["json_number"] = json_number_filter
 
         logger.info(f"TemplateRenderer initialized, search paths: {search_paths}")
 

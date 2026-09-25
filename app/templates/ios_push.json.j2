@@ -1,24 +1,24 @@
 {% autoescape false %}{
     "title": "{{ title | json_escape }}",
-    "body": "{% if subject_type == 'Subject1' %}Do: {{ buyer_name | json_escape }} - NIP {{ buyer_nip }}{% elif subject_type == 'Subject2' %}Od: {{ seller_name | json_escape }} - NIP {{ seller_nip }}{% else %}Od: {{ seller_name | json_escape }} - NIP {{ seller_nip }}\nDo: {{ buyer_name | json_escape }} - NIP {{ buyer_nip }}{% endif %}\nBrutto: {{ gross_amount | money_raw }} {{ currency }}",
+    "body": "{% if subject_type == 'Subject1' %}Do: {{ buyer_name | json_escape }} - NIP {{ buyer_nip | json_escape }}{% elif subject_type == 'Subject2' %}Od: {{ seller_name | json_escape }} - NIP {{ seller_nip | json_escape }}{% else %}Od: {{ seller_name | json_escape }} - NIP {{ seller_nip | json_escape }}\nDo: {{ buyer_name | json_escape }} - NIP {{ buyer_nip | json_escape }}{% endif %}\nBrutto: {{ gross_amount | money_raw | json_escape }} {{ currency | json_escape }}",
     "data": {
-        "notification_id": "{{ notification_id }}",
+        "notification_id": "{{ notification_id | json_escape }}",
         "type": "new_invoice",
         "invoice_reference": "{{ ksef_number | json_escape }}",
-        "nip": "{% if subject_type == 'Subject1' %}{{ buyer_nip }}{% else %}{{ seller_nip }}{% endif %}",
+        "nip": "{% if subject_type == 'Subject1' %}{{ buyer_nip | json_escape }}{% else %}{{ seller_nip | json_escape }}{% endif %}",
         "ksef_number": "{{ ksef_number | json_escape }}",
         "invoice_number": "{{ invoice_number | json_escape }}",
-        "issue_date": "{{ issue_date }}",
-        "gross_amount": {{ gross_amount | default(0, true) }},
-        "net_amount": {{ net_amount | default(0, true) }},
-        "vat_amount": {{ vat_amount | default(0, true) }},
-        "currency": "{{ currency }}",
+        "issue_date": "{{ issue_date | json_escape }}",
+        "gross_amount": {{ gross_amount | json_number }},
+        "net_amount": {{ net_amount | json_number }},
+        "vat_amount": {{ vat_amount | json_number }},
+        "currency": "{{ currency | json_escape }}",
         "seller_name": "{{ seller_name | json_escape }}",
-        "seller_nip": "{{ seller_nip }}",
+        "seller_nip": "{{ seller_nip | json_escape }}",
         "buyer_name": "{{ buyer_name | json_escape }}",
-        "buyer_nip": "{{ buyer_nip }}",
-        "subject_type": "{{ subject_type }}",
-        "schema_type": "{{ schema_type | default('FA3') }}"
+        "buyer_nip": "{{ buyer_nip | json_escape }}",
+        "subject_type": "{{ subject_type | json_escape }}",
+        "schema_type": "{{ schema_type | default('FA3') | json_escape }}"
     }
 }
 {% endautoescape %}
