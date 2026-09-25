@@ -902,7 +902,7 @@ Endpoint: `POST /v2/invoices/query/metadata`
 - `dateType` pochodzi z pola `date_type` w konfiguracji.
 - Daty w formacie ISO 8601 z sufixem `Z` (UTC).
 - Wszystkie daty są konwertowane z skonfigurowanej strefy czasowej (`timezone`) do UTC przed wysłaniem do API.
-- `dateRange` ograniczony do max 90 dni (limit KSeF API).
+- `dateRange` ograniczony do max 100 dni w UTC (limit KSeF API od 2.7.1; aplikacja od 0.6.5 odpytuje 99 dni).
 - `pageSize` i `pageOffset` przekazywane jako **query params** (nie w body) — zgodnie ze specyfikacją API.
 - Wszystkie zapytania podlegają rate limiting (10/s, 30/min, 120/h). Szczegóły: [docs/KSEF_API_LIMITATIONS.md](docs/KSEF_API_LIMITATIONS.md)
 
@@ -1050,7 +1050,7 @@ Plik `data/last_check.json` jest nadal zapisywany dla kompatybilności wstecznej
 
 Dokumentacja API: https://api.ksef.mf.gov.pl/docs/v2/
 
-> **Ograniczenia API:** Rate limiting (10/s, 30/min, 120/h), max 90 dni zakres dat, truncation przy 10k rekordów, brak batch download. Pełna lista: [docs/KSEF_API_LIMITATIONS.md](docs/KSEF_API_LIMITATIONS.md)
+> **Ograniczenia API:** Rate limiting (10/s, 30/min, 120/h), max 100 dni zakres dat, truncation przy 10k rekordów, brak batch download. Pełna lista: [docs/KSEF_API_LIMITATIONS.md](docs/KSEF_API_LIMITATIONS.md)
 
 ---
 

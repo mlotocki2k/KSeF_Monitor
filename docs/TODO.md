@@ -1,6 +1,6 @@
 # TODO — KSeF Monitor (Docker)
 
-Stan na: 2026-09-25 — `main` = 0.5.6, `test` = 0.6.3, `feat/ksef-api-2.8-adaptation` = 0.6.4 (niescalona).
+Stan na: 2026-09-25 — `main` = 0.5.6, `test` = 0.6.4 (wdrożone na TEST), `feat/ksef-api-2.8-phase-b` = 0.6.5 (niescalona).
 Sekcje 0.5.x poniżej zostają jako historia; scenariusze user-testu nadal obowiązują dla merge `test` → `main`.
 
 Aplikacja Docker — uruchamiana jako kontener (`docker-compose` / `docker stack`).
@@ -67,23 +67,23 @@ Release `test` → `main` gating: **manualny user-test + iOS app v1.1.1 w App St
 ## v0.6 (Lightweight Polling) — zaimplementowane, otwarte weryfikacje
 
 Implementacja z `ROADMAP.md` §v0.6 (pkt 1–7) zamknięta na `test` (0.6.0–0.6.3);
-adaptacja KSeF API 2.7.x/2.8.x (pkt 8, faza A) = 0.6.4 na `feat/ksef-api-2.8-adaptation`.
+adaptacja KSeF API 2.7.x/2.8.x (pkt 8): faza A = 0.6.4 (na `test`), faza B = 0.6.5 na `feat/ksef-api-2.8-phase-b`.
 Kod bez zmian wymaga już tylko danych z żywego KSeF albo rolloutu PRD:
 
-- [ ] **Sonda granicy `dateRange` na TEST** — `examples/probe_date_range.py` (7 wywołań metadata, sesja unieważniana na końcu):
+- [ ] (Opcjonalnie) **sonda granicy `dateRange` na TEST** — czy da się odpytywać pełne 100 dni zamiast 99 — `examples/probe_date_range.py` (7 wywołań metadata, sesja unieważniana na końcu):
   ```bash
   read -rs KSEF_TOKEN && export KSEF_TOKEN   # token TEST, bez echa
   export KSEF_NIP=<nip>
   python examples/probe_date_range.py
   ```
   Wynik (max przyjęty span) wpisać do `ROADMAP.md` §v0.6 pkt 8.
-- [ ] **0.6.5: `dateRange` 90 → 100 dni** (`MAX_DATE_RANGE_DAYS`, `MAX_WINDOW_DAYS`) — dopiero gdy live spec PRD pokaże „100 dni w strefie UTC” (23.09.2026 nadal „3 miesiące”) i jest wynik sondy. Plan: `docs/superpowers/plans/2026-09-23-ksef-api-2.8-adaptation.md` Task 6–7.
-- [ ] **0.6.5: baseline `spec/openapi.json` (PRD) → 2.8.x** po rolloucie PRD.
+- [x] **0.6.5: `dateRange` 90 → 100 dni** (`MAX_DATE_RANGE_DAYS`, `MAX_WINDOW_DAYS`; span 99 dni) — live spec PRD z „100 dni w strefie UTC” potwierdzony 25.09.2026.
+- [x] **0.6.5: baseline `spec/openapi.json` (PRD) → 2.8.1.**
 - [ ] **E2E UPO** na żywym KSeF — wymaga tokenu z uprawnieniem `Introspection` (§4).
 - [ ] **E2E logowania certyfikatem XAdES** — wymaga prawdziwego `.p12` (§7).
 - [ ] **Operacyjne potwierdzenie limitów TEST = PRD** (§5).
 - [ ] (Opcjonalnie) wrapper `/testdata/rate-limits` — endpoint już dostępny na TEST (§5).
-- [ ] Po pushu 0.6.4 na `test`: zamknąć ręcznie issues bota driftu **#4** (test) i **#5** (demo) — `Closes #X` nie działa na gałęzi niedomyślnej.
+- [x] Issues bota driftu Gitea #4, #5 zamknięte 25.09.2026 (po pushu 0.6.4). Po pushu 0.6.5: zamknąć Gitea #6 i GitHub #67/#68/#69 (drift), odpowiedzieć na issues zależności.
 
 ---
 
@@ -100,11 +100,11 @@ Stan 2026-09-25 (`git show origin/<branch>:…`):
 | Branch | `app/__init__.py` | `pyproject.toml` | PDF footer | Migracje alembic |
 |---|---|---|---|---|
 | `main` | `"0.5.6"` ✓ | `"0.5.6"` ✓ | `v{{ app_version }}` ✓ | phase1–8 |
-| `test` | `"0.6.3"` ✓ | `"0.6.3"` ✓ | `v{{ app_version }}` ✓ | phase1–8 |
-| `feat/ksef-api-2.8-adaptation` | `"0.6.4"` ✓ | `"0.6.4"` ✓ | `v{{ app_version }}` ✓ | phase1–8 |
+| `test` | `"0.6.4"` ✓ | `"0.6.4"` ✓ | `v{{ app_version }}` ✓ | phase1–8 |
+| `feat/ksef-api-2.8-phase-b` | `"0.6.5"` ✓ | `"0.6.5"` ✓ | `v{{ app_version }}` ✓ | phase1–8 |
 
 Niespójność wersji na `main` (2.0.0 / 0.4.0 / v0.3) zniknęła, gdy na `main` weszły wydania 0.5.2 i 0.5.3
-(`b21ea8a`, `44cd16c` — UI auth V5-12…V5-17). `test` wyprzedza `main` o 49 commitów; `main` ma 23 commity
+(`b21ea8a`, `44cd16c` — UI auth V5-12…V5-17). `test` wyprzedza `main` o 59 commitów (po merge 0.6.4); `main` ma 23 commity
 spoza `test` — cherry-picki i backporty: sync spec OpenAPI, bump zależności (cryptography, fastapi/starlette),
 poprawki CI etykiet issue, webhook `allow_private_network`, runtime bez pip, usunięcie ostrzeżenia App Store.
 

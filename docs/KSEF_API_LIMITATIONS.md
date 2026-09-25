@@ -47,9 +47,10 @@ Szczegółowa analiza i plan naprawy: [RATE_LIMITING_DESIGN.md](RATE_LIMITING_DE
 
 ## Ograniczenia zapytań o metadane
 
-### Zakres dat — max 90 dni
+### Zakres dat — max 100 dni (UTC)
 
-Endpoint `POST /v2/invoices/query/metadata` akceptuje `dateRange` o maksymalnym rozpiętości **90 dni** (3 miesiące).
+Endpointy `POST /v2/invoices/query/metadata` i `POST /v2/invoices/exports` akceptują `dateRange` o rozpiętości
+maksymalnie **100 dni liczonych w UTC** (KSeF API 2.7.1+; wcześniej „3 miesiące”, empirycznie 89 dni).
 
 ```json
 {
@@ -61,13 +62,16 @@ Endpoint `POST /v2/invoices/query/metadata` akceptuje `dateRange` o maksymalnym 
 }
 ```
 
-**Obsługa w aplikacji:** `invoice_monitor.py` automatycznie obcina `date_from` do max 90 dni wstecz (`MAX_DATE_RANGE_DAYS = 90`).
+**Obsługa w aplikacji (od 0.6.5):** `invoice_monitor.py` obcina `date_from` do max 100 dni wstecz
+(`MAX_DATE_RANGE_DAYS = 100`), a import historyczny dzieli zakres na okna `MAX_WINDOW_DAYS = 100`.
+Faktycznie odpytywany span to **99 dni** (`MAX - 1`) — ten sam margines, który działał przy starym limicie
+(90 → 89), bezpieczny niezależnie od tego, czy KSeF liczy koniec zakresu włącznie. Import roku = 4 okna
+na podmiot zamiast 5.
 
-> **KSeF API 2.7.1 — limit podniesiony do 100 dni (liczonych w UTC)** dla `POST /invoices/query/metadata`
-> i `POST /invoices/exports`. Zmiana kompatybilna wstecznie. Wdrożenia: TEST 26.08.2026,
-> DEMO 15.09.2026, **PRD 23.09.2026**. Aplikacja pozostaje przy 90 dniach — podniesienie
-> `MAX_DATE_RANGE_DAYS` / `MAX_WINDOW_DAYS` dopiero po wdrożeniu na PRD.
-> Stan 23.09.2026: live spec PRD nadal opisuje „3 miesiące” (powierzchnia 2.6.1), TEST/DEMO — „100 dni w strefie UTC”.
+> **KSeF API 2.7.1 — limit podniesiony do 100 dni (liczonych w UTC).** Zmiana kompatybilna wstecznie.
+> Wdrożenia: TEST 26.08.2026, DEMO 15.09.2026, **PRD 23.09.2026** (live spec PRD z „100 dni w strefie UTC”
+> potwierdzony 25.09.2026, build `2.8.1-pr-20260923.3`). Wersje < 0.6.5 zostają przy 90 dniach — działają dalej.
+> Czy KSeF przyjmuje pełne 100 dni, można zmierzyć sondą `examples/probe_date_range.py` (TEST).
 
 ### Eksport faktur — kompresja paczki
 
@@ -212,7 +216,7 @@ KSeF API działa w trzech środowiskach z oddzielnymi specyfikacjami:
 | Rate limit metadata /hour | **20 req/h** | `ksef_client.py` → retry 429 |
 | Rate limit XML /hour | 64 req/h | `ksef_client.py` → retry 429 |
 | Minimalny bezpieczny polling interval | 4 min (1 subject) / 7 min (2 subjects) | `scheduler.py` config |
-| Max zakres dat | 90 dni (API od 2.7.1: 100 dni UTC — PRD od 23.09.2026) | `invoice_monitor.py` → cap |
+| Max zakres dat | 100 dni UTC (API 2.7.1+, PRD od 23.09.2026); aplikacja od 0.6.5 odpytuje 99 dni | `invoice_monitor.py` → cap |
 | Max rekordów per query | 10 000 | `ksef_client.py` → truncation narrowing |
 | Max pageSize | 250 | `ksef_client.py` → `PAGINATION_PAGE_SIZE` |
 | Min pageSize | 10 | API spec |

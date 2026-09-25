@@ -2,6 +2,27 @@
 
 All notable changes to KSeF Monitor are documented here.
 
+## [0.6.5] — 2026-09-25
+
+### Changed
+
+- **KSeF `dateRange` cap raised from 90 to 100 days.** KSeF API 2.7.1 allows 100 days (UTC) for
+  `/invoices/query/metadata` and `/invoices/exports`; PROD serves it since 2026-09-23. The queried
+  span is 99 days (same `MAX - 1` margin as before). A one-year initial load now needs 4 export
+  windows per subject instead of 5, and a monitor that was offline for up to 100 days catches up
+  without skipping invoices.
+- **Dependencies:** cryptography 50.0.1, pytz 2026.4, signxml 5.1 (breaking changes in v5 affect
+  signature verification only; the app only signs), reportlab 5.0.1 (xhtml2pdf 0.2.20 lifted the
+  `<5` requirement). `pyproject.toml` fastapi/starlette ranges aligned with `requirements.txt`
+  (starlette was capped `<1.0`, which excluded the PYSEC-2026-161 fix).
+- **docker-compose:** the default network is pinned to `10.90.26.0/24` so Docker does not pick a
+  192.168.x range that collides with the LAN.
+
+### Maintenance
+
+- PROD OpenAPI baseline refreshed to API 2.8.1 (build `2.8.1-pr-20260923.3`).
+- KSeF session/token measurement scripts moved to `examples/`; `uv.lock` ignored.
+
 ## [0.6.4] — 2026-09-23
 
 ### Changed
