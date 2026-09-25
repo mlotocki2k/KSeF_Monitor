@@ -140,6 +140,10 @@ def main():
                 start_date_str = initial_load_config.get("start_date", "")
                 if start_date_str:
                     start_date = _dt.fromisoformat(start_date_str)
+                    if start_date.tzinfo is not None:
+                        # naive UTC like the API path — aware vs naive raises TypeError
+                        from datetime import timezone as _tz
+                        start_date = start_date.astimezone(_tz.utc).replace(tzinfo=None)
                     end_date = _dt.utcnow()
                     subject_types = initial_load_config.get("subject_types", ["Subject1", "Subject2"])
                     date_type = initial_load_config.get("date_type", "Invoicing")

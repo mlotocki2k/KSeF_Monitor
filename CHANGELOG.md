@@ -85,6 +85,9 @@ All notable changes to KSeF Monitor are documented here.
   60 min apart, within 3 days; polling invoices with a logged failure only) instead of being lost.
 - Without a database, iOS push credentials are no longer replaced on every second restart.
 - `POST /initial-load/start` converts date offsets to UTC and returns 422 (not 500) on mixed input.
+- `initial_load.start_date` with a UTC offset in the config no longer stops the automatic start.
+- The polling cycle and the XML/PDF/UPO downloads no longer hold the SQLite write lock during network I/O (UI logins and the historical import failed with "database is locked" during KSeF back-off).
+- The KSeF token-encryption key is chosen by its validity window and fetched again after a failed login (key rotation without a restart).
 - Initial load stores `form_code` like polling (`schemaVersion`); a negative `Retry-After` no
   longer crashes the 429 handling.
 - Invalid `monitoring` values (e.g. string intervals) are rejected at startup instead of
