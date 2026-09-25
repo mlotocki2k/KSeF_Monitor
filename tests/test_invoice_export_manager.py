@@ -176,8 +176,11 @@ class TestDecryptAesCbc:
         from cryptography.hazmat.primitives.padding import PKCS7
         from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 
-        key = os.urandom(32)
-        iv = os.urandom(16)
+        # Fixed keys: with random ones the wrong-key plaintext ends in valid
+        # PKCS7 padding ~1/256 of the time and the test flaked.
+        key = bytes(range(32))
+        wrong_key = bytes(range(32, 64))
+        iv = bytes(16)
         plaintext = b"hello world padding test data xx"
 
         padder = PKCS7(128).padder()
@@ -187,7 +190,7 @@ class TestDecryptAesCbc:
         ciphertext = enc.update(padded) + enc.finalize()
 
         with pytest.raises(Exception):
-            manager._decrypt_aes_cbc(ciphertext, os.urandom(32), iv)
+            manager._decrypt_aes_cbc(ciphertext, wrong_key, iv)
 
 
 class TestRunExport:

@@ -238,17 +238,29 @@ def main():
                 if (
                     database is not None
                     and bootstrap_token
-                    and len(bootstrap_token) >= 8
                     and not token_auto_generated
                 ):
                     try:
                         from app.ui_auth import (
                             count_users as _count_users,
                             create_user as _create_user,
+                            validate_password as _validate_password,
                         )
 
                         with database.get_session() as _s:
-                            if _count_users(_s) == 0:
+                            # The token becomes the password of a predictable
+                            # 'admin' account — only when it is strong enough.
+                            # Otherwise /ui/setup (install code = this token).
+                            if _count_users(_s) == 0 and (
+                                len(bootstrap_token) < 32
+                                or _validate_password(bootstrap_token, username="admin")
+                            ):
+                                logger.warning(
+                                    "api.auth_token is shorter than 32 characters or "
+                                    "too weak — no automatic 'admin' account; open "
+                                    "/ui/setup and use the token as the install code."
+                                )
+                            elif _count_users(_s) == 0:
                                 _create_user(_s, "admin", bootstrap_token)
                                 logger.warning(
                                     "Bootstrap: created UI user 'admin' with "
