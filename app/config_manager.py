@@ -343,7 +343,9 @@ class ConfigManager:
             val = channel_config.get(field)
             if val and not self._is_https_or_loopback(val):
                 raise ValueError(f"Field '{channel_name}.{field}' must be an https:// URL")
-        for field in rules.get("https_warn", []):
+        # A webhook with allow_private_network is a deliberate LAN receiver (#64)
+        warn_fields = [] if channel_config.get("allow_private_network") else rules.get("https_warn", [])
+        for field in warn_fields:
             val = channel_config.get(field)
             if val and not self._is_https_or_loopback(val):
                 logger.warning(

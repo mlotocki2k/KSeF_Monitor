@@ -35,3 +35,11 @@ def test_email_plaintext_login_warns(cm, caplog):
                                    "from_address": "a@b.c", "to_addresses": ["a@b.c"],
                                    "use_tls": False})
     assert "unencrypted" in caplog.text
+
+
+def test_webhook_lan_receiver_no_https_warning(cm, caplog):
+    """Issue #64: allow_private_network marks a deliberate plain-http LAN receiver."""
+    caplog.set_level(logging.WARNING)
+    cm._validate_channel("webhook", {"url": "http://receiver.lan:8080/hook",
+                                     "allow_private_network": True})
+    assert "not https" not in caplog.text
