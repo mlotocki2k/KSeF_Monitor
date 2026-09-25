@@ -83,6 +83,8 @@ All notable changes to KSeF Monitor are documented here.
 - UPO forced session-map rebuild is rate-limited to once per hour.
 - **Invoice notifications that failed on every channel are retried** (up to 3 attempts, 15 min /
   60 min apart, within 3 days; polling invoices with a logged failure only) instead of being lost.
+- Without a database, iOS push credentials are no longer replaced on every second restart.
+- `POST /initial-load/start` converts date offsets to UTC and returns 422 (not 500) on mixed input.
 - Initial load stores `form_code` like polling (`schemaVersion`); a negative `Retry-After` no
   longer crashes the 429 handling.
 - Invalid `monitoring` values (e.g. string intervals) are rejected at startup instead of
