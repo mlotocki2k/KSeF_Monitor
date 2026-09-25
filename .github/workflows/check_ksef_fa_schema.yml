@@ -239,11 +239,13 @@ jobs:
           for dir in "faktury/schemy/FA" "faktury/schemy/RR"; do
             DIR_SCHEMAS=$(curl -fsSL "https://api.github.com/repos/CIRFMF/ksef-docs/contents/${dir}" 2>/dev/null \
               | python3 -c "
-          import sys, json
+          import sys, json, re
           items = json.load(sys.stdin)
           for item in items:
-              if item['name'].endswith('.xsd'):
-                  print(item['name'])
+              name = item.get('name', '')
+              # third-party input, expanded later in run: scripts — whitelist
+              if re.fullmatch(r'[A-Za-z0-9_().-]{1,80}\.xsd', name):
+                  print(name)
           " 2>/dev/null || echo "")
             SCHEMAS="${SCHEMAS} ${DIR_SCHEMAS}"
           done

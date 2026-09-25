@@ -26,6 +26,7 @@ dependencies = [
     "Jinja2>=3.1.6,<4.0.0",
     "defusedxml>=0.7.1,<1.0.0",
     "signxml>=5.1.0,<6.0.0",            # XAdES-BES signing for certificate-based KSeF auth (v0.6); pulls lxml
+    "lxml>=5.0.0,<7.0.0",               # used directly by xades_signer — in sync with requirements.txt
     "reportlab==5.0.1",             # xhtml2pdf>=0.2.20 allows reportlab<6
     "bcrypt>=5.0.0,<6.0.0",             # UI user password hashing (V5-13) — kept in sync with requirements.txt
     "qrcode==8.2",

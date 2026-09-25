@@ -61,7 +61,9 @@ jobs:
 
           # Extract version info if available
           VERSION=$(python3 -c "import json; d=json.load(open('remote-openapi.json')); print(d.get('info',{}).get('version','unknown'))" 2>/dev/null || echo "unknown")
-          echo "remote_version=$VERSION" >> "$GITHUB_OUTPUT"
+          # External value, expanded later inside run: scripts — whitelist it
+          VERSION=$(printf '%s' "$VERSION" | tr -cd 'A-Za-z0-9._+-' | cut -c1-64)
+          echo "remote_version=${VERSION:-unknown}" >> "$GITHUB_OUTPUT"
 
       - name: Compute local openapi.json hash
         id: local
@@ -82,7 +84,8 @@ jobs:
           echo "local_canonical_sha=$(jq -cS 'del(.info.description)' "$FILE" | sha256sum | awk '{print $1}')" >> "$GITHUB_OUTPUT"
 
           VERSION=$(python3 -c "import json; d=json.load(open('$FILE')); print(d.get('info',{}).get('version','unknown'))" 2>/dev/null || echo "unknown")
-          echo "local_version=$VERSION" >> "$GITHUB_OUTPUT"
+          VERSION=$(printf '%s' "$VERSION" | tr -cd 'A-Za-z0-9._+-' | cut -c1-64)
+          echo "local_version=${VERSION:-unknown}" >> "$GITHUB_OUTPUT"
 
       - name: Compare
         id: cmp
