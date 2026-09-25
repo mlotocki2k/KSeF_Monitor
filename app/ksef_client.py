@@ -1009,14 +1009,27 @@ class KSeFClient:
             # Get SHA-256 hash from header
             sha256_hash = response.headers.get('x-ms-meta-hash', '')
 
-            # Response is XML (application/xml)
-            xml_content = response.text
+            # Work on the raw bytes: the hash covers them, and application/xml
+            # without a charset makes response.text guess the encoding.
+            raw = response.content
+            hash_verified = False
+            if sha256_hash:
+                if not self._verify_sha256(raw, sha256_hash):
+                    logger.error("Invoice XML hash mismatch for %s — discarding", ksef_number)
+                    return None
+                hash_verified = True
 
-            logger.info(f"Invoice XML fetched successfully (size: {len(xml_content)} bytes)")
+            # XML without an encoding declaration is UTF-8; KSeF FA schemas declare UTF-8
+            xml_content = raw.decode("utf-8")
+            if xml_content.startswith("﻿"):
+                xml_content = xml_content[1:]
+
+            logger.info(f"Invoice XML fetched successfully (size: {len(raw)} bytes)")
 
             return {
                 'xml_content': xml_content,
                 'sha256_hash': sha256_hash,
+                'hash_verified': hash_verified,
                 'ksef_number': ksef_number
             }
 

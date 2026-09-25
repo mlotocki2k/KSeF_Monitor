@@ -431,15 +431,17 @@ class TestKSeFClientGetInvoiceXml:
         client.access_token = "valid-token"
         mock_response = MagicMock()
         mock_response.status_code = 200
+        mock_response.content = b"<Faktura>...</Faktura>"
         mock_response.text = "<Faktura>...</Faktura>"
-        mock_response.headers = {"x-ms-meta-hash": "sha256hash"}
+        header = base64.b64encode(hashlib.sha256(mock_response.content).digest()).decode()
+        mock_response.headers = {"x-ms-meta-hash": header}
         mock_response.raise_for_status = MagicMock()
         client.session.request = MagicMock(return_value=mock_response)
 
         result = client.get_invoice_xml("1234567890-20260301-ABCDEF-XY")
         assert result is not None
         assert result["xml_content"] == "<Faktura>...</Faktura>"
-        assert result["sha256_hash"] == "sha256hash"
+        assert result["sha256_hash"] == header
 
     def test_not_authenticated(self, client):
         """No access token triggers authentication."""
