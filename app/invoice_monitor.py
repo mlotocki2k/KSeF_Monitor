@@ -131,7 +131,7 @@ class InvoiceMonitor:
                 logger.warning("No schedule configuration found, using default: 5 minutes")
                 schedule_config = {"mode": "minutes", "interval": 5}
 
-        self.scheduler = Scheduler(schedule_config)
+        self.scheduler = Scheduler(schedule_config, tz=self.timezone)
         self._manual_trigger = False
 
         logger.info(f"Invoice Monitor initialized, subject_types: {self.subject_types}, message_priority: {self.message_priority}")

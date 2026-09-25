@@ -300,3 +300,17 @@ def test_startup_before_scheduled_time_still_runs_at_that_time():
         assert s.should_run() is False
         fake_dt.now.return_value = _dt(2026, 9, 25, 12, 0)
         assert s.should_run() is True
+
+
+def test_daily_times_use_configured_timezone():
+    """Round 7: the container runs in UTC; 09:00 must mean 09:00 in monitoring.timezone."""
+    import pytz
+    from datetime import datetime as _dt
+    from unittest.mock import patch as _patch
+    warsaw = pytz.timezone("Europe/Warsaw")
+    s = Scheduler({"mode": "daily", "time": "09:00"}, tz=warsaw)
+    s.last_run = _dt(2026, 9, 25, 0, 0)
+    utc_0730 = pytz.utc.localize(_dt(2026, 9, 25, 7, 30))  # 09:30 in Warsaw (CEST)
+    with _patch("app.scheduler.datetime") as fake_dt:
+        fake_dt.now.side_effect = lambda tz=None: utc_0730.astimezone(tz) if tz else utc_0730.replace(tzinfo=None)
+        assert s.should_run() is True
