@@ -53,3 +53,37 @@ def test_fresh_db_still_stamped_at_head(tmp_path):
         assert con.execute("select version_num from alembic_version").fetchone()[0] == head
     finally:
         con.close()
+
+
+def test_failed_upgrade_is_retried_on_next_start(tmp_path, monkeypatch):
+    """Round 7: one failed upgrade must not leave the DB stuck for good."""
+    db_path = tmp_path / "retry.db"
+    command.upgrade(_cfg(db_path), "a6a08e11ea74")
+    real_upgrade = command.upgrade
+    calls = {"n": 0}
+
+    def flaky(cfg, rev):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise RuntimeError("database is locked")
+        return real_upgrade(cfg, rev)
+
+    monkeypatch.setattr(command, "upgrade", flaky)
+    Database(str(db_path)).create_tables()   # fails once
+    Database(str(db_path)).create_tables()   # next start
+    head = ScriptDirectory.from_config(_cfg(db_path)).get_current_head()
+    con = sqlite3.connect(db_path)
+    try:
+        assert con.execute("select version_num from alembic_version").fetchone()[0] == head
+    finally:
+        con.close()
+
+
+def test_migrations_tolerate_precreated_tables(tmp_path):
+    """Phase 2-4 migrations skip tables/indexes/columns that already exist."""
+    from app.database import Base
+    from sqlalchemy import create_engine
+    db_path = tmp_path / "pre.db"
+    command.upgrade(_cfg(db_path), "a6a08e11ea74")
+    Base.metadata.create_all(create_engine(f"sqlite:///{db_path}"))  # older app behaviour
+    command.upgrade(_cfg(db_path), "head")

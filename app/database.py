@@ -544,10 +544,10 @@ class Database:
         tracked = "alembic_version" in sa_inspect(self.engine).get_table_names()
         if not tracked:
             Base.metadata.create_all(self.engine)
+        # A tracked DB whose upgrade fails is left as is: the next start
+        # retries the upgrade cleanly (pre-creating tables here would make it
+        # fail again). Phase 2-4 migrations are idempotent as well.
         self._migrate_schema()
-        if tracked:
-            # Safety net if the upgrade failed: the app can still start
-            Base.metadata.create_all(self.engine)
         logger.info("Database tables created")
 
     def _migrate_schema(self):
