@@ -2,6 +2,8 @@
 Unit tests for PDF generation security: HTML/XML sanitization in InvoiceXMLParser.
 """
 
+from pathlib import Path
+
 import pytest
 from unittest.mock import patch
 from app.invoice_pdf_generator import InvoiceXMLParser
@@ -151,23 +153,24 @@ def test_cirfmf_rejects_file_scheme():
 def test_xhtml2pdf_blocks_external_uri():
     """V5-08: xhtml2pdf link_callback must refuse network/file URIs.
 
-    Allowed: data: URIs (QR codes) + bundled fonts under /app/app/templates/.
-    Blocked: http(s), file://, anything else.
+    Allowed: data: URIs (QR codes) + files under the bundled templates dir
+    or the font dir. Blocked: http(s), file://, anything else — replaced with
+    an empty data: URI (xhtml2pdf keeps the original URI when the callback
+    returns a falsy value, so "" would not block).
     """
-    from app.invoice_pdf_template import _pdf_link_callback
+    from app.invoice_pdf_template import DEFAULT_TEMPLATES_DIR, _pdf_link_callback
 
+    blocked = "data:,"
     # External URIs blocked
-    assert _pdf_link_callback("http://evil.com/x.css", None) == ""
-    assert _pdf_link_callback("https://cdn.example.com/font.woff2", None) == ""
-    assert _pdf_link_callback("file:///etc/passwd", None) == ""
-    assert _pdf_link_callback("ftp://example.com/evil", None) == ""
+    assert _pdf_link_callback("http://evil.com/x.css", None) == blocked
+    assert _pdf_link_callback("https://cdn.example.com/font.woff2", None) == blocked
+    assert _pdf_link_callback("file:///etc/passwd", None) == blocked
+    assert _pdf_link_callback("ftp://example.com/evil", None) == blocked
     # Empty / None
-    assert _pdf_link_callback("", None) == ""
-    assert _pdf_link_callback(None, None) == ""
+    assert _pdf_link_callback("", None) == blocked
+    assert _pdf_link_callback(None, None) == blocked
     # data: URIs allowed (QR code is data:image/png;base64,...)
     assert _pdf_link_callback("data:image/png;base64,AAAA", None).startswith("data:")
     # Bundled app templates allowed
-    assert (
-        _pdf_link_callback("/app/app/templates/fonts/DejaVu.ttf", None)
-        .startswith("/app/")
-    )
+    bundled = str(DEFAULT_TEMPLATES_DIR / "fonts" / "DejaVu.ttf")
+    assert _pdf_link_callback(bundled, None) == str(Path(bundled).resolve())
