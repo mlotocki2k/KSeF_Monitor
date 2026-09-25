@@ -176,14 +176,16 @@ def test_xhtml2pdf_blocks_external_uri():
     assert _pdf_link_callback(bundled, None) == str(Path(bundled).resolve())
 
 
-def test_cirfmf_allows_docker_sidecar_and_disables_redirects():
-    """Documented setup: http://ksef-pdf-generator:8080 on the Docker network."""
+def test_cirfmf_stays_strict_and_disables_redirects():
+    """Issue #64: CIRFMF keeps the strict (public-only) check; no redirects."""
     from unittest.mock import MagicMock
     from app.invoice_pdf_generator import _try_ksef_generator
+    with patch("app._ssrf_guard.socket.getaddrinfo") as mock_gai:
+        mock_gai.return_value = [(2, 1, 6, "", ("172.18.0.5", 0))]
+        assert _try_ksef_generator("<Faktura/>", "KSEF1", "http://ksef-pdf-generator:8080") is None
     resp = MagicMock(status_code=200, content=b"%PDF-1.7 x")
     with patch("app._ssrf_guard.socket.getaddrinfo") as mock_gai, \
          patch("requests.post", return_value=resp) as post:
-        mock_gai.return_value = [(2, 1, 6, "", ("172.18.0.5", 0))]
-        result = _try_ksef_generator("<Faktura/>", "KSEF1", "http://ksef-pdf-generator:8080")
-    assert result is not None
+        mock_gai.return_value = [(2, 1, 6, "", ("93.184.216.34", 0))]
+        assert _try_ksef_generator("<Faktura/>", "KSEF1", "https://pdf.example") is not None
     assert post.call_args.kwargs["allow_redirects"] is False

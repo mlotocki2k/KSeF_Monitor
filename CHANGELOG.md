@@ -38,7 +38,6 @@ All notable changes to KSeF Monitor are documented here.
   cancelled before its thread started stays cancelled.
 - **Logs:** startup schema migration no longer disables the app's loggers.
 - **Login page** loads its stylesheet and icons before signing in.
-- **CIRFMF PDF sidecar** (`http://ksef-pdf-generator:8080`) is reachable (private address).
 - **Scheduler:** no extra run right after startup in `daily`/`weekly` mode.
 - **Webhook signature** is computed over the exact bytes sent.
 
@@ -52,7 +51,7 @@ All notable changes to KSeF Monitor are documented here.
   `ksef` and skips symlinks.
 - Slack/Discord/webhook URLs no longer appear in error logs; ios_push `worker_url` must be
   https; plain-http webhook URLs and SMTP login without TLS log a warning.
-- SSRF guard rejects every non-global address (CGNAT 100.64/10 passed before).
+- CIRFMF PDF generator requests no longer follow redirects (the URL check stays public-only, #64).
 - Prometheus labels use route templates / `{id}` — no invoice numbers (seller NIP) on
   `/metrics`, and unauthenticated requests cannot create unbounded series.
 - Invoice XML is decoded from raw bytes and checked against `x-ms-meta-hash`; export parts

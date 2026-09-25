@@ -1288,11 +1288,11 @@ def _try_ksef_generator(xml_content: str, ksef_number: str,
 
     Returns BytesIO with PDF on success, None on any failure (caller falls back).
     """
-    # Validate URL. The documented deployment is a sidecar container on the
-    # Docker network (private address), so private ranges are allowed;
-    # loopback, link-local (cloud metadata) and non-http(s) stay blocked.
-    if not is_safe_public_url(base_url, allow_private=True):
-        logger.warning("CIRFMF generator URL rejected (blocked address or bad scheme): %s", base_url)
+    # Validate URL — must be public HTTP(S). Deliberately strict: this call
+    # sends the full invoice XML, so the webhook allow_private_network
+    # override does not apply here (issue #64).
+    if not is_safe_public_url(base_url):
+        logger.warning("CIRFMF generator URL rejected (non-public or bad scheme): %s", base_url)
         return None
 
     try:

@@ -141,8 +141,7 @@ class TestAllowPrivateOverride:
 
 
 @patch("app._ssrf_guard.socket.getaddrinfo")
-def test_cgnat_rejected_without_override(mock_gai):
-    """100.64.0.0/10 is neither private nor global (is_private is False)."""
-    mock_gai.return_value = [(2, 1, 6, "", ("100.100.100.200", 0))]
-    assert is_safe_public_url("https://cgnat.example/") is False
-    assert is_safe_public_url("https://cgnat.example/", allow_private=True) is True
+def test_cgnat_allowed_without_override(mock_gai):
+    """Issue #64: Tailscale (CGNAT 100.64.0.0/10) receivers work without allow_private."""
+    mock_gai.return_value = [(2, 1, 6, "", ("100.101.102.103", 0))]
+    assert is_safe_public_url("https://tailnet-host.example/") is True
