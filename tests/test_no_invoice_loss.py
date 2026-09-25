@@ -282,7 +282,31 @@ def test_json_mode_per_subject_last_check(mock_config, tmp_path, sample_invoice)
     state = m.load_state()
     assert state["last_check"] == "2026-09-20T08:00:00+02:00"
     assert "Subject2" in state["last_check_by_subject"]
-    assert "Subject1" not in state["last_check_by_subject"]
+    assert state["last_check_by_subject"]["Subject1"] == "2026-09-20T08:00:00+02:00"
     s2 = m._get_last_check(None, "Subject2", state)
     s1 = m._get_last_check(None, "Subject1", state)
     assert s2 > s1
+
+
+def test_json_mode_migrated_state_interval_subject_becomes_due(mock_config, tmp_path):
+    """Old state file (global last_check only) + a subject with a long interval."""
+    mock_config.config["monitoring"]["subject_types"] = ["Subject1", "Subject2"]
+    mock_config.config["monitoring"]["subject_poll_intervals"] = {"Subject2": 6 * 3600}
+    ksef = MagicMock()
+    ksef.environment = "test"
+    ksef.nip = "1234567890"
+    ksef.get_invoices_metadata.return_value = []
+    m = InvoiceMonitor(mock_config, ksef, MagicMock(), MagicMock())
+    m.state_file = tmp_path / "last_check.json"
+    old = (datetime.now(timezone.utc) - timedelta(hours=7)).isoformat()
+    m.state_file.write_text(json.dumps({"last_check": old}), encoding="utf-8")
+    m.check_for_new_invoices()
+    polled = [c.args[2] for c in ksef.get_invoices_metadata.call_args_list]
+    assert "Subject2" in polled
+
+
+def test_error_throttle_resets_after_success(mock_config, tmp_path):
+    m, _db = _monitor(mock_config, tmp_path)
+    assert m._should_notify_error("Error occurred: X") is True
+    m._last_error_notice = None  # what run() does after a successful cycle
+    assert m._should_notify_error("Error occurred: X") is True

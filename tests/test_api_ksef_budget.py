@@ -16,6 +16,7 @@ def _client(remaining):
     monitor = MagicMock()
     monitor.ksef.rate_limiter.remaining.return_value = {**remaining, "total_calls": 0, "total_waits": 0}
     monitor.ksef.get_invoice_xml.return_value = {"xml_content": "<Faktura/>"}
+    monitor.ksef.rate_limiter.paused_for.return_value = 0.0
     return TestClient(create_app(db=None, monitor_instance=monitor, auth_token=TOKEN)), monitor
 
 
@@ -37,3 +38,26 @@ def test_budget_available_fetches_live():
     r = client.get(f"/api/v1/invoices/{KSEF}/xml", headers=AUTH)
     assert r.status_code == 200
     monitor.ksef.get_invoice_xml.assert_called_once()
+
+
+def test_rate_limiter_paused_for():
+    from app.rate_limiter import RateLimiter
+    rl = RateLimiter()
+    assert rl.paused_for() == 0
+    rl.pause_until(60)
+    assert 0 < rl.paused_for() <= 60
+
+
+def test_paused_limiter_returns_503():
+    client, monitor = _client({"1s": 10, "60s": 30, "3600s": 100})
+    monitor.ksef.rate_limiter.paused_for.return_value = 900.0
+    r = client.get(f"/api/v1/invoices/{KSEF}/xml", headers=AUTH)
+    assert r.status_code == 503
+    monitor.ksef.get_invoice_xml.assert_not_called()
+
+
+def test_limiter_error_fails_closed():
+    client, monitor = _client({"1s": 10, "60s": 30, "3600s": 100})
+    monitor.ksef.rate_limiter.remaining.side_effect = RuntimeError("boom")
+    r = client.get(f"/api/v1/invoices/{KSEF}/xml", headers=AUTH)
+    assert r.status_code == 503

@@ -319,6 +319,23 @@ class ConfigManager:
     }
 
     @staticmethod
+    def _is_non_public_host(url: Optional[str]) -> bool:
+        """True when the URL's host resolves only to private/CGNAT addresses."""
+        import ipaddress
+        import socket
+        from urllib.parse import urlparse
+        try:
+            host = urlparse(url or "").hostname
+            if not host:
+                return False
+            infos = socket.getaddrinfo(host, None)
+            return bool(infos) and all(
+                not ipaddress.ip_address(info[4][0]).is_global for info in infos
+            )
+        except (ValueError, OSError):
+            return False
+
+    @staticmethod
     def _is_https_or_loopback(url: str) -> bool:
         from urllib.parse import urlparse
         try:
@@ -343,10 +360,11 @@ class ConfigManager:
             val = channel_config.get(field)
             if val and not self._is_https_or_loopback(val):
                 raise ValueError(f"Field '{channel_name}.{field}' must be an https:// URL")
-        # A webhook with allow_private_network is a deliberate LAN receiver (#64)
-        warn_fields = [] if channel_config.get("allow_private_network") else rules.get("https_warn", [])
-        for field in warn_fields:
+        for field in rules.get("https_warn", []):
             val = channel_config.get(field)
+            # A LAN receiver allowed via allow_private_network (#64) is fine over http
+            if channel_config.get("allow_private_network") and self._is_non_public_host(val):
+                continue
             if val and not self._is_https_or_loopback(val):
                 logger.warning(
                     f"{channel_name.capitalize()} '{field}' is not https:// — "
@@ -569,6 +587,15 @@ class ConfigManager:
                 "api.ui_public=true bypasses auth for /ui/* — only safe when "
                 "port is bound to 127.0.0.1 or a trusted reverse proxy enforces "
                 "authentication. Set to false for production."
+            )
+
+        if api["enabled"] and api["bind_address"] not in ("127.0.0.1", "::1", "localhost") \
+                and not api.get("forwarded_allow_ips"):
+            logger.warning(
+                "API bound to %s without api.forwarded_allow_ips — behind a reverse "
+                "proxy every client shares the proxy's IP, so one client can trip the "
+                "rate limits and the Bearer lockout for all. Set it to the proxy's IP.",
+                api["bind_address"],
             )
 
         if api["enabled"]:

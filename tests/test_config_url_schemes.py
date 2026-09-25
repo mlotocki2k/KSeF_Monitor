@@ -1,6 +1,7 @@
 """Channel URLs carrying credentials must use https (or loopback)."""
 
 import logging
+from unittest.mock import patch
 
 import pytest
 
@@ -40,6 +41,15 @@ def test_email_plaintext_login_warns(cm, caplog):
 def test_webhook_lan_receiver_no_https_warning(cm, caplog):
     """Issue #64: allow_private_network marks a deliberate plain-http LAN receiver."""
     caplog.set_level(logging.WARNING)
-    cm._validate_channel("webhook", {"url": "http://receiver.lan:8080/hook",
-                                     "allow_private_network": True})
+    with patch("socket.getaddrinfo", return_value=[(2, 1, 6, "", ("192.168.8.20", 0))]):
+        cm._validate_channel("webhook", {"url": "http://receiver.lan:8080/hook",
+                                         "allow_private_network": True})
     assert "not https" not in caplog.text
+
+
+def test_webhook_public_http_warns_even_with_private_flag(cm, caplog):
+    caplog.set_level(logging.WARNING)
+    with patch("socket.getaddrinfo", return_value=[(2, 1, 6, "", ("93.184.216.34", 0))]):
+        cm._validate_channel("webhook", {"url": "http://public.example/hook",
+                                         "allow_private_network": True})
+    assert "not https" in caplog.text

@@ -681,11 +681,17 @@ class InvoiceMonitor:
         """
         # Save JSON state only when DB is not active (fallback mode)
         if not use_db:
-            if advance_last_check:
-                state["last_check"] = now.isoformat()
             # Per-subject progress: a subject that keeps failing must not pin
             # the window of the others (global last_check stays for compat).
             per_subject = state.setdefault("last_check_by_subject", {})
+            # Old state files have only the global value: seed every subject
+            # with it first, or a subject with a longer poll interval would
+            # keep reading the global value that the others move every cycle.
+            if state.get("last_check"):
+                for st in self.subject_types:
+                    per_subject.setdefault(st, state["last_check"])
+            if advance_last_check:
+                state["last_check"] = now.isoformat()
             for st in polled_ok or []:
                 per_subject[st] = now.isoformat()
             state["seen_invoices"] = seen_entries[-1000:]
@@ -1321,11 +1327,13 @@ class InvoiceMonitor:
                     self._manual_trigger = False
                     logger.info("Manual trigger received — checking for new invoices...")
                     self._check_and_drain()
+                    self._last_error_notice = None  # a recurring error alerts again
                     logger.info(self.scheduler.get_next_run_info())
                     logger.info("-" * 60)
                 elif self.scheduler.should_run():
                     logger.info("Checking for new invoices...")
                     self._check_and_drain()
+                    self._last_error_notice = None  # a recurring error alerts again
                     logger.info(self.scheduler.get_next_run_info())
                     logger.info("-" * 60)
 

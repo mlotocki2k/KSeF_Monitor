@@ -177,3 +177,19 @@ def test_account_and_certificate_ignore_free_text(logged_in):
         r = logged_in.get(url)
         assert r.status_code == 200
         assert "Zadzwoń pod" not in r.text
+
+
+def test_other_port_on_same_host_rejected(logged_in):
+    r = logged_in.post("/ui/logout", headers={"Host": "nas.lan:8888", "Origin": "http://nas.lan:9000"},
+                       follow_redirects=False)
+    assert r.status_code == 403
+
+
+def test_trusted_origins_as_string(db):
+    c = TestClient(create_app(db=db, auth_token=TOKEN, trusted_origins="https://ksef.example"))
+    with db.get_session() as s:
+        create_user(s, "dave", "SolidPass_88!")
+    c.post("/ui/login", data={"username": "dave", "password": "SolidPass_88!"})
+    r = c.post("/ui/logout", headers={"Host": "upstream:8080", "Origin": "https://ksef.example"},
+               follow_redirects=False)
+    assert r.status_code == 303

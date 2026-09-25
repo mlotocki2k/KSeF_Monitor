@@ -36,10 +36,18 @@ def _ksef_busy_response(monitor) -> Optional[JSONResponse]:
     limiter_ = getattr(getattr(monitor, "ksef", None), "rate_limiter", None)
     if limiter_ is None or not hasattr(limiter_, "remaining"):
         return None
+    busy = JSONResponse(
+        status_code=503,
+        content={"detail": "KSeF rate limit budget exhausted — try again later"},
+        headers={"Retry-After": "600"},
+    )
     try:
         remaining = limiter_.remaining()
+        paused = limiter_.paused_for() if hasattr(limiter_, "paused_for") else 0
     except Exception:
-        return None
+        return busy  # fail closed: better a retry than a blocked thread
+    if isinstance(paused, (int, float)) and paused > 0:
+        return busy
     if not isinstance(remaining, dict):
         return None
     windows = {k: v for k, v in remaining.items() if k in ("1s", "60s", "3600s")}

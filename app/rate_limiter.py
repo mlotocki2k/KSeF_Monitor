@@ -140,6 +140,11 @@ class RateLimiter:
             result["total_waits"] = self._total_waits
             return result
 
+    def paused_for(self) -> float:
+        """Seconds left of a 429 pause (0 when not paused)."""
+        with self._lock:
+            return max(0.0, self._paused_until - time.monotonic())
+
     def pause_until(self, seconds: float) -> None:
         """Force-pause all requests for given duration.
 

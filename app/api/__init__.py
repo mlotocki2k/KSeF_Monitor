@@ -179,16 +179,34 @@ def create_app(
     _SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
     from urllib.parse import urlsplit as _urlsplit
 
-    def _hostname(value: str) -> Optional[str]:
+    _DEFAULT_PORTS = {"http": 80, "https": 443}
+
+    def _authority(value: str):
+        """(hostname, port or None) of an origin/URL/Host header value."""
         value = (value or "").strip()
         if not value:
             return None
         try:
-            return _urlsplit(value if "//" in value else f"//{value}").hostname
+            parts = _urlsplit(value if "//" in value else f"//{value}")
+            host, port = parts.hostname, parts.port
         except ValueError:
             return None
+        if not host:
+            return None
+        if port is not None and _DEFAULT_PORTS.get(parts.scheme) == port:
+            port = None
+        return host, port
 
-    _trusted_hosts = {h for h in (_hostname(o) for o in (trusted_origins or [])) if h}
+    def _same_authority(source, allowed) -> bool:
+        # Host names must match; ports too when both sides state one (a proxy
+        # passing "Host: name" without the public port still matches).
+        return source[0] == allowed[0] and (
+            source[1] is None or allowed[1] is None or source[1] == allowed[1]
+        )
+
+    if isinstance(trusted_origins, str):
+        trusted_origins = [trusted_origins]
+    _trusted = [a for a in (_authority(o) for o in (trusted_origins or [])) if a]
 
     @app.middleware("http")
     async def same_origin_for_cookie_session(request: Request, call_next):
@@ -199,16 +217,18 @@ def create_app(
         ):
             source = request.headers.get("origin") or request.headers.get("referer")
             if source:
-                source_host = _hostname(source)
-                allowed = set(_trusted_hosts)
+                source_auth = _authority(source)
+                allowed = list(_trusted)
                 for h in (
                     request.headers.get("host", ""),
                     request.headers.get("x-forwarded-host", "").split(",")[0],
                 ):
-                    name = _hostname(h)
-                    if name:
-                        allowed.add(name)
-                if source_host is None or source_host not in allowed:
+                    auth = _authority(h)
+                    if auth:
+                        allowed.append(auth)
+                if source_auth is None or not any(
+                    _same_authority(source_auth, a) for a in allowed
+                ):
                     logger.warning(
                         "Cross-origin %s %s rejected (cookie session)",
                         request.method, request.url.path,
