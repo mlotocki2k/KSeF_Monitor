@@ -1094,12 +1094,7 @@ class KSeFClient:
             if date_to:
                 params["dateTo"] = date_to
 
-            response = self._make_authenticated_request("GET", url, params=params, timeout=30)
-            if response is None:
-                logger.error("Cannot list sessions: authentication failed")
-                return []
-            response.raise_for_status()
-            return response.json().get("sessions", [])
+            return self._get_all_pages(url, params, "sessions", "list sessions")
 
         except requests.exceptions.RequestException as e:
             logger.error(f"Failed to list sessions: {e}")
@@ -1119,18 +1114,38 @@ class KSeFClient:
             url = f"{self.base_url}/{self.API_VERSION}/sessions/{session_reference}/invoices"
             params = {"pageSize": page_size}
 
-            response = self._make_authenticated_request("GET", url, params=params, timeout=30)
-            if response is None:
-                logger.error("Cannot get session invoices: authentication failed")
-                return []
-            response.raise_for_status()
-            return response.json().get("invoices", [])
+            return self._get_all_pages(url, params, "invoices", "get session invoices")
 
         except requests.exceptions.RequestException as e:
             logger.error(f"Failed to get session invoices: {e}")
             if hasattr(e, 'response') and e.response is not None:
                 logger.error(f"API error: {self._extract_api_error_details(e.response)}")
             return []
+
+    MAX_CONTINUATION_PAGES = 200
+
+    def _get_all_pages(self, url: str, params: Dict, items_key: str, what: str) -> List[Dict]:
+        """GET a list endpoint and follow continuationToken (x-continuation-token)
+        until the last page — only the first page was read before, so sessions
+        and session invoices beyond it never reached the UPO lookup."""
+        items: List[Dict] = []
+        token = None
+        for _ in range(self.MAX_CONTINUATION_PAGES):
+            headers = {"x-continuation-token": token} if token else {}
+            response = self._make_authenticated_request(
+                "GET", url, params=params, headers=headers, timeout=30
+            )
+            if response is None:
+                logger.error("Cannot %s: authentication failed", what)
+                return items
+            response.raise_for_status()
+            data = response.json()
+            items.extend(data.get(items_key, []) or [])
+            token = data.get("continuationToken")
+            if not token:
+                return items
+        logger.warning("%s: stopped after %d pages", what, self.MAX_CONTINUATION_PAGES)
+        return items
 
     def get_invoice_upo(self, session_reference: str, ksef_number: str) -> Optional[Dict]:
         """

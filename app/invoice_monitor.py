@@ -19,7 +19,9 @@ from .invoice_pdf_generator import generate_invoice_pdf, REPORTLAB_AVAILABLE
 from .invoice_xml_parser import detect_schema_type, SCHEMA_TYPE_UNKNOWN
 from .database import Database, Invoice, InvoiceArtifact
 from .ksef_client import KSeFQueryError
+from sqlalchemy import or_
 from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import aliased
 
 # Optional timezone support
 try:
@@ -567,6 +569,11 @@ class InvoiceMonitor:
             logger.info("Faza 2: pobrano artefakty dla %d faktur", processed)
         return processed
 
+    def _session_map_is_stale(self) -> bool:
+        """True when the next _build_session_invoice_map() call rebuilds the map."""
+        return (self._session_invoice_map is None
+                or (time.time() - self._session_map_ts) >= self._session_map_ttl)
+
     def _build_session_invoice_map(self, force: bool = False) -> dict:
         """Zbuduj (z cache TTL) mapę ksefNumber -> sessionReference z sesji KSeF.
 
@@ -628,9 +635,15 @@ class InvoiceMonitor:
         processed = 0
         session = self.db.get_session()
         try:
+            # Exhausted retries are excluded in SQL, before LIMIT — otherwise a
+            # batch made only of exhausted invoices starved all later ones.
+            upo_art = aliased(InvoiceArtifact)
             invoices = (
                 session.query(Invoice)
+                .outerjoin(upo_art, (upo_art.invoice_id == Invoice.id)
+                           & (upo_art.artifact_type == "upo"))
                 .filter(Invoice.subject_type == "Subject1", Invoice.has_upo.is_(False))
+                .filter(or_(upo_art.id.is_(None), upo_art.download_attempts < 3))
                 .order_by(Invoice.id)
                 .limit(limit)
                 .all()
@@ -639,6 +652,7 @@ class InvoiceMonitor:
                 return 0
 
             session_map = None
+            map_fresh = False
             for inv in invoices:
                 # artefakt 'upo' do liczenia prób (no-op jeśli już istnieje)
                 self.db.create_artifact(session, inv.id, "upo", status="pending")
@@ -648,8 +662,15 @@ class InvoiceMonitor:
                     continue  # próby wyczerpane
 
                 if session_map is None:
+                    map_fresh = self._session_map_is_stale()
                     session_map = self._build_session_invoice_map()
                 session_ref = session_map.get(inv.ksef_number)
+                if not session_ref and not map_fresh:
+                    # A cached map (TTL 24 h) cannot know newer invoices:
+                    # rebuild once per run before counting a failed attempt.
+                    session_map = self._build_session_invoice_map(force=True)
+                    map_fresh = True
+                    session_ref = session_map.get(inv.ksef_number)
                 if not session_ref:
                     self.db.mark_artifact_failed(session, inv.id, "upo", "session not found")
                     continue
