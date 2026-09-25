@@ -40,3 +40,10 @@ services:
 volumes:
   ksef-data:
 
+
+# Jawna podsieć — bez niej Docker sięga po domyślną pulę i potrafi zająć 192.168.x (kolizja z LAN).
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 10.90.26.0/24
