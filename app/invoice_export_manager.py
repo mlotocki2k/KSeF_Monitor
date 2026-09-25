@@ -38,6 +38,10 @@ STATUS_RANGE_ERROR = 420
 STATUS_UNKNOWN_ERROR = 500
 STATUS_CANCELLED = 550
 
+# Prosimy KSeF jawnie o ZIP (InvoiceExportRequest.compressionType — obecne już w spec
+# PRD 2.6.1; InvoicePackage.compressionType w odpowiedzi od v2.7.1). Dekoder TarGz celowo nie istnieje.
+EXPORT_COMPRESSION = "Zip"
+
 _TERMINAL_ERRORS = {STATUS_EXPIRED, STATUS_DECRYPT_ERROR, STATUS_RANGE_ERROR, STATUS_CANCELLED}
 _RETRIABLE_ERRORS = {STATUS_UNKNOWN_ERROR}
 
@@ -149,7 +153,23 @@ class InvoiceExportManager:
                 reference_number=ref,
             )
 
-        package = status_data.get("package", {})
+        package = status_data.get("package")
+        # package jest nullable w spec — sukces bez paczki to błąd okna, nie pusty import
+        if not isinstance(package, dict):
+            return ExportResult(
+                success=False,
+                error="Export completed without package",
+                reference_number=ref,
+            )
+
+        # InvoicePackage.compressionType (v2.7.1+); brak pola = starsze API = ZIP
+        compression = package.get("compressionType", EXPORT_COMPRESSION)
+        if compression != EXPORT_COMPRESSION:
+            return ExportResult(
+                success=False,
+                error=f"Unsupported export compression: {compression}",
+                reference_number=ref,
+            )
 
         # Step 4: download + decrypt + parse
         try:
@@ -254,6 +274,7 @@ class InvoiceExportManager:
                 "initializationVector": iv_b64,
             },
             "onlyMetadata": only_metadata,
+            "compressionType": EXPORT_COMPRESSION,
             "filters": {
                 "subjectType": subject_type,
                 "dateRange": {
@@ -328,7 +349,7 @@ class InvoiceExportManager:
                 continue
 
             if code == STATUS_SUCCESS:
-                inv_count = data.get("package", {}).get("invoiceCount", "?")
+                inv_count = (data.get("package") or {}).get("invoiceCount", "?")
                 logger.info("Export completed: ref=%s, invoices=%s", reference_number, inv_count)
                 return data
 

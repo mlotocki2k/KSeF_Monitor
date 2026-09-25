@@ -67,6 +67,25 @@ Endpoint `POST /v2/invoices/query/metadata` akceptuje `dateRange` o maksymalnym 
 > i `POST /invoices/exports`. Zmiana kompatybilna wstecznie. Wdrożenia: TEST 26.08.2026,
 > DEMO 15.09.2026, **PRD 23.09.2026**. Aplikacja pozostaje przy 90 dniach — podniesienie
 > `MAX_DATE_RANGE_DAYS` / `MAX_WINDOW_DAYS` dopiero po wdrożeniu na PRD.
+> Stan 23.09.2026: live spec PRD nadal opisuje „3 miesiące” (powierzchnia 2.6.1), TEST/DEMO — „100 dni w strefie UTC”.
+
+### Eksport faktur — kompresja paczki
+
+`POST /invoices/exports` przyjmuje `compressionType` (`Zip` | `TarGz`, domyślnie `Zip`) — pole jest już
+w spec PRD 2.6.1. Od KSeF API 2.7.1 status eksportu zwraca też `package.compressionType`.
+Aplikacja (od 0.6.4) wysyła jawnie `"Zip"`; paczka zgłoszona z inną kompresją kończy eksport błędem
+`Unsupported export compression: <typ>`. Brak pola (PRD 2.6.1) = ZIP.
+
+`InvoiceExportStatusResponse.package` jest w spec `nullable`. Eksport zakończony sukcesem (200), ale bez
+paczki, aplikacja traktuje jako nieudane okno (`Export completed without package`) — okno trafia do
+błędów joba importu historycznego, nie jest liczone jako pusty import.
+
+### Nagłówek `X-System-Warning`
+
+KSeF (od API 2.6.0) może dołączać do odpowiedzi nagłówek `X-System-Warning` z komunikatem systemowym.
+Aplikacja (od 0.6.4) loguje go na poziomie WARNING — każdą różną treść raz na proces, bez znaków
+sterujących, obciętą do 500 znaków. „Różna treść” liczona jest po skrócie SHA-256 pełnej wartości,
+więc komunikaty różniące się dopiero po 500. znaku są logowane osobno.
 
 ### Rozmiar strony — 10 do 250 rekordów
 

@@ -196,6 +196,72 @@ class TestKSeFClientExtractApiErrorDetails:
         assert "REF-123" in result
 
 
+class TestKSeFClientForbiddenWithoutTimestamp:
+    """v2.8.x: ForbiddenProblemDetails bez wymaganego `timestamp`."""
+
+    def test_403_problem_json_without_timestamp(self):
+        response = MagicMock()
+        response.status_code = 403
+        response.headers = {"Content-Type": "application/problem+json"}
+        response.json.return_value = {
+            "title": "Forbidden", "status": 403,
+            "detail": "Brak uprawnień", "reasonCode": "missing-permissions",
+        }
+        result = KSeFClient._extract_api_error_details(response)
+        assert result == "status=403, reason=missing-permissions, title=Forbidden, detail=Brak uprawnień"
+
+    def test_403_problem_json_minimal(self):
+        response = MagicMock()
+        response.status_code = 403
+        response.headers = {"Content-Type": "application/problem+json"}
+        response.json.return_value = {"status": 403}
+        assert KSeFClient._extract_api_error_details(response) == "status=403"
+
+
+class TestKSeFClientSystemWarning:
+    """X-System-Warning (KSeF v2.6.0+) — logowany raz na wartość, sanityzowany."""
+
+    def _resp(self, headers):
+        r = MagicMock()
+        r.status_code = 200
+        r.headers = headers
+        return r
+
+    # Patch loggera zamiast caplog: alembic env.py (fileConfig) w testach migracji
+    # wyłącza istniejące loggery app.*, więc caplog zależałby od kolejności testów.
+
+    @patch("app.ksef_client.logger")
+    def test_logs_warning_once_per_value(self, mock_logger, client):
+        client.rate_limiter.acquire = MagicMock(return_value=0.0)
+        client.session.request = MagicMock(
+            return_value=self._resp({"X-System-Warning": "Planned maintenance 2026-10-01"}))
+        client._request_with_retry("GET", "https://example.com/a")
+        client._request_with_retry("GET", "https://example.com/b")
+        mock_logger.warning.assert_called_once_with(
+            "KSeF X-System-Warning: %s", "Planned maintenance 2026-10-01")
+
+    @patch("app.ksef_client.logger")
+    def test_values_differing_after_cap_are_logged_separately(self, mock_logger, client):
+        prefix = "W" * 600
+        client._log_system_warning(self._resp({"X-System-Warning": prefix + "-one"}))
+        client._log_system_warning(self._resp({"X-System-Warning": prefix + "-two"}))
+        assert mock_logger.warning.call_count == 2
+
+    @patch("app.ksef_client.logger")
+    def test_no_header_no_log(self, mock_logger, client):
+        client._log_system_warning(self._resp({}))
+        mock_logger.warning.assert_not_called()
+
+    @patch("app.ksef_client.logger")
+    def test_value_sanitized_and_truncated(self, mock_logger, client):
+        value = "line1\r\nFAKE LOG ENTRY\x00" + "A" * 2000
+        client._log_system_warning(self._resp({"X-System-Warning": value}))
+        logged = mock_logger.warning.call_args.args[1]
+        assert "\r" not in logged and "\n" not in logged and "\x00" not in logged
+        assert logged.startswith("line1  FAKE LOG ENTRY ")
+        assert len(logged) == 500
+
+
 class TestKSeFClientRequestWithRetry:
     """Tests for _request_with_retry() 429 handling."""
 
