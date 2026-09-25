@@ -326,7 +326,7 @@ class PushInstance(Base):
 class InitialLoadJob(Base):
     """Tracks historical invoice import jobs using the /invoices/exports async API.
 
-    Each job covers a date range split into ≤90-day windows per subject_type.
+    Each job covers a date range split into ≤100-day windows per subject_type.
     Supports resume: current_window_from/to + current_subject_type allow restart
     after interruption without re-importing already-processed windows.
 

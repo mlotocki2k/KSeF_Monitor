@@ -38,8 +38,9 @@ class InvoiceMonitor:
     }
     DEFAULT_TITLE = "Nowa faktura w KSeF"
 
-    # KSeF API maximum dateRange is 3 months (90 days)
-    MAX_DATE_RANGE_DAYS = 90
+    # KSeF API maximum dateRange: 100 days in UTC (API 2.7.1+, PROD since 2026-09-23;
+    # previously 3 months). Queried span = MAX - 1 = 99 days, safely below the limit.
+    MAX_DATE_RANGE_DAYS = 100
 
     # POST /invoices/query/metadata hour limit (KSeF x-rate-limits) — detekcja
     METADATA_HOUR_LIMIT = 20
@@ -170,10 +171,10 @@ class InvoiceMonitor:
         """
         Cap date_from to now - MAX_DATE_RANGE_DAYS.
 
-        KSeF API v2.2.0/v2.3.0 limits dateRange to 3 months. If date_from is older,
+        KSeF API v2.7.1+ limits dateRange to 100 days (UTC). If date_from is older,
         cap it and log a warning about the skipped period.
 
-        Range is inclusive on both ends, so 90 days = (now - date_from).days + 1.
+        Range is inclusive on both ends, so 100 days = (now - date_from).days + 1.
         Subtract MAX-1 to keep the window at the limit, not 1 day past it.
         """
         max_lookback = now - timedelta(days=self.MAX_DATE_RANGE_DAYS - 1)
@@ -181,7 +182,7 @@ class InvoiceMonitor:
         if date_from < max_lookback:
             skipped_days = (max_lookback - date_from).days
             logger.warning(
-                "last_check is %d days old (%s) — exceeds KSeF API 3-month limit. "
+                "last_check is %d days old (%s) — exceeds KSeF API 100-day limit. "
                 "Capping date_from to %s. Invoices from the skipped period "
                 "(%d days) will NOT be fetched.",
                 (now - date_from).days,
@@ -352,7 +353,7 @@ class InvoiceMonitor:
         date_from = self._get_date_from(db_session, subject_type, json_state, now)
         date_to = now
 
-        # Cap date_from to max 90 days back (KSeF API 3-month limit)
+        # Cap date_from to max 100 days back (KSeF API 100-day limit)
         date_from = self._cap_date_from(date_from, now)
 
         invoices = self.ksef.get_invoices_metadata(date_from, date_to, subject_type)

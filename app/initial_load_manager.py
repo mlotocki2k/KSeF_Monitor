@@ -2,7 +2,7 @@
 Initial Load Manager for KSeF Monitor.
 
 Orchestrates historical invoice import using the async /invoices/exports API.
-Splits the configured date range into ≤90-day windows per subject_type,
+Splits the configured date range into ≤100-day windows per subject_type,
 calls InvoiceExportManager for each window, and persists progress to the DB
 for resume capability.
 
@@ -27,16 +27,18 @@ from .invoice_export_manager import InvoiceExportManager
 
 logger = logging.getLogger(__name__)
 
-# KSeF API caps dateRange (to - from) at exactly 89 days — anything beyond
-# (incl. end-of-day microseconds) returns 21405 "dateRange must not exceed".
-# Each window queries [cursor, cursor + 89d] in midnight-to-midnight form.
+# KSeF API 2.7.1+ caps dateRange at 100 days in UTC (PROD since 2026-09-23).
+# Under the old "3 months" limit only an 89-day span was accepted — anything
+# beyond (incl. end-of-day microseconds) returned 21405 "dateRange must not
+# exceed". Keeping the same MAX - 1 margin: each window queries
+# [cursor, cursor + 99d] in midnight-to-midnight form, below the 100-day limit.
 # Coverage of the boundary instant: KSeF includes invoices with timestamp
 # ≤ to. So Day N's full activity (issued any time of day) is captured by
 # the window whose `from` is Day N midnight, NOT the one whose `to` is
 # Day N midnight. Consecutive windows therefore overlap on a single instant
 # (Window K's to == Window K+1's from); the unique ksef_number constraint
 # makes that idempotent.
-MAX_WINDOW_DAYS = 90
+MAX_WINDOW_DAYS = 100
 _WINDOW_SPAN = timedelta(days=MAX_WINDOW_DAYS - 1)
 _ONE_DAY = timedelta(days=1)
 

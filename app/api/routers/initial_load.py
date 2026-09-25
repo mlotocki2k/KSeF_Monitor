@@ -73,7 +73,7 @@ def start_initial_load(request: Request, body: StartJobRequest):
     """
     Start a new historical invoice import job.
 
-    Parses the configured date range into ≤90-day windows and processes
+    Parses the configured date range into ≤100-day windows and processes
     them sequentially in a background thread. Only one job can run at a time.
     """
     mgr = getattr(request.app.state, "initial_load_manager", None)
