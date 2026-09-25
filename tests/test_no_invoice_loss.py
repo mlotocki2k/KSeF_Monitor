@@ -351,3 +351,17 @@ def test_client_keeps_lowest_hwm_across_pages(client):
     client._make_authenticated_request = MagicMock(side_effect=[p1, p2])
     _query(client)
     assert client.last_hwm_date == "2026-09-20T06:30:00.000+00:00"
+
+
+def test_negative_retry_after_does_not_crash(client, monkeypatch):
+    """A negative Retry-After made time.sleep() raise ValueError."""
+    import app.ksef_client as kc
+    slept = []
+    monkeypatch.setattr(kc.time, "sleep", lambda s: slept.append(s))
+    r429 = MagicMock(status_code=429, headers={"Retry-After": "-5"})
+    r429.json.return_value = {}
+    ok = MagicMock(status_code=200, headers={})
+    client.session.request = MagicMock(side_effect=[r429, ok])
+    client.rate_limiter.pause_until = MagicMock()
+    assert client._request_with_retry("GET", client.base_url + "/v2/x").status_code == 200
+    assert slept == [1]

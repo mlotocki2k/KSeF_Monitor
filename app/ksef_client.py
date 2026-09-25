@@ -217,7 +217,8 @@ class KSeFClient:
                         retry_after = max(int(delta), 1)
                     except (ValueError, TypeError):
                         retry_after = self.DEFAULT_RETRY_AFTER
-            retry_after = min(retry_after, self.MAX_RETRY_AFTER)
+            # a negative or zero value would make time.sleep() raise / spin
+            retry_after = max(1, min(retry_after, self.MAX_RETRY_AFTER))
             # Inform rate limiter about server-enforced backoff
             self.rate_limiter.pause_until(retry_after)
             logger.warning("Rate limited (429). Waiting %ds before retry %d/%d. %s",

@@ -179,3 +179,9 @@ def test_resumed_job_keeps_earlier_failed_windows(manager, db):
         manager._run_job(job_id)
     with db.get_session() as s:
         assert db.get_initial_load_job(s, job_id).status == "completed_with_errors"
+
+
+def test_export_form_code_matches_polling_path(manager):
+    """Initial load stored systemCode, the monitor schemaVersion — one format now."""
+    data = manager._map_export_invoice({"ksefNumber": "K", "formCode": {"systemCode": "FA (3)", "schemaVersion": "1-0E", "value": "FA"}}, "Subject1")
+    assert data["form_code"] == "1-0E"

@@ -693,7 +693,9 @@ class InitialLoadManager:
         # formCode: dict with systemCode/schemaVersion/value
         raw_form = inv.get("formCode")
         form_code = (
-            raw_form.get("systemCode") if isinstance(raw_form, dict) else raw_form
+            # same value as the polling path (invoice_monitor stores schemaVersion)
+            (raw_form.get("schemaVersion") or raw_form.get("systemCode"))
+            if isinstance(raw_form, dict) else raw_form
         )
 
         # seller / buyer: nested objects per InvoiceMetadataSeller / InvoiceMetadataBuyer

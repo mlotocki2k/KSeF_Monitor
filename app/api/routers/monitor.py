@@ -24,10 +24,9 @@ def health_check(request: Request):
 
     if db:
         try:
-            session = db.get_session()
             from sqlalchemy import text
-            session.execute(text("SELECT 1"))
-            session.close()
+            with db.get_session() as session:  # closed also when the query fails
+                session.execute(text("SELECT 1"))
             db_connected = True
         except Exception:
             pass
