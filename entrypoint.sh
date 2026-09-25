@@ -64,10 +64,15 @@ fi
 DATA_UID=$(stat -c %u /data)
 DATA_GID=$(stat -c %g /data)
 
-# Adjust ksef user to match host owner
+# Adjust ksef user to match host owner. A root-owned mount (e.g. a directory
+# created by the daemon) is handed to ksef instead — the app never runs as
+# root, so leaving /data root-owned would make it unwritable.
 if [ "$DATA_UID" != "0" ]; then
     usermod -u "$DATA_UID" ksef 2>/dev/null || true
     groupmod -g "$DATA_GID" ksef 2>/dev/null || true
+else
+    DATA_UID=$(id -u ksef)
+    DATA_GID=$(id -g ksef)
 fi
 
 # Fix ownership to match host user (chown -R without -L does not follow symlinks)
