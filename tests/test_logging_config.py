@@ -237,3 +237,16 @@ class TestPrometheusMetrics:
             pm = PrometheusMetrics(port=9992, bind_address='127.0.0.1')
             pm.start_server()
             mock_start.assert_called_once_with(9992, addr='127.0.0.1')
+
+
+def test_http_library_loggers_capped_at_warning():
+    """DEBUG must not make urllib3 log webhook URLs (credentials / invoice data)."""
+    import logging
+    from unittest.mock import MagicMock
+    from app.logging_config import apply_config
+    cfg = MagicMock()
+    cfg.get.side_effect = lambda *k, default=None: "DEBUG" if k[-1] == "logging_level" else default
+    apply_config(cfg)
+    assert logging.getLogger("urllib3").getEffectiveLevel() == logging.WARNING
+    assert logging.getLogger("urllib3.connectionpool").getEffectiveLevel() == logging.WARNING
+    logging.root.setLevel(logging.INFO)
