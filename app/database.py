@@ -534,9 +534,20 @@ class Database:
 
         Runs `Base.metadata.create_all` for pristine DBs, then delegates to
         `_migrate_schema` which invokes alembic (stamp-at-head or upgrade).
+
+        A DB already tracked by alembic is upgraded without create_all first:
+        pre-creating tables of later phases made the phase 2-4 migrations
+        (unconditional create_table) fail, leaving old DBs on their revision.
         """
-        Base.metadata.create_all(self.engine)
+        from sqlalchemy import inspect as sa_inspect
+
+        tracked = "alembic_version" in sa_inspect(self.engine).get_table_names()
+        if not tracked:
+            Base.metadata.create_all(self.engine)
         self._migrate_schema()
+        if tracked:
+            # Safety net if the upgrade failed: the app can still start
+            Base.metadata.create_all(self.engine)
         logger.info("Database tables created")
 
     def _migrate_schema(self):
