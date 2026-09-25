@@ -77,6 +77,16 @@ def reset_push(request: Request):
         )
 
     if push_manager.reset():
+        if not push_manager.is_registered:
+            return JSONResponse(
+                status_code=502,
+                content={
+                    "detail": "Credentials reset, but registration with the push "
+                              "service failed — it is retried on next start",
+                    "reset": True,
+                    **push_manager.pairing_info,
+                },
+            )
         return {
             "message": "Push credentials reset — check Docker logs for new QR code",
             "reset": True,

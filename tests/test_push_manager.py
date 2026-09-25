@@ -564,3 +564,40 @@ def test_regenerate_pairing_code_is_16_hex_chars(tmp_path, monkeypatch):
     assert mgr.pairing_code is not None
     assert len(mgr.pairing_code) == 16
     assert all(c in "0123456789ABCDEF" for c in mgr.pairing_code)
+
+
+class TestPushRegistrationRecovery:
+    """A failed registration must not look registered and must be retried."""
+
+    def _db(self, tmp_path):
+        db = Database(str(tmp_path / "t.db"))
+        db.create_tables()
+        return db
+
+    def test_reset_with_worker_down_is_not_registered(self, tmp_path):
+        db = self._db(tmp_path)
+        with patch.object(PushManager, "_register_instance", return_value=True):
+            pm = PushManager(_make_config(), data_dir=str(tmp_path), db=db)
+        pm.registered_at = "2026-01-01T00:00:00+00:00"
+        with patch.object(PushManager, "_register_instance", return_value=False):
+            assert pm.reset() is True
+        assert pm.is_registered is False
+
+    def test_unregistered_instance_retried_on_start(self, tmp_path):
+        db = self._db(tmp_path)
+        with patch.object(PushManager, "_register_instance", return_value=False):
+            PushManager(_make_config(), data_dir=str(tmp_path), db=db)
+        calls = []
+
+        def ok(self):
+            calls.append(1)
+            self.registered_at = "2026-09-25T00:00:00+00:00"
+            return True
+
+        with patch.object(PushManager, "_register_instance", ok):
+            pm = PushManager(_make_config(), data_dir=str(tmp_path), db=db)
+        assert calls == [1]
+        assert pm.is_registered is True
+        with patch.object(PushManager, "_register_instance", return_value=False) as again:
+            PushManager(_make_config(), data_dir=str(tmp_path), db=db)
+        again.assert_not_called()  # registration persisted

@@ -81,3 +81,18 @@ class TestPushSetup503:
         client = TestClient(app)
         resp = client.get("/api/v1/push/pairing", headers=_bearer())
         assert resp.status_code == 503
+
+
+class TestPushReset:
+    def test_reset_ok(self, client_with_push, mock_push_manager):
+        mock_push_manager.reset.return_value = True
+        mock_push_manager.is_registered = True
+        r = client_with_push.post("/api/v1/push/reset", headers=_bearer())
+        assert r.status_code == 200 and r.json()["reset"] is True
+
+    def test_reset_registration_failed_is_502(self, client_with_push, mock_push_manager):
+        mock_push_manager.reset.return_value = True
+        mock_push_manager.is_registered = False
+        r = client_with_push.post("/api/v1/push/reset", headers=_bearer())
+        assert r.status_code == 502
+        assert "pairing_code" not in r.json()  # still only the masked info

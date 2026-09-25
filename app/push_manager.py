@@ -87,6 +87,7 @@ class PushManager:
         """Load credentials from DB/JSON or generate new ones on first run."""
         # Try DB first
         if self._load_from_db():
+            self._ensure_registered()
             return
 
         # Try legacy JSON file (and migrate to DB if found)
@@ -95,6 +96,7 @@ class PushManager:
             if self.instance_id and self.instance_key:
                 self._save_to_db()
                 self._rename_legacy_json()
+                self._ensure_registered()
                 return
 
         # First run: generate new credentials
@@ -105,7 +107,7 @@ class PushManager:
         if not registered:
             logger.warning(
                 "Could not register with Central Push Service — "
-                "credentials saved, registration will be retried on next push"
+                "credentials saved, registration will be retried on next start"
             )
 
     # ── DB Storage ───────────────────────────────────────────────────────
@@ -242,9 +244,22 @@ class PushManager:
         self.instance_id = str(uuid.uuid4())
         self.instance_key = secrets.token_hex(32)
         self.pairing_code = secrets.token_hex(8).upper()  # 64-bit
+        self.registered_at = None  # new credentials are not registered yet
         logger.info("Generated new push credentials (instance: %s)", self.instance_id)
 
     # ── Worker Registration ──────────────────────────────────────────────
+
+    def _ensure_registered(self) -> None:
+        """Retry a registration that failed earlier (e.g. Worker down at reset)."""
+        if self.registered_at:
+            return
+        if self._register_instance():
+            self._save_to_db()
+        else:
+            logger.warning(
+                "Push instance not registered with Central Push Service — "
+                "notifications will fail; registration is retried on next start"
+            )
 
     def _register_instance(self) -> bool:
         """Register instance with Central Push Service.
@@ -532,10 +547,16 @@ class PushManager:
                 return False
 
         self._generate_credentials()
-        self._register_instance()
+        registered = self._register_instance()
         self._save_to_db()
         self._log_pairing_info()
-        logger.info("Push credentials reset — new pairing code generated")
+        if registered:
+            logger.info("Push credentials reset — new pairing code generated")
+        else:
+            logger.error(
+                "Push credentials reset, but registration with Central Push "
+                "Service failed — retried on next start"
+            )
         return True
 
     # ── Properties ───────────────────────────────────────────────────────
