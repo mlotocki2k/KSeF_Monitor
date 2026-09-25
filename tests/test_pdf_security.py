@@ -189,3 +189,15 @@ def test_cirfmf_stays_strict_and_disables_redirects():
         mock_gai.return_value = [(2, 1, 6, "", ("93.184.216.34", 0))]
         assert _try_ksef_generator("<Faktura/>", "KSEF1", "https://pdf.example") is not None
     assert post.call_args.kwargs["allow_redirects"] is False
+
+
+def test_pef_pdf_survives_markup_chars_in_names():
+    """An unclosed < in a PEF name used to raise in the ReportLab paraparser."""
+    from app.invoice_pdf_generator import _generate_pef_pdf, REPORTLAB_AVAILABLE
+    if not REPORTLAB_AVAILABLE:
+        pytest.skip("reportlab missing")
+    data = {"header": {"p2": "FV <1", "p1": "2026-01-01", "kod_waluty": "PLN"},
+            "seller": {"nazwa": "A <b B & C"}, "buyer": {"nazwa": "D > E"}}
+    buf = _generate_pef_pdf(data, "1234567890-20260101-ABCDEF-12", None, "")
+    pdf = buf.read() if hasattr(buf, "read") else buf
+    assert pdf[:4] == b"%PDF"

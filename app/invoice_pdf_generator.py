@@ -501,7 +501,7 @@ class InvoicePDFGenerator:
         kurs = h.get('kurs_waluty_z')
         if kurs and currency:
             elements.append(Paragraph(
-                f'Kurs waluty: {kurs} PLN/{currency}', self.styles['Small']))
+                f'Kurs waluty: {self._rl_escape(kurs)} PLN/{currency}', self.styles['Small']))
 
         return elements
 
@@ -1077,7 +1077,7 @@ class InvoicePDFGenerator:
         if h.get('data_wytworzenia'):
             elements.append(Spacer(1, 3*mm))
             elements.append(Paragraph(
-                f'Data wytworzenia faktury: {h["data_wytworzenia"]}',
+                f'Data wytworzenia faktury: {self._rl_escape(h["data_wytworzenia"])}',
                 self.styles['Small']))
 
         return elements
@@ -1346,7 +1346,8 @@ def _generate_pef_pdf(invoice_data: Dict, ksef_number: str,
     story = []
 
     def para(text, style='Normal'):
-        story.append(Paragraph(str(text), styles[style]))
+        # values come from the invoice XML — escape for the ReportLab markup parser
+        story.append(Paragraph(html.escape(str(text), quote=False), styles[style]))
 
     hdr = invoice_data.get('header', {})
     seller = invoice_data.get('seller', {})
