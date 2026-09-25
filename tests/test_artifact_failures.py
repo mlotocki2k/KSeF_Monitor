@@ -101,3 +101,18 @@ def test_invoice_notification_logged_in_cycle_transaction(mock_config, tmp_path,
         logs = s.query(NotificationLog).filter_by(event_type="invoice").all()
         inv = s.query(Invoice).one()
     assert len(logs) == 1 and logs[0].invoice_id == inv.id and logs[0].status == "sent"
+
+
+def test_failed_artifact_attempts_are_counted(mock_config, tmp_path, sample_invoice):
+    """Codex finding: a failed artifact was retried forever (attempts stuck at 1)."""
+    m, db, _nm = _monitor(mock_config, tmp_path)
+    m.lazy_artifacts = True
+    m.ksef.get_invoices_metadata.return_value = [sample_invoice]
+    m.check_for_new_invoices()
+    m.ksef.get_invoice_xml.return_value = None
+    for _ in range(5):
+        m.process_pending_artifacts()
+    with db.get_session() as s:
+        attempts = [a.download_attempts for a in s.query(InvoiceArtifact).all()]
+    assert attempts and all(a == 3 for a in attempts)
+    assert m.ksef.get_invoice_xml.call_count == 3

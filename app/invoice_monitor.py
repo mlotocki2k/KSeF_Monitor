@@ -471,7 +471,7 @@ class InvoiceMonitor:
 
     def _mark_remaining_pending_failed(self, db_session, invoice_id: int, reason: str,
                                        types=("xml", "pdf")) -> None:
-        """Oznacz jako failed artefakty faktury, które po próbie wciąż są 'pending'.
+        """Oznacz jako failed artefakty faktury, które po próbie wciąż są 'pending'/'failed'.
 
         Zwiększa licznik prób (`download_attempts`), dzięki czemu
         `get_pending_artifacts` przestanie je zwracać po 3 nieudanych próbach.
@@ -479,7 +479,10 @@ class InvoiceMonitor:
         """
         pending = (
             db_session.query(InvoiceArtifact)
-            .filter_by(invoice_id=invoice_id, status="pending")
+            .filter_by(invoice_id=invoice_id)
+            # failed ones are retried too (get_pending_artifacts returns both):
+            # without counting their attempts they would be retried forever
+            .filter(InvoiceArtifact.status.in_(["pending", "failed"]))
             .filter(InvoiceArtifact.artifact_type.in_(types))
             .all()
         )
