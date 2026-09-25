@@ -17,6 +17,7 @@ import zipfile
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Dict, List, Optional, Tuple
+from urllib.parse import urlparse
 
 import requests
 from cryptography.hazmat.primitives import hashes
@@ -85,6 +86,8 @@ class InvoiceExportManager:
     POLL_INTERVAL_MAX = 60     # seconds
     POLL_MAX_ATTEMPTS = 180    # 180 * 5s = 15 minutes max
     DOWNLOAD_TIMEOUT = 300     # seconds per part
+    MAX_PART_BYTES = 512 * 1024 * 1024       # hard cap per encrypted part
+    MAX_METADATA_BYTES = 256 * 1024 * 1024   # uncompressed _metadata.json (zip bomb guard)
     MAX_RETRY_ON_500 = 3
 
     def __init__(self, ksef_client):
@@ -434,23 +437,42 @@ class InvoiceExportManager:
         url = part["url"]
         part_name = part.get("partName", "?")
         expected_enc_hash = part.get("encryptedPartHash", "")
+        # encryptedPartHash is required by the spec — without it the part
+        # cannot be checked, so refuse it rather than trust it.
+        if not expected_enc_hash:
+            raise ValueError(f"Part {part_name} has no encryptedPartHash")
+        if urlparse(url).scheme != "https":
+            raise ValueError(f"Part {part_name} URL is not https")
+
+        declared = part.get("encryptedPartSize")
+        limit = self.MAX_PART_BYTES
+        if isinstance(declared, int) and 0 < declared <= limit:
+            limit = declared
 
         logger.debug("Downloading part: %s", part_name)
 
-        response = requests.get(url, timeout=self.DOWNLOAD_TIMEOUT, stream=True)
+        response = requests.get(url, timeout=self.DOWNLOAD_TIMEOUT, stream=True,
+                                allow_redirects=False)
         response.raise_for_status()
 
-        data = response.content
+        chunks = []
+        received = 0
+        for chunk in response.iter_content(chunk_size=1024 * 1024):
+            received += len(chunk)
+            if received > limit:
+                response.close()
+                raise ValueError(f"Part {part_name} exceeds {limit} bytes")
+            chunks.append(chunk)
+        data = b"".join(chunks)
 
         # Verify encrypted hash
-        if expected_enc_hash:
-            actual = base64.b64encode(hashlib.sha256(data).digest()).decode()
-            if actual != expected_enc_hash:
-                raise ValueError(
-                    f"Part {part_name} encrypted hash mismatch: "
-                    f"expected={expected_enc_hash}, got={actual}"
-                )
-            logger.debug("Part %s hash verified OK", part_name)
+        actual = base64.b64encode(hashlib.sha256(data).digest()).decode()
+        if actual != expected_enc_hash:
+            raise ValueError(
+                f"Part {part_name} encrypted hash mismatch: "
+                f"expected={expected_enc_hash}, got={actual}"
+            )
+        logger.debug("Part %s hash verified OK", part_name)
 
         return data
 
@@ -495,6 +517,10 @@ class InvoiceExportManager:
                 logger.warning("_metadata.json not found in ZIP. Files: %s", names)
                 return []
 
+            if zf.getinfo(meta_name).file_size > self.MAX_METADATA_BYTES:
+                raise ValueError(
+                    f"_metadata.json exceeds {self.MAX_METADATA_BYTES} bytes uncompressed"
+                )
             raw = zf.read(meta_name)
             data = json.loads(raw.decode("utf-8"))
 

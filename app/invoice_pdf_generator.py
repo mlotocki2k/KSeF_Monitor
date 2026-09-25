@@ -151,7 +151,7 @@ class InvoicePDFGenerator:
             ]))
             # QR with label underneath
             ksef_num = data.get('ksef_metadata', {}).get('ksef_number', '')
-            label_para = Paragraph(ksef_num or '', self.styles['Small'])
+            label_para = Paragraph(self._rl_escape(ksef_num or ''), self.styles['Small'])
             qr_inner = Table(
                 [[qr_img], [label_para]],
                 colWidths=[qr_size],
@@ -233,7 +233,7 @@ class InvoicePDFGenerator:
         kod = h.get('kod_formularza', '')
         wariant = h.get('wariant', '')
         if kod:
-            elements.append(Paragraph(f'{kod} ({wariant})', self.styles['Title2']))
+            elements.append(Paragraph(f'{self._rl_escape(kod)} ({self._rl_escape(wariant)})', self.styles['Title2']))
 
         return elements
 
@@ -440,12 +440,12 @@ class InvoicePDFGenerator:
             vat = vs.get(p14_field, '') if p14_field else ''
             row = [
                 Paragraph(display_label, self.styles['TDC']),
-                Paragraph(self._fmt_amt(net), self.styles['TDR']),
-                Paragraph(self._fmt_amt(vat) if vat else '', self.styles['TDR']),
+                Paragraph(self._rl_escape(self._fmt_amt(net)), self.styles['TDR']),
+                Paragraph(self._rl_escape(self._fmt_amt(vat)) if vat else '', self.styles['TDR']),
             ]
             if has_w:
                 vat_w = vs.get(p14w_field, '') if p14w_field else ''
-                row.append(Paragraph(self._fmt_amt(vat_w) if vat_w else '', self.styles['TDR']))
+                row.append(Paragraph(self._rl_escape(self._fmt_amt(vat_w)) if vat_w else '', self.styles['TDR']))
             tdata.append(row)
 
         if len(tdata) <= 1:
@@ -486,7 +486,7 @@ class InvoicePDFGenerator:
 
         tdata = [[
             Paragraph(f'<b>{label}</b>', self.styles['SumBold']),
-            Paragraph(f'<b>{self._fmt_amt(p15)}{currency_suffix}</b>', self.styles['SumBold']),
+            Paragraph(f'<b>{self._rl_escape(self._fmt_amt(p15))}{currency_suffix}</b>', self.styles['SumBold']),
         ]]
         t = Table(tdata, colWidths=[120*mm, 66*mm])
         t.setStyle(TableStyle([
@@ -1288,9 +1288,11 @@ def _try_ksef_generator(xml_content: str, ksef_number: str,
 
     Returns BytesIO with PDF on success, None on any failure (caller falls back).
     """
-    # Validate URL — must be public HTTP(S) (prevents SSRF to internal services)
-    if not is_safe_public_url(base_url):
-        logger.warning("CIRFMF generator URL rejected (non-public or bad scheme): %s", base_url)
+    # Validate URL. The documented deployment is a sidecar container on the
+    # Docker network (private address), so private ranges are allowed;
+    # loopback, link-local (cloud metadata) and non-http(s) stay blocked.
+    if not is_safe_public_url(base_url, allow_private=True):
+        logger.warning("CIRFMF generator URL rejected (blocked address or bad scheme): %s", base_url)
         return None
 
     try:
@@ -1305,6 +1307,7 @@ def _try_ksef_generator(xml_content: str, ksef_number: str,
             files={'xml': (filename, xml_bytes, 'application/xml')},
             headers={'Accept': 'application/pdf'},
             timeout=30,
+            allow_redirects=False,  # a redirect would bypass the URL check above
         )
         if resp.status_code == 200:
             pdf_bytes = resp.content
