@@ -9,7 +9,7 @@ import re
 import time
 import base64
 import hashlib
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, Dict, List
 import requests
 from cryptography.hazmat.primitives.asymmetric import padding as asym_padding
@@ -391,6 +391,9 @@ class KSeFClient:
             auth_result = self._authenticate_with_token(challenge, timestamp_ms)
             if not auth_result:
                 logger.error("Failed to authenticate with token")
+                # the key may have been retired — fetch it again next time
+                self._ksef_public_key = None
+                self._ksef_public_key_id = None
                 return False
 
             reference_number = auth_result.get("referenceNumber")
@@ -567,8 +570,17 @@ class KSeFClient:
             response.raise_for_status()
 
             certificates = response.json()
+            now = datetime.now(timezone.utc)
             for cert in certificates:
                 if "KsefTokenEncryption" in cert.get("usage", []):
+                    # skip keys outside their validity window (key rotation)
+                    try:
+                        valid_from = datetime.fromisoformat(cert.get("validFrom", "").replace("Z", "+00:00"))
+                        valid_to = datetime.fromisoformat(cert.get("validTo", "").replace("Z", "+00:00"))
+                        if not (valid_from <= now <= valid_to):
+                            continue
+                    except (ValueError, AttributeError, TypeError):
+                        pass  # no/invalid dates — use the key as before
                     cert_der = base64.b64decode(cert["certificate"])
                     x509_cert = load_der_x509_certificate(cert_der)
                     self._ksef_public_key = x509_cert.public_key()
