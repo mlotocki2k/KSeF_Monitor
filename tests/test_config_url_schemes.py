@@ -59,7 +59,6 @@ def test_webhook_public_http_warns_even_with_private_flag(cm, caplog):
     {"subject_poll_intervals": {"Subject1": "240"}},
     {"subject_poll_intervals": {"Subject9": 60}},
     {"subject_types": ["Subject1", "Bogus"]},
-    {"subject_types": []},
     {"artifact_batch_size": "50"},
     {"artifact_batch_size": True},
 ])
@@ -78,3 +77,12 @@ def test_valid_monitoring_values_pass(cm):
     cm._validate_monitoring({"monitoring": {"subject_types": ["Subject1", "Subject2"],
                                             "subject_poll_intervals": {"Subject2": 420.5},
                                             "artifact_batch_size": 50}})
+
+
+@pytest.mark.parametrize("monitoring", [
+    {"subject_types": []},
+    {"subject_poll_intervals": {"Subject1": 0, "Subject2": None}},
+    {"artifact_batch_size": 50.0},
+])
+def test_previously_working_values_still_accepted(cm, monitoring):
+    cm._validate_monitoring({"monitoring": monitoring})

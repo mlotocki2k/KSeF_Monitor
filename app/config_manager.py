@@ -205,7 +205,9 @@ class ConfigManager:
             if isinstance(subject_types, str):
                 # a single value — iterating the string would query "S", "u", …
                 subject_types = monitoring["subject_types"] = [subject_types]
-            if (not isinstance(subject_types, list) or not subject_types
+            if subject_types == []:
+                subject_types = None  # empty list = default (as before)
+            elif (not isinstance(subject_types, list)
                     or any(st not in self._SUBJECT_TYPES for st in subject_types)):
                 raise ValueError(
                     f"monitoring.subject_types must be a non-empty list of "
@@ -214,8 +216,10 @@ class ConfigManager:
 
         intervals = monitoring.get("subject_poll_intervals")
         if intervals is not None:
+            # 0 / null = poll every cycle (unchanged meaning)
             if not isinstance(intervals, dict) or any(
-                k not in self._SUBJECT_TYPES or not self._is_positive_number(v)
+                k not in self._SUBJECT_TYPES
+                or not (v is None or v == 0 or self._is_positive_number(v))
                 for k, v in intervals.items()
             ):
                 raise ValueError(
@@ -224,8 +228,11 @@ class ConfigManager:
                 )
 
         batch = monitoring.get("artifact_batch_size")
-        if batch is not None and not (isinstance(batch, int) and not isinstance(batch, bool) and batch > 0):
-            raise ValueError("monitoring.artifact_batch_size must be a positive integer")
+        if batch is not None:
+            if isinstance(batch, float) and batch.is_integer():
+                batch = monitoring["artifact_batch_size"] = int(batch)  # JSON 50.0
+            if not (isinstance(batch, int) and not isinstance(batch, bool) and batch > 0):
+                raise ValueError("monitoring.artifact_batch_size must be a positive integer")
 
     def _validate_schedule(self, schedule: Dict[str, Any]):
         """
