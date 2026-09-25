@@ -49,6 +49,9 @@ class InvoiceMonitor:
     # Each query re-covers this much before last_check (see _get_date_from)
     POLL_WINDOW_OVERLAP = timedelta(minutes=15)
 
+    # Min. odstęp wymuszonej przebudowy mapy sesji UPO (listuje wszystkie sesje)
+    SESSION_MAP_FORCE_INTERVAL = 3600
+
     # POST /invoices/query/metadata hour limit (KSeF x-rate-limits) — detekcja
     METADATA_HOUR_LIMIT = 20
 
@@ -87,6 +90,7 @@ class InvoiceMonitor:
         self._session_invoice_map = None     # cache: ksefNumber -> sessionReference
         self._session_map_ts = 0.0           # czas ostatniego zbudowania mapy
         self._session_map_ttl = 24 * 3600    # TTL cache mapy sesji (24h)
+        self._session_map_forced_ts = 0.0    # ostatnia wymuszona przebudowa mapy
         # Opcjonalny interwał pollingu per subject type (sekundy), np.
         # {"Subject1": 240, "Subject2": 420}. Subject bez wpisu pollowany co cykl.
         subject_intervals = config.get("monitoring", "subject_poll_intervals")
@@ -670,8 +674,13 @@ class InvoiceMonitor:
                     session_map = self._build_session_invoice_map()
                 session_ref = session_map.get(inv.ksef_number)
                 if not session_ref and not map_fresh:
-                    # A cached map (TTL 24 h) cannot know newer invoices:
-                    # rebuild once per run before counting a failed attempt.
+                    # A cached map (TTL 24 h) cannot know newer invoices. A
+                    # forced rebuild lists every session (all pages), so it is
+                    # rate-limited; until the next one, a miss against the old
+                    # map does not use up an attempt.
+                    if (time.time() - self._session_map_forced_ts) < self.SESSION_MAP_FORCE_INTERVAL:
+                        continue
+                    self._session_map_forced_ts = time.time()
                     session_map = self._build_session_invoice_map(force=True)
                     map_fresh = True
                     session_ref = session_map.get(inv.ksef_number)

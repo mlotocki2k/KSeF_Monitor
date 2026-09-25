@@ -71,3 +71,17 @@ def test_session_listings_follow_continuation_token(mock_config):
     assert [s["referenceNumber"] for s in c.list_sessions()] == ["A", "B"]
     second = c._make_authenticated_request.call_args_list[1]
     assert second.kwargs["headers"] == {"x-continuation-token": "tok"}
+
+
+def test_forced_map_rebuild_rate_limited(mock_config, tmp_path):
+    """Round-6: every UPO run rebuilt the whole session map while any miss remained."""
+    m, db = _monitor(mock_config, tmp_path)
+    _invoices(db, 3)
+    m._session_invoice_map, m._session_map_ts = {}, time.time()
+    m.ksef.list_sessions.return_value = []
+    for _ in range(5):
+        m.process_pending_upo()
+    assert m.ksef.list_sessions.call_count == 1
+    with db.get_session() as s:
+        attempts = [a.download_attempts for a in s.query(InvoiceArtifact).all()]
+    assert attempts == [1, 1, 1]  # only the fresh-map miss counted
