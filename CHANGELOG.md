@@ -75,6 +75,14 @@ All notable changes to KSeF Monitor are documented here.
 - A logo in `pdf_templates_dir` is allowed by the PDF resource policy; monitor and API
   render PDFs with the same options.
 - A transient DB error at startup no longer regenerates (and unpairs) push credentials.
+- **Database upgrades:** databases on alembic revisions of phases 1-3 now reach head (create_all
+  used to pre-create tables and the upgrade failed forever); phase 2-4 migrations are idempotent.
+- `daily`/`weekly` schedules use `monitoring.timezone` (the container runs in UTC).
+- Webhook `method: GET` keeps the nested invoice object (sent as JSON in one parameter) and no
+  longer sends an unverifiable signature; a warning explains that GET puts invoice data in URLs.
+- UPO forced session-map rebuild is rate-limited to once per hour.
+- Invalid `monitoring` values (e.g. string intervals) are rejected at startup instead of
+  silently stopping every cycle; previously working values keep their meaning.
 - JSON-state mode: a subject with a longer poll interval is polled after upgrading an old
   state file; the error-push throttle resets after a successful cycle.
 
@@ -112,6 +120,7 @@ All notable changes to KSeF Monitor are documented here.
 - The KSeF budget gate also honors an active 429 pause and fails closed on limiter errors.
 - Control characters from invoice fields are removed from file names (log injection).
 - REST metrics: non-standard HTTP methods share the `OTHER` label.
+- HTTP library loggers are capped at WARNING (DEBUG logged webhook URLs and query strings).
 - Docker image installs a hash-pinned `requirements.lock` (`--require-hashes`); the
   Synology compose drops all capabilities except CHOWN/DAC_READ_SEARCH/FOWNER/SETUID/SETGID and sets
   `no-new-privileges`. GitHub workflows: external values whitelisted, actions pinned to
