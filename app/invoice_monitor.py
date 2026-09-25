@@ -434,7 +434,7 @@ class InvoiceMonitor:
         # Send notification
         context = self.build_template_context(invoice, subject_type)
         context["_invoice_id"] = invoice_id  # for notification_log
-        success = self.notifier.send_invoice_notification(context)
+        success = self.notifier.send_invoice_notification(context, db_session=db_session)
 
         safe_ksef_log = str(ksef_number or 'N/A').replace('\n', ' ').replace('\r', ' ')
         if success:

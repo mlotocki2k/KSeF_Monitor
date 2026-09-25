@@ -78,3 +78,26 @@ def test_null_party_names_are_not_rendered_as_none(mock_config, tmp_path, sample
     inv = dict(sample_invoice, seller={"nip": "1", "name": None}, buyer={"name": None})
     ctx = m.build_template_context(inv, "Subject2")
     assert ctx["seller_name"] == "N/A" and ctx["buyer_name"] == "N/A"
+
+
+def test_invoice_notification_logged_in_cycle_transaction(mock_config, tmp_path, sample_invoice):
+    """Codex finding: logging via a 2nd SQLite connection waited on the cycle lock and was dropped."""
+    import time as _time
+    from app.database import NotificationLog
+    from app.notifiers.notification_manager import NotificationManager
+    m, db, _nm = _monitor(mock_config, tmp_path)
+    m.save_xml = m.save_pdf = False
+    manager = NotificationManager(mock_config, database=db)
+    channel = MagicMock()
+    channel.channel_name = "Webhook"
+    channel.render_and_send.return_value = True
+    manager.notifiers = [channel]
+    m.notifier = manager
+    m.ksef.get_invoices_metadata.return_value = [sample_invoice]
+    t0 = _time.monotonic()
+    m.check_for_new_invoices()
+    assert _time.monotonic() - t0 < 3
+    with db.get_session() as s:
+        logs = s.query(NotificationLog).filter_by(event_type="invoice").all()
+        inv = s.query(Invoice).one()
+    assert len(logs) == 1 and logs[0].invoice_id == inv.id and logs[0].status == "sent"
