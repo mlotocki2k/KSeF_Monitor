@@ -319,3 +319,35 @@ def test_poll_window_overlaps_previous_one(mock_config, tmp_path):
         last = m._get_last_check(s, "Subject1", {})
         date_from = m._get_date_from(s, "Subject1", {}, last + timedelta(hours=1))
     assert date_from == last - m.POLL_WINDOW_OVERLAP
+
+
+# ── PermanentStorage HWM cursor ───────────────────────────────────────────────
+
+
+def test_permanent_storage_resumes_from_hwm(mock_config, tmp_path, sample_invoice):
+    m, db = _monitor(mock_config, tmp_path)
+    m.ksef.date_type = "PermanentStorage"
+    m.ksef.last_hwm_date = "2026-09-20T06:30:00+00:00"
+    m.ksef.get_invoices_metadata.return_value = [sample_invoice]
+    m.check_for_new_invoices()
+    last = _state(db, "Subject1").last_check
+    assert WARSAW.localize(last, is_dst=True).astimezone(timezone.utc) == datetime(2026, 9, 20, 6, 30, tzinfo=timezone.utc)
+
+
+def test_invoicing_date_type_resumes_from_now(mock_config, tmp_path):
+    m, db = _monitor(mock_config, tmp_path)
+    m.ksef.date_type = "Invoicing"
+    m.ksef.last_hwm_date = "2020-01-01T00:00:00+00:00"
+    m.ksef.get_invoices_metadata.return_value = []
+    m.check_for_new_invoices()
+    assert _state(db, "Subject1").last_check.year == datetime.now().year
+
+
+def test_client_keeps_lowest_hwm_across_pages(client):
+    p1 = _page([_inv(1)], has_more=True)
+    p1.json.return_value["permanentStorageHwmDate"] = "2026-09-20T06:30:00.000+00:00"
+    p2 = _page([_inv(2)], has_more=False)
+    p2.json.return_value["permanentStorageHwmDate"] = "2026-09-20T06:31:00.000+00:00"
+    client._make_authenticated_request = MagicMock(side_effect=[p1, p2])
+    _query(client)
+    assert client.last_hwm_date == "2026-09-20T06:30:00.000+00:00"

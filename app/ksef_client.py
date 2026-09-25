@@ -92,6 +92,7 @@ class KSeFClient:
 
         self.access_token = None
         self.refresh_token = None
+        self.last_hwm_date: Optional[str] = None
         self.session_reference = None  # Session referenceNumber for UPO endpoints
         self._ksef_public_key = None
         self._ksef_public_key_id = None  # publicKeyId selektora (rotacja kluczy KSeF v2.5.0)
@@ -831,6 +832,9 @@ class KSeFClient:
             logger.info("Querying invoices [%s] from %s to %s", subject_type, date_from_str, date_to_str)
 
             all_invoices: List[Dict] = []
+            # permanentStorageHwmDate (PermanentStorage queries only): below it
+            # the result set is complete; the caller resumes from it.
+            self.last_hwm_date = None
             page_offset = 0
             current_from_str = date_from_str
             date_field = self._DATE_TYPE_TO_FIELD.get(self.date_type, "invoicingDate")
@@ -861,6 +865,9 @@ class KSeFClient:
 
                 data = response.json()
                 page_invoices = data.get("invoices", [])
+                hwm = data.get("permanentStorageHwmDate")
+                if hwm and (self.last_hwm_date is None or hwm < self.last_hwm_date):
+                    self.last_hwm_date = hwm  # most conservative value across pages
                 has_more = data.get("hasMore", False)
                 is_truncated = data.get("isTruncated", False)
 

@@ -302,6 +302,7 @@ class InvoiceMonitor:
         # the same window is queried again next cycle (no invoice loss).
         failed = {}
         polled_ok = []
+        cursors: Dict[str, datetime] = {}
 
         # JSON-based dedup — only used when DB is not available
         seen_entries = state.get("seen_invoices", []) if not use_db else []
@@ -337,6 +338,8 @@ class InvoiceMonitor:
                     continue
 
                 polled_ok.append(subject_type)
+                cursor = self._next_cursor(now)
+                cursors[subject_type] = cursor
                 if new_count > 0:
                     found_any = True
                     new_invoices_count[subject_type] = new_count
@@ -347,7 +350,7 @@ class InvoiceMonitor:
                         session=db_session,
                         nip=self.nip,
                         subject_type=subject_type,
-                        last_check=now,
+                        last_check=cursor,
                         last_ksef_number=last_ksef_number,
                         new_invoices=new_count,
                     )
@@ -368,7 +371,8 @@ class InvoiceMonitor:
             logger.info("No new invoices found")
 
         self._finalize_check_cycle(use_db, state, seen_entries, now, new_invoices_count,
-                                   advance_last_check=not failed, polled_ok=polled_ok)
+                                   advance_last_check=not failed, polled_ok=polled_ok,
+                                   cursors=cursors)
 
         if failed:
             raise KSeFQueryError(
@@ -708,7 +712,8 @@ class InvoiceMonitor:
     def _finalize_check_cycle(self, use_db: bool, state: Dict, seen_entries: list,
                               now: datetime, new_invoices_count: Dict,
                               advance_last_check: bool = True,
-                              polled_ok: Optional[List[str]] = None) -> None:
+                              polled_ok: Optional[List[str]] = None,
+                              cursors: Optional[Dict[str, datetime]] = None) -> None:
         """Save state and update Prometheus metrics after a check cycle.
 
         advance_last_check=False (a KSeF query failed): JSON mode keeps the old
@@ -729,7 +734,7 @@ class InvoiceMonitor:
             if advance_last_check:
                 state["last_check"] = now.isoformat()
             for st in polled_ok or []:
-                per_subject[st] = now.isoformat()
+                per_subject[st] = (cursors or {}).get(st, now).isoformat()
             state["seen_invoices"] = seen_entries[-1000:]
             self.save_state(state)
 
@@ -782,6 +787,29 @@ class InvoiceMonitor:
                 logger.warning("Invalid last_check date, using 24h ago")
 
         return None
+
+    def _next_cursor(self, now: datetime) -> datetime:
+        """Where the next query for a subject resumes.
+
+        With date_type=PermanentStorage KSeF returns permanentStorageHwmDate:
+        only invoices stored up to it are guaranteed complete (ksef-docs
+        hwm.md), so the next query starts there instead of at `now`. Other
+        date types have no HWM — `now` plus the window overlap.
+        """
+        if getattr(self.ksef, "date_type", None) != "PermanentStorage":
+            return now
+        raw = getattr(self.ksef, "last_hwm_date", None)
+        if not isinstance(raw, str) or not raw:
+            return now
+        try:
+            hwm = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        except ValueError:
+            return now
+        if hwm.tzinfo is None:
+            hwm = hwm.replace(tzinfo=timezone.utc)
+        if self.timezone:
+            hwm = hwm.astimezone(self.timezone)
+        return min(hwm, now) if now.tzinfo else now
 
     def _get_date_from(self, db_session, subject_type: str, json_state: Dict, now: datetime) -> datetime:
         """Determine date_from for a subject_type. DB has priority over JSON state."""
