@@ -42,6 +42,20 @@ MAX_WINDOW_DAYS = 100
 _WINDOW_SPAN = timedelta(days=MAX_WINDOW_DAYS - 1)
 _ONE_DAY = timedelta(days=1)
 
+# KSeF dateRange.dateType enum. "IssueDate" was accepted by older versions of
+# this app (API/UI) but is not a KSeF value — kept as an alias so stored jobs
+# and existing configs keep working.
+_DATE_TYPES = {"Issue", "Invoicing", "PermanentStorage"}
+_DATE_TYPE_ALIASES = {"IssueDate": "Issue"}
+
+
+def normalize_date_type(date_type: str) -> str:
+    """Map a configured date_type to the KSeF enum value (ValueError if unknown)."""
+    value = _DATE_TYPE_ALIASES.get(date_type, date_type)
+    if value not in _DATE_TYPES:
+        raise ValueError(f"Invalid date_type {date_type!r}, allowed: {sorted(_DATE_TYPES)}")
+    return value
+
 
 def _count_windows(start: datetime, end: datetime, subject_types: List[str]) -> int:
     """Estimate total window count for progress display.
@@ -233,6 +247,12 @@ class InitialLoadManager:
             if not job:
                 logger.error("Job not found: %s", job_id)
                 return
+            if job.status not in ("pending", "running"):
+                # Cancelled between start_job() and this thread starting
+                logger.info("Job %s is %s — not starting", job_id, job.status)
+                with self._lock:
+                    self._active_job_id = None
+                return
 
             subject_types: List[str] = json.loads(job.subject_types)
             start_date = job.start_date
@@ -356,6 +376,7 @@ class InitialLoadManager:
         skipped = 0
         failures: list = []
         cursor = start_date
+        date_type = normalize_date_type(date_type)
 
         # Resume: if job has a current_subject_type matching this one,
         # skip ahead to current_window_from
@@ -434,39 +455,41 @@ class InitialLoadManager:
                     "Export failed for %s [%s → %s]: %s",
                     subject_type, window_start.date(), display_end, result.error,
                 )
-                failures.append(
-                    (window_start.date(), display_end, result.error or "unknown")
+                self._record_failed_window(
+                    job_id, subject_type, window_start, window_end, display_end,
+                    result.error or "unknown", window_t0, failures,
                 )
-                # Non-fatal: still bump windows_completed so progress UI reaches
-                # 100% even if some windows errored (otherwise the job shows
-                # "Ukończony 50%" which is just confusing).
-                session = self.db.get_session()
-                try:
-                    self.db.update_initial_load_progress(
-                        session, job_id, windows_completed_delta=1,
-                    )
-                    self.db.record_initial_load_window(
-                        session,
-                        job_id=job_id,
-                        subject_type=subject_type,
-                        window_start=window_start,
-                        window_end=window_end,
-                        status="failed",
-                        error_message=result.error or "unknown",
-                        duration_ms=int((time.monotonic() - window_t0) * 1000),
-                    )
-                    session.commit()
-                except Exception:
-                    session.rollback()
-                finally:
-                    session.close()
                 cursor = window_end
                 continue
 
-            # Save invoices to DB
-            win_imported, win_skipped = self._save_invoices(result.invoices, subject_type)
+            # Save invoices to DB — a failed commit must not look like an empty window
+            try:
+                win_imported, win_skipped = self._save_invoices(result.invoices, subject_type)
+            except Exception as e:
+                self._record_failed_window(
+                    job_id, subject_type, window_start, window_end, display_end,
+                    f"Saving invoices failed: {e}", window_t0, failures,
+                )
+                cursor = window_end
+                continue
             imported += win_imported
             skipped += win_skipped
+
+            # Truncated package: continue from the last date of the queried
+            # dateType. Without it the rest of the window cannot be fetched —
+            # report the window as failed instead of silently skipping it.
+            next_from = None
+            if result.is_truncated:
+                next_from = self._truncation_cursor(result, date_type)
+                if next_from is None or next_from <= window_start:
+                    self._record_failed_window(
+                        job_id, subject_type, window_start, window_end, display_end,
+                        "Truncated export without a usable last date — window incomplete",
+                        window_t0, failures,
+                        imported=win_imported, skipped=win_skipped,
+                    )
+                    cursor = window_end
+                    continue
 
             # Update progress counters
             session = self.db.get_session()
@@ -502,24 +525,66 @@ class InitialLoadManager:
             )
 
             # Advance cursor to window_end (= next window's from, sharing
-            # the boundary instant). lastInvoicingDate from a truncated
-            # response still wins so we don't re-fetch already-paginated
-            # rows.
-            if result.is_truncated and result.last_invoicing_date:
-                try:
-                    next_from = datetime.fromisoformat(
-                        result.last_invoicing_date.replace("Z", "+00:00")
-                    )
-                    if next_from.tzinfo is not None:
-                        next_from = next_from.replace(tzinfo=None)
-                    cursor = next_from
-                    logger.debug("Truncated window: advancing cursor to %s", cursor)
-                except ValueError:
-                    cursor = window_end
+            # the boundary instant). The last date from a truncated response
+            # wins so we don't re-fetch already-paginated rows.
+            if next_from is not None:
+                cursor = next_from
+                logger.debug("Truncated window: advancing cursor to %s", cursor)
             else:
                 cursor = window_end
 
         return imported, skipped, failures
+
+    _TRUNCATION_FIELD = {
+        "Invoicing": "last_invoicing_date",
+        "Issue": "last_issue_date",
+        "PermanentStorage": "last_permanent_storage_date",
+    }
+
+    def _truncation_cursor(self, result, date_type: str) -> Optional[datetime]:
+        """Naive-UTC datetime to resume a truncated window from, or None."""
+        raw = getattr(result, self._TRUNCATION_FIELD[date_type], None)
+        if not raw:
+            return None
+        try:
+            dt = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        except (ValueError, AttributeError):
+            return None
+        if dt.tzinfo is not None:
+            dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
+        return dt
+
+    def _record_failed_window(self, job_id, subject_type, window_start, window_end,
+                              display_end, error, window_t0, failures,
+                              imported: int = 0, skipped: int = 0) -> None:
+        """Record a failed window (non-fatal for the job) and collect it for the summary."""
+        failures.append((window_start.date(), display_end, error))
+        # Still bump windows_completed so progress UI reaches 100% even if some
+        # windows errored (otherwise the job shows "Ukończony 50%").
+        session = self.db.get_session()
+        try:
+            self.db.update_initial_load_progress(
+                session, job_id, windows_completed_delta=1,
+                invoices_imported_delta=imported,
+                invoices_skipped_delta=skipped,
+            )
+            self.db.record_initial_load_window(
+                session,
+                job_id=job_id,
+                subject_type=subject_type,
+                window_start=window_start,
+                window_end=window_end,
+                status="failed",
+                imported=imported,
+                skipped=skipped,
+                error_message=error,
+                duration_ms=int((time.monotonic() - window_t0) * 1000),
+            )
+            session.commit()
+        except Exception:
+            session.rollback()
+        finally:
+            session.close()
 
     def _save_invoices(self, invoices: List[Dict], subject_type: str) -> tuple[int, int]:
         """
@@ -545,6 +610,7 @@ class InitialLoadManager:
         except Exception as e:
             session.rollback()
             logger.error("Failed to save batch of %d invoices: %s", len(invoices), e)
+            raise
         finally:
             session.close()
 

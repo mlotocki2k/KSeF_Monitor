@@ -39,10 +39,8 @@ class StartJobRequest(BaseModel):
     @field_validator("date_type")
     @classmethod
     def validate_date_type(cls, v):
-        allowed = {"Invoicing", "IssueDate"}
-        if v not in allowed:
-            raise ValueError(f"date_type must be one of {allowed}")
-        return v
+        from app.initial_load_manager import normalize_date_type
+        return normalize_date_type(v)
 
     @model_validator(mode="after")
     def check_range_not_excessive(self):
