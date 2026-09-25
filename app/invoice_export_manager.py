@@ -397,34 +397,26 @@ class InvoiceExportManager:
             logger.warning("Export package has no parts")
             return []
 
-        # Download all parts in order
-        encrypted_chunks: List[bytes] = []
+        # KSeF encrypts every part separately (same key/IV): decrypt each part,
+        # verify it, then join the plaintexts into the ZIP (ksef-docs:
+        # "odszyfrowane części łączone w jeden strumień danych"). Joining the
+        # ciphertexts first corrupted every multi-part package.
+        plain_parts: List[bytes] = []
         for part in sorted(parts, key=lambda p: p.get("ordinalNumber", 0)):
-            part_data = self._download_part(part)
-            encrypted_chunks.append(part_data)
-
-        encrypted_data = b"".join(encrypted_chunks)
-        logger.debug("Downloaded %d bytes (encrypted)", len(encrypted_data))
-
-        # Verify encrypted hash (partHash of combined = last part's encryptedPartHash for single-part)
-        # For multi-part, verify each part individually (already done in _download_part)
-
-        # Decrypt AES-256-CBC
-        zip_bytes = self._decrypt_aes_cbc(encrypted_data, aes_key, iv)
-        logger.debug("Decrypted %d bytes", len(zip_bytes))
-
-        # Verify decrypted hash if single part
-        if len(parts) == 1:
-            expected_hash = parts[0].get("partHash", "")
+            encrypted = self._download_part(part)
+            plain = self._decrypt_aes_cbc(encrypted, aes_key, iv)
+            expected_hash = part.get("partHash", "")
             if expected_hash:
-                actual_hash = base64.b64encode(
-                    hashlib.sha256(zip_bytes).digest()
-                ).decode()
+                actual_hash = base64.b64encode(hashlib.sha256(plain).digest()).decode()
                 if actual_hash != expected_hash:
                     raise ValueError(
-                        f"Decrypted data hash mismatch: expected={expected_hash}, got={actual_hash}"
+                        f"Part {part.get('partName', '?')} decrypted hash mismatch: "
+                        f"expected={expected_hash}, got={actual_hash}"
                     )
-                logger.debug("Decrypted hash verified OK")
+            plain_parts.append(plain)
+
+        zip_bytes = b"".join(plain_parts)
+        logger.debug("Decrypted %d bytes from %d part(s)", len(zip_bytes), len(plain_parts))
 
         # Extract _metadata.json from ZIP
         return self._parse_metadata_zip(zip_bytes)

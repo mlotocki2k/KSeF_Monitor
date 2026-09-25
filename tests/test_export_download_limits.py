@@ -68,3 +68,32 @@ def test_zip_bomb_metadata_rejected(mgr, monkeypatch):
     monkeypatch.setattr(InvoiceExportManager, "MAX_METADATA_BYTES", 1000)
     with pytest.raises(ValueError, match="exceeds"):
         mgr._parse_metadata_zip(buf.getvalue())
+
+
+def test_multipart_package_parts_decrypted_separately(tmp_path):
+    """ksef-docs: each part is encrypted separately; decrypt each, then join."""
+    import io, json, zipfile
+    from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+    from cryptography.hazmat.primitives.padding import PKCS7
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_STORED) as zf:
+        zf.writestr("_metadata.json", json.dumps({"invoices": [{"ksefNumber": "K1"}, {"ksefNumber": "K2"}]}) + " " * 4000)
+    zip_bytes = buf.getvalue()
+    key, iv = bytes(range(32)), bytes(16)
+
+    def enc(chunk):
+        p = PKCS7(128).padder()
+        e = Cipher(algorithms.AES(key), modes.CBC(iv)).encryptor()
+        return e.update(p.update(chunk) + p.finalize()) + e.finalize()
+
+    half = len(zip_bytes) // 2
+    plain = [zip_bytes[:half], zip_bytes[half:]]
+    cipher = [enc(c) for c in plain]
+    parts = [{"ordinalNumber": i + 1, "partName": f"p{i}", "url": f"https://blob/p{i}",
+              "encryptedPartHash": _b64(cipher[i]), "encryptedPartSize": len(cipher[i]),
+              "partHash": _b64(plain[i])} for i in range(2)]
+    mgr = InvoiceExportManager(MagicMock())
+    responses = iter(_resp(c) for c in cipher)
+    with patch("app.invoice_export_manager.requests.get", side_effect=lambda *a, **k: next(responses)):
+        invoices = mgr._download_and_decrypt({"parts": parts}, key, iv)
+    assert [i["ksefNumber"] for i in invoices] == ["K1", "K2"]
