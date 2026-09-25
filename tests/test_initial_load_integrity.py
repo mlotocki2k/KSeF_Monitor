@@ -185,3 +185,16 @@ def test_export_form_code_matches_polling_path(manager):
     """Initial load stored systemCode, the monitor schemaVersion — one format now."""
     data = manager._map_export_invoice({"ksefNumber": "K", "formCode": {"systemCode": "FA (3)", "schemaVersion": "1-0E", "value": "FA"}}, "Subject1")
     assert data["form_code"] == "1-0E"
+
+
+def test_api_mixed_naive_and_aware_dates_do_not_500():
+    """Round 10: naive minus aware raised TypeError inside the validator (HTTP 500)."""
+    req = StartJobRequest(start_date="2024-01-01T00:00:00+00:00", end_date="2024-02-01")
+    assert req.start_date
+
+
+def test_api_date_offset_is_converted_not_dropped():
+    from app.api.routers.initial_load import _parse_date
+    assert _parse_date("2024-01-01T00:00:00+01:00") == datetime(2023, 12, 31, 23, 0)
+    assert _parse_date("2024-01-01") == datetime(2024, 1, 1)
+    assert _parse_date("nope") is None

@@ -45,11 +45,9 @@ class StartJobRequest(BaseModel):
     @model_validator(mode="after")
     def check_range_not_excessive(self):
         """V5-11: reject ranges > 5 years to prevent KSeF API abuse / DB churn."""
-        from datetime import datetime, timedelta
-        try:
-            start = datetime.fromisoformat(self.start_date)
-            end = datetime.fromisoformat(self.end_date)
-        except ValueError:
+        from datetime import timedelta
+        start, end = _parse_date(self.start_date), _parse_date(self.end_date)
+        if start is None or end is None:
             # Let the endpoint's own date-parsing return 422 with a clearer msg
             return self
         if (end - start) > timedelta(days=1826):
@@ -58,11 +56,18 @@ class StartJobRequest(BaseModel):
 
 
 def _parse_date(date_str: str) -> Optional[datetime]:
-    """Parse ISO date string to datetime (UTC midnight)."""
+    """Parse an ISO date/datetime to naive UTC (the export treats naive as UTC).
+
+    An offset is converted, not dropped — '2024-01-01T00:00:00+01:00' is
+    2023-12-31 23:00 UTC. Mixing naive and aware inputs no longer raises.
+    """
     try:
-        return datetime.fromisoformat(date_str).replace(tzinfo=None)
-    except ValueError:
+        dt = datetime.fromisoformat(date_str)
+    except (TypeError, ValueError):
         return None
+    if dt.tzinfo is not None:
+        dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
+    return dt
 
 
 @router.post("/initial-load/start")
