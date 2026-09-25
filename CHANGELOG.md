@@ -56,6 +56,25 @@ All notable changes to KSeF Monitor are documented here.
   `/data/invoices.db`.
 - Pushover `message_priority: 2` sends the required `retry`/`expire`.
 - PEF fallback PDF no longer fails on `<` in names.
+- **Multi-part export packages** are decrypted part by part (KSeF encrypts each part
+  separately); joining the ciphertexts broke every export split into several parts.
+- `date_type: PermanentStorage` resumes from the returned `permanentStorageHwmDate` —
+  the point up to which KSeF guarantees a complete result.
+- **iOS push reset** takes effect immediately (the notifier kept the old credentials
+  until restart).
+- Artifact/file-system errors no longer roll back the invoice (which re-notified it every
+  cycle); failed artifacts count their retries; a PDF is registered only if written.
+- Invoice notifications are logged in the cycle's transaction (the separate SQLite
+  connection waited 5 s per channel and dropped the log row).
+- UPO: exhausted retries no longer starve later invoices, a stale session map is rebuilt
+  before a miss counts, session listings follow `continuationToken`.
+- Initial load: a resumed job keeps failures of earlier runs (`completed_with_errors`).
+- `GET /api/v1/invoices?subject_type=` works (`Subject1`… in any case; `subject1` returned
+  nothing).
+- A root-owned `/data` mount is handed to the `ksef` user by the entrypoint.
+- A logo in `pdf_templates_dir` is allowed by the PDF resource policy; monitor and API
+  render PDFs with the same options.
+- A transient DB error at startup no longer regenerates (and unpairs) push credentials.
 - JSON-state mode: a subject with a longer poll interval is polled after upgrading an old
   state file; the error-push throttle resets after a successful cycle.
 
@@ -92,6 +111,7 @@ All notable changes to KSeF Monitor are documented here.
 - Same-origin check requires matching ports when both sides state one.
 - The KSeF budget gate also honors an active 429 pause and fails closed on limiter errors.
 - Control characters from invoice fields are removed from file names (log injection).
+- REST metrics: non-standard HTTP methods share the `OTHER` label.
 - Docker image installs a hash-pinned `requirements.lock` (`--require-hashes`); the
   Synology compose drops all capabilities except CHOWN/DAC_READ_SEARCH/FOWNER/SETUID/SETGID and sets
   `no-new-privileges`. GitHub workflows: external values whitelisted, actions pinned to
