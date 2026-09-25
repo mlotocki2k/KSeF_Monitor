@@ -93,6 +93,36 @@ class InitialLoadManager:
 
     # ── Public API ────────────────────────────────────────────────────────────
 
+    def finished_job_for(self, start_date: datetime, subject_types: List[str],
+                         date_type: str) -> Optional[InitialLoadJob]:
+        """A finished job for the same range start / subjects / date type, if any.
+
+        Used by the config auto-start so a container restart (every deploy)
+        does not re-export the whole history again.
+        """
+        wanted_types = sorted(subject_types)
+        wanted_date_type = normalize_date_type(date_type)
+        session = self.db.get_session()
+        try:
+            jobs = (
+                session.query(InitialLoadJob)
+                .filter(InitialLoadJob.status.in_(["completed", "completed_with_errors"]))
+                .order_by(InitialLoadJob.created_at.desc())
+                .all()
+            )
+            for job in jobs:
+                try:
+                    same_types = sorted(json.loads(job.subject_types)) == wanted_types
+                    same_date_type = normalize_date_type(job.date_type) == wanted_date_type
+                except (ValueError, TypeError):
+                    continue
+                if same_types and same_date_type and job.start_date.date() == start_date.date():
+                    session.expunge(job)
+                    return job
+            return None
+        finally:
+            session.close()
+
     def start_job(
         self,
         start_date: datetime,

@@ -144,16 +144,24 @@ def main():
                     subject_types = initial_load_config.get("subject_types", ["Subject1", "Subject2"])
                     date_type = initial_load_config.get("date_type", "Invoicing")
                     initial_load_manager.resume_interrupted_jobs()
-                    job_id = initial_load_manager.start_job(
-                        start_date=start_date,
-                        end_date=end_date,
-                        subject_types=subject_types,
-                        date_type=date_type,
-                    )
-                    if job_id:
-                        logger.info("✓ Initial load job started: %s", job_id)
+                    done = initial_load_manager.finished_job_for(start_date, subject_types, date_type)
+                    if done is not None:
+                        logger.info(
+                            "Initial load from %s already finished (job %s, %s) — not "
+                            "restarting; use the UI/API to run it again",
+                            start_date_str, done.id, done.status,
+                        )
                     else:
-                        logger.info("Initial load: job already running, not starting new one")
+                        job_id = initial_load_manager.start_job(
+                            start_date=start_date,
+                            end_date=end_date,
+                            subject_types=subject_types,
+                            date_type=date_type,
+                        )
+                        if job_id:
+                            logger.info("✓ Initial load job started: %s", job_id)
+                        else:
+                            logger.info("Initial load: job already running, not starting new one")
             except Exception as e:
                 logger.warning(f"Failed to initialize Initial Load Manager: {e}")
                 logger.info("Continuing without initial load")

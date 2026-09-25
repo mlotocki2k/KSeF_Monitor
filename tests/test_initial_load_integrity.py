@@ -139,3 +139,25 @@ def test_api_accepts_spec_date_types():
         StartJobRequest(start_date="2024-01-01", end_date="2024-02-01", date_type=dt)
     with pytest.raises(ValueError):
         StartJobRequest(start_date="2024-01-01", end_date="2024-02-01", date_type="Bogus")
+
+
+def test_finished_job_is_found_for_autostart(manager, db):
+    s = db.get_session()
+    job = db.create_initial_load_job(s, ["Subject1", "Subject2"], datetime(2024, 1, 1),
+                                     datetime(2024, 6, 1), windows_total=2)
+    job.status = "completed_with_errors"
+    s.commit()
+    s.close()
+    found = manager.finished_job_for(datetime(2024, 1, 1), ["Subject2", "Subject1"], "Invoicing")
+    assert found is not None
+    assert manager.finished_job_for(datetime(2024, 2, 1), ["Subject1", "Subject2"], "Invoicing") is None
+    assert manager.finished_job_for(datetime(2024, 1, 1), ["Subject1"], "Invoicing") is None
+
+
+def test_failed_job_does_not_block_autostart(manager, db):
+    s = db.get_session()
+    job = db.create_initial_load_job(s, ["Subject1"], datetime(2024, 1, 1), datetime(2024, 6, 1), windows_total=1)
+    job.status = "failed"
+    s.commit()
+    s.close()
+    assert manager.finished_job_for(datetime(2024, 1, 1), ["Subject1"], "Invoicing") is None
