@@ -81,6 +81,10 @@ All notable changes to KSeF Monitor are documented here.
 - Webhook `method: GET` keeps the nested invoice object (sent as JSON in one parameter) and no
   longer sends an unverifiable signature; a warning explains that GET puts invoice data in URLs.
 - UPO forced session-map rebuild is rate-limited to once per hour.
+- **Invoice notifications that failed on every channel are retried** (up to 3 attempts, 15 min /
+  60 min apart, within 3 days; polling invoices with a logged failure only) instead of being lost.
+- Initial load stores `form_code` like polling (`schemaVersion`); a negative `Retry-After` no
+  longer crashes the 429 handling.
 - Invalid `monitoring` values (e.g. string intervals) are rejected at startup instead of
   silently stopping every cycle; previously working values keep their meaning.
 - JSON-state mode: a subject with a longer poll interval is polled after upgrading an old
