@@ -187,6 +187,14 @@ class Scheduler:
         # First run always executes
         if self.last_run is None:
             self.last_run = now
+            if self.mode in ('daily', 'weekly'):
+                # The startup run covers today's times that already passed —
+                # otherwise each of them fires again right after startup.
+                self.completed_times_today = {
+                    t.strftime('%H:%M')
+                    for t in self._parse_times(self.config['time'])
+                    if now.time() >= t
+                }
             return True
 
         if self.mode == 'simple':

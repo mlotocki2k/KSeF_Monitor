@@ -267,3 +267,36 @@ class TestSchedulerIntervalSeconds:
 
     def test_daily_returns_none(self):
         assert Scheduler({"mode": "daily", "time": "09:00"}).interval_seconds() is None
+
+
+# ── Startup must not trigger an extra run for times already passed today ─────
+
+
+
+
+@pytest.mark.parametrize("config", [
+    {"mode": "daily", "time": ["08:00", "09:00"]},
+    {"mode": "weekly", "days": ["friday"], "time": "08:00"},
+])
+def test_startup_after_scheduled_time_runs_once(config):
+    from datetime import datetime as _dt
+    from unittest.mock import patch as _patch
+    s = Scheduler(config)
+    with _patch("app.scheduler.datetime") as fake_dt:
+        fake_dt.now.return_value = _dt(2026, 9, 25, 10, 0)  # Friday
+        assert s.should_run() is True   # startup run
+        fake_dt.now.return_value = _dt(2026, 9, 25, 10, 1)
+        assert s.should_run() is False  # 08:00/09:00 already covered
+
+
+def test_startup_before_scheduled_time_still_runs_at_that_time():
+    from datetime import datetime as _dt
+    from unittest.mock import patch as _patch
+    s = Scheduler({"mode": "daily", "time": "12:00"})
+    with _patch("app.scheduler.datetime") as fake_dt:
+        fake_dt.now.return_value = _dt(2026, 9, 25, 10, 0)
+        assert s.should_run() is True
+        fake_dt.now.return_value = _dt(2026, 9, 25, 11, 0)
+        assert s.should_run() is False
+        fake_dt.now.return_value = _dt(2026, 9, 25, 12, 0)
+        assert s.should_run() is True

@@ -238,8 +238,21 @@ class KSeFClient:
         value = "".join(ch if ch.isprintable() else " " for ch in str(raw))
         logger.warning("KSeF X-System-Warning: %s", value[: self.SYSTEM_WARNING_MAX_LEN])
 
+    API_ERROR_DETAILS_MAX_LEN = 1000
+
+    @classmethod
+    def _extract_api_error_details(cls, response: requests.Response) -> str:
+        """Error details for logging — response text is external input, so
+        control characters are replaced (log injection) and length is capped."""
+        try:
+            text = cls._format_api_error_details(response)
+        except Exception:
+            text = f"status={getattr(response, 'status_code', '?')}"
+        text = "".join(ch if ch.isprintable() else " " for ch in text)
+        return text[: cls.API_ERROR_DETAILS_MAX_LEN]
+
     @staticmethod
-    def _extract_api_error_details(response: requests.Response) -> str:
+    def _format_api_error_details(response: requests.Response) -> str:
         """
         Extract human-readable error details from KSeF API error response.
 

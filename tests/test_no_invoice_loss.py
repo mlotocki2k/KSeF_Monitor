@@ -212,3 +212,21 @@ def test_metrics_endpoint_label_bounded(client, path, label):
 
 def test_metrics_endpoint_label_external_url(client):
     assert client._metrics_endpoint("https://blob.example/x?sig=SECRET") == "external"
+
+
+def test_api_error_details_strip_control_chars(client):
+    resp = MagicMock()
+    resp.status_code = 400
+    resp.headers = {"Content-Type": "application/problem+json"}
+    resp.json.return_value = {"title": "Bad\nFAKE LOG LINE\r", "detail": "x" * 5000}
+    out = client._extract_api_error_details(resp)
+    assert "\n" not in out and "\r" not in out
+    assert len(out) <= client.API_ERROR_DETAILS_MAX_LEN
+
+
+def test_api_error_details_non_dict_body(client):
+    resp = MagicMock()
+    resp.status_code = 500
+    resp.headers = {"Content-Type": "application/json"}
+    resp.json.return_value = ["unexpected"]
+    assert client._extract_api_error_details(resp) == "status=500"
