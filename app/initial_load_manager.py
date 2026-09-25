@@ -93,6 +93,19 @@ class InitialLoadManager:
 
     # ── Public API ────────────────────────────────────────────────────────────
 
+    def _persisted_failed_windows(self, job_id: str) -> int:
+        """Failed windows recorded for this job across all its runs."""
+        from .database import InitialLoadWindow
+
+        session = self.db.get_session()
+        try:
+            return (session.query(InitialLoadWindow)
+                    .filter_by(job_id=job_id, status="failed").count())
+        except Exception:
+            return 0
+        finally:
+            session.close()
+
     def finished_job_for(self, start_date: datetime, subject_types: List[str],
                          date_type: str) -> Optional[InitialLoadJob]:
         """A finished job for the same range start / subjects / date type, if any.
@@ -324,8 +337,9 @@ class InitialLoadManager:
                 for f_start, f_end, f_err in failures:
                     all_failures.append((subject_type, f_start, f_end, f_err))
 
-            # Final status
-            failed_count = len(all_failures)
+            # Final status — failed windows persisted by earlier runs of this job
+            # count too: a resume skips their range, so they stay unimported.
+            failed_count = max(len(all_failures), self._persisted_failed_windows(job_id))
             if self._cancel_event.is_set():
                 final_status = "cancelled"
                 logger.info(

@@ -161,3 +161,21 @@ def test_failed_job_does_not_block_autostart(manager, db):
     s.commit()
     s.close()
     assert manager.finished_job_for(datetime(2024, 1, 1), ["Subject1"], "Invoicing") is None
+
+
+def test_resumed_job_keeps_earlier_failed_windows(manager, db):
+    """Codex finding: after a resume, failures of earlier runs were forgotten."""
+    s = db.get_session()
+    job = db.create_initial_load_job(s, ["Subject1"], datetime(2024, 1, 1), datetime(2024, 2, 1), windows_total=2)
+    job.status = "pending"
+    s.commit()
+    job_id = job.id
+    db.record_initial_load_window(s, job_id=job_id, subject_type="Subject1",
+                                  window_start=datetime(2024, 1, 1), window_end=datetime(2024, 1, 15),
+                                  status="failed", error_message="boom")
+    s.commit()
+    s.close()
+    with patch.object(manager, "_process_subject_type", return_value=(0, 0, [])):
+        manager._run_job(job_id)
+    with db.get_session() as s:
+        assert db.get_initial_load_job(s, job_id).status == "completed_with_errors"
