@@ -290,6 +290,7 @@ def main():
                     api_app,
                     host=api_config.get("bind_address", "127.0.0.1"),
                     port=api_config.get("port", 8080),
+                    forwarded_allow_ips=api_config.get("forwarded_allow_ips"),
                 )
                 api_server.start()
                 logger.info("✓ REST API server started")

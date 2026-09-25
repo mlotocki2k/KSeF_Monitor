@@ -130,7 +130,7 @@
       "default": "60/minute",
       "trigger": "2/minute"
     },
-    "description": "REST API for web UI and integrations. Disabled by default. If auth_token is empty when enabled, a random token is auto-generated and logged at startup. ui_enabled: enable server-rendered Web UI at /ui (default: true). rate_limit: slowapi rate limiting (60 req/min default, 2/min for trigger)."
+    "description": "REST API for web UI and integrations. Disabled by default. If auth_token is empty when enabled, a random token is auto-generated into /data/api_token.txt; it is also the install code asked for by the first-launch /ui/setup wizard. ui_enabled: enable server-rendered Web UI at /ui (default: true). rate_limit: slowapi rate limiting (60 req/min default, 2/min for trigger). forwarded_allow_ips: optional, IP(s) of a trusted reverse proxy (e.g. \"192.168.8.5\") so rate limits and login lockout see the real client IP."
   },
   "initial_load": {
     "enabled": false,
