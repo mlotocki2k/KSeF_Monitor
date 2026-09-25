@@ -53,6 +53,9 @@ class InvoiceMonitor:
     # (incl. the first) and how far back they are retried
     NOTIFY_RETRY_MAX = 3
     NOTIFY_RETRY_WINDOW = timedelta(days=3)
+    # wait after the n-th failed attempt: 15 min, then 60 min (an outage is
+    # not retried within the same cycle)
+    NOTIFY_RETRY_BACKOFF = (timedelta(minutes=15), timedelta(minutes=60))
 
     # Min. odstęp wymuszonej przebudowy mapy sesji UPO (listuje wszystkie sesje)
     SESSION_MAP_FORCE_INTERVAL = 3600
@@ -497,8 +500,9 @@ class InvoiceMonitor:
                     .filter(NotificationLog.event_type == "invoice",
                             NotificationLog.status == "sent",
                             NotificationLog.invoice_id.isnot(None)))
-            candidates = (
-                session.query(Invoice)
+            now_naive = datetime.now(timezone.utc).replace(tzinfo=None)
+            rows = (
+                session.query(Invoice, func.count(NotificationLog.id), func.max(NotificationLog.sent_at))
                 .join(NotificationLog, NotificationLog.invoice_id == Invoice.id)
                 .filter(NotificationLog.event_type == "invoice",
                         NotificationLog.status == "failed",
@@ -509,10 +513,16 @@ class InvoiceMonitor:
                 # each attempt logs one failed row per channel
                 .having(func.count(NotificationLog.id) < self.NOTIFY_RETRY_MAX * channels)
                 .order_by(Invoice.id)
-                .limit(50)
+                .limit(200)
                 .all()
             )
-            for inv in candidates:
+            candidates = []
+            for inv, failed_rows, last_attempt in rows:
+                attempts = max(1, failed_rows // channels)
+                wait = self.NOTIFY_RETRY_BACKOFF[min(attempts, len(self.NOTIFY_RETRY_BACKOFF)) - 1]
+                if last_attempt is None or now_naive - last_attempt >= wait:
+                    candidates.append(inv)
+            for inv in candidates[:50]:
                 try:
                     meta = json.loads(inv.raw_metadata or "")
                 except ValueError:

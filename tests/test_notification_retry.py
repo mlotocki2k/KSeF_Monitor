@@ -4,6 +4,7 @@ instead of being lost because the invoice row already exists.
 """
 
 import json
+from datetime import timedelta
 from unittest.mock import MagicMock
 
 from app.database import Base, Database, Invoice, NotificationLog
@@ -27,11 +28,28 @@ def _setup(mock_config, tmp_path, sample_invoice):
     return m, db, channel
 
 
+def _age_logs(db, hours=2):
+    """Pretend the logged attempts happened earlier (retry backoff)."""
+    with db.get_session() as s:
+        for row in s.query(NotificationLog).all():
+            row.sent_at = row.sent_at - timedelta(hours=hours)
+        s.commit()
+
+
+def test_no_second_attempt_within_the_same_cycle(mock_config, tmp_path, sample_invoice):
+    m, _db, channel = _setup(mock_config, tmp_path, sample_invoice)
+    channel.render_and_send.return_value = False
+    m._check_and_drain()
+    assert channel.render_and_send.call_count == 1
+
+
 def test_failed_notification_is_retried_next_cycle(mock_config, tmp_path, sample_invoice):
     m, db, channel = _setup(mock_config, tmp_path, sample_invoice)
     channel.render_and_send.return_value = False     # outage
     m.check_for_new_invoices()
     channel.render_and_send.return_value = True      # channel back
+    assert m.retry_failed_notifications() == 0       # backoff not over yet
+    _age_logs(db)
     assert m.retry_failed_notifications() == 1
     with db.get_session() as s:
         sent = s.query(NotificationLog).filter_by(event_type="invoice", status="sent").count()
@@ -40,10 +58,11 @@ def test_failed_notification_is_retried_next_cycle(mock_config, tmp_path, sample
 
 
 def test_retries_are_bounded(mock_config, tmp_path, sample_invoice):
-    m, _db, channel = _setup(mock_config, tmp_path, sample_invoice)
+    m, db, channel = _setup(mock_config, tmp_path, sample_invoice)
     channel.render_and_send.return_value = False
     m.check_for_new_invoices()
     for _ in range(10):
+        _age_logs(db)
         m.retry_failed_notifications()
     assert channel.render_and_send.call_count == m.NOTIFY_RETRY_MAX
 
