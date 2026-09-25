@@ -571,6 +571,8 @@ class Database:
         try:
             project_root = Path(__file__).resolve().parent.parent
             alembic_cfg = Config(str(project_root / "alembic.ini"))
+            # Keep the app's logging: env.py configures logging only for the CLI
+            alembic_cfg.attributes["configure_logger"] = False
             # Override sqlalchemy.url so each Database instance (e.g. test
             # fixtures using tmp_path) targets the correct file.
             alembic_cfg.set_main_option(
