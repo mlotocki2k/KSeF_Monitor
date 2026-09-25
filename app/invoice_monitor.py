@@ -43,6 +43,9 @@ class InvoiceMonitor:
     # previously 3 months). Queried span = MAX - 1 = 99 days, safely below the limit.
     MAX_DATE_RANGE_DAYS = 100
 
+    # Each query re-covers this much before last_check (see _get_date_from)
+    POLL_WINDOW_OVERLAP = timedelta(minutes=15)
+
     # POST /invoices/query/metadata hour limit (KSeF x-rate-limits) — detekcja
     METADATA_HOUR_LIMIT = 20
 
@@ -751,7 +754,11 @@ class InvoiceMonitor:
         """Determine date_from for a subject_type. DB has priority over JSON state."""
         last = self._get_last_check(db_session, subject_type, json_state)
         if last is not None:
-            return last
+            # Overlap consecutive windows: KSeF guarantees completeness only
+            # below permanentStorageHwmDate, so an invoice may become queryable
+            # after its (Invoicing) date already fell behind last_check.
+            # Duplicates are removed by dedup (ksef_number / seen hashes).
+            return last - self.POLL_WINDOW_OVERLAP
         logger.info("First run - checking last 24 hours")
         return now - timedelta(hours=24)
 

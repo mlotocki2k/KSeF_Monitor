@@ -310,3 +310,12 @@ def test_error_throttle_resets_after_success(mock_config, tmp_path):
     assert m._should_notify_error("Error occurred: X") is True
     m._last_error_notice = None  # what run() does after a successful cycle
     assert m._should_notify_error("Error occurred: X") is True
+
+
+def test_poll_window_overlaps_previous_one(mock_config, tmp_path):
+    m, db = _monitor(mock_config, tmp_path)
+    _seed_state(m, db, "Subject1", datetime(2026, 9, 20, 8, 0))
+    with db.get_session() as s:
+        last = m._get_last_check(s, "Subject1", {})
+        date_from = m._get_date_from(s, "Subject1", {}, last + timedelta(hours=1))
+    assert date_from == last - m.POLL_WINDOW_OVERLAP
