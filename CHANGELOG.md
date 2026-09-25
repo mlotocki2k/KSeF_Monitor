@@ -45,6 +45,19 @@ All notable changes to KSeF Monitor are documented here.
 - **iOS push:** a failed registration (Worker down during a reset) is no longer reported as
   registered; it is retried on startup and `POST /push/reset` answers 502.
 - `db_admin delete-invoices` works for invoices with artifacts.
+- **Colliding file names** (same invoice number and date from different sellers) no longer
+  link one invoice to another's PDF/XML — the API served the wrong document. The second
+  invoice gets `<name>_<KSeF number>`; the naming pattern is unchanged.
+- Polling windows overlap by 15 minutes (KSeF guarantees completeness only below
+  `permanentStorageHwmDate`); dedup drops the duplicates.
+- The config auto-start of the initial load no longer re-exports the whole history on
+  every container start once a job for the same range has finished.
+- `python -m app.user_admin` finds the container config (`/config`, `/data`) and
+  `/data/invoices.db`.
+- Pushover `message_priority: 2` sends the required `retry`/`expire`.
+- PEF fallback PDF no longer fails on `<` in names.
+- JSON-state mode: a subject with a longer poll interval is polled after upgrading an old
+  state file; the error-push throttle resets after a successful cycle.
 
 ### Security
 
@@ -74,6 +87,11 @@ All notable changes to KSeF Monitor are documented here.
   paired device names are HTML-escaped on the push page.
 - Uncached `/invoices/{n}/xml|pdf` answers 503 instead of blocking in the KSeF limiter.
 - `db_admin export-invoices` CSV neutralizes spreadsheet formulas.
+- Slack/Discord notifications escape invoice fields: no `<!channel>` pings or disguised
+  links from a seller name (`slack_escape`, `discord_escape` template filters).
+- Same-origin check requires matching ports when both sides state one.
+- The KSeF budget gate also honors an active 429 pause and fails closed on limiter errors.
+- Control characters from invoice fields are removed from file names (log injection).
 - Docker image installs a hash-pinned `requirements.lock` (`--require-hashes`); the
   Synology compose drops all capabilities except CHOWN/DAC_READ_SEARCH/FOWNER/SETUID/SETGID and sets
   `no-new-privileges`. GitHub workflows: external values whitelisted, actions pinned to
