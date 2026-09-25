@@ -17,9 +17,9 @@ from .scheduler import Scheduler
 from .notifiers import NotificationManager
 from .invoice_pdf_generator import generate_invoice_pdf, REPORTLAB_AVAILABLE
 from .invoice_xml_parser import detect_schema_type, SCHEMA_TYPE_UNKNOWN
-from .database import Database, Invoice, InvoiceArtifact
+from .database import Database, Invoice, InvoiceArtifact, NotificationLog
 from .ksef_client import KSeFQueryError
-from sqlalchemy import or_
+from sqlalchemy import func, or_
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import aliased
 
@@ -48,6 +48,11 @@ class InvoiceMonitor:
 
     # Each query re-covers this much before last_check (see _get_date_from)
     POLL_WINDOW_OVERLAP = timedelta(minutes=15)
+
+    # Invoice notifications that failed on every channel: attempts in total
+    # (incl. the first) and how far back they are retried
+    NOTIFY_RETRY_MAX = 3
+    NOTIFY_RETRY_WINDOW = timedelta(days=3)
 
     # Min. odstęp wymuszonej przebudowy mapy sesji UPO (listuje wszystkie sesje)
     SESSION_MAP_FORCE_INTERVAL = 3600
@@ -469,6 +474,58 @@ class InvoiceMonitor:
                 raise
             except Exception as e:
                 logger.error("Saving artifacts for %s failed (invoice kept): %s", safe_ksef_log, e)
+
+    def retry_failed_notifications(self) -> int:
+        """Re-send invoice notifications that failed on every channel.
+
+        The invoice row is committed even when no channel delivered, so the
+        next cycle does not see it as new and the notification would be lost.
+        Retried: invoices with a logged failure and no logged success, from the
+        polling (not the historical import), from the last NOTIFY_RETRY_WINDOW,
+        until NOTIFY_RETRY_MAX attempts. Invoices without any log row are not
+        touched (older versions often failed to write the log).
+        Returns the number of invoices delivered now.
+        """
+        channels = len(getattr(self.notifier, "notifiers", None) or [])
+        if self.db is None or channels == 0:
+            return 0
+        cutoff = (datetime.now(timezone.utc) - self.NOTIFY_RETRY_WINDOW).replace(tzinfo=None)
+        session = self.db.get_session()
+        delivered = 0
+        try:
+            sent = (session.query(NotificationLog.invoice_id)
+                    .filter(NotificationLog.event_type == "invoice",
+                            NotificationLog.status == "sent",
+                            NotificationLog.invoice_id.isnot(None)))
+            candidates = (
+                session.query(Invoice)
+                .join(NotificationLog, NotificationLog.invoice_id == Invoice.id)
+                .filter(NotificationLog.event_type == "invoice",
+                        NotificationLog.status == "failed",
+                        Invoice.id.notin_(sent),
+                        Invoice.created_at >= cutoff,
+                        or_(Invoice.source.is_(None), Invoice.source != "initial_load"))
+                .group_by(Invoice.id)
+                # each attempt logs one failed row per channel
+                .having(func.count(NotificationLog.id) < self.NOTIFY_RETRY_MAX * channels)
+                .order_by(Invoice.id)
+                .limit(50)
+                .all()
+            )
+            for inv in candidates:
+                try:
+                    meta = json.loads(inv.raw_metadata or "")
+                except ValueError:
+                    continue
+                context = self.build_template_context(meta, inv.subject_type)
+                context["_invoice_id"] = inv.id
+                if self.notifier.send_invoice_notification(context, db_session=session):
+                    delivered += 1
+                    logger.info("Powiadomienie o fakturze %s wysłane ponownie", inv.ksef_number)
+                session.commit()
+        finally:
+            session.close()
+        return delivered
 
     def _enqueue_artifacts(self, db_session, invoice_id: int) -> None:
         """Faza 1 (lazy): zarejestruj artefakty jako pending — pobranie w Fazie 2."""
@@ -1412,6 +1469,10 @@ class InvoiceMonitor:
             self.check_for_new_invoices()
         except KSeFQueryError as e:
             query_error = e
+        try:
+            self.retry_failed_notifications()
+        except Exception as e:
+            logger.error("Ponowienie powiadomień nie powiodło się: %s", e, exc_info=True)
         if self.lazy_artifacts:
             try:
                 self.process_pending_artifacts()
