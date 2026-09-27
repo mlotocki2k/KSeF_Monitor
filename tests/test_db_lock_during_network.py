@@ -55,6 +55,20 @@ def test_polling_releases_write_lock_before_xml_download(mock_config, tmp_path, 
     assert results == [True]
 
 
+def test_write_lock_released_before_pdf_rendering(mock_config, tmp_path, sample_invoice):
+    """PDF rendering may call the CIRFMF generator over HTTP (30 s timeout)."""
+    from unittest.mock import patch
+    m, _db, db_path = _monitor(mock_config, tmp_path)
+    m.save_pdf = True
+    m.ksef.get_invoices_metadata.return_value = [sample_invoice]
+    m.ksef.get_invoice_xml.return_value = {"xml_content": "<Faktura/>"}
+    results = []
+    with patch("app.invoice_monitor.generate_invoice_pdf", side_effect=_probe(db_path, results)), \
+         patch("app.invoice_monitor.REPORTLAB_AVAILABLE", True):
+        m.check_for_new_invoices()
+    assert results == [True]
+
+
 def test_lazy_polling_commits_each_invoice(mock_config, tmp_path, sample_invoice):
     """The next invoice's notification must not run inside the previous one's
     write transaction (lock would grow with the number of new invoices)."""

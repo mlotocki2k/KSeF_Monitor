@@ -103,6 +103,7 @@ class PushManager:
                     raise
                 time.sleep(1)
         if loaded:
+            self._adopt_fallback_json()
             self._ensure_registered()
             return
 
@@ -113,10 +114,10 @@ class PushManager:
                 # Migrate only into a real DB. Without one the JSON file IS the
                 # storage: renaming it lost the credentials (and unpaired every
                 # device) on every second restart.
-                if self.db and self._save_to_db():
-                    # only after a committed DB write — otherwise the JSON file
-                    # is still the only copy of the credentials
-                    self._rename_legacy_json()
+                if self.db:
+                    # renames the JSON only after a committed DB write —
+                    # otherwise it is still the only copy of the credentials
+                    self._save_to_db()
                 self._ensure_registered()
                 return
 
@@ -179,6 +180,10 @@ class PushManager:
                 )
                 session.commit()
                 logger.info("Push config saved to DB (instance: %s)", self.instance_id)
+                # a leftover fallback/legacy JSON is now stale — retire it, so a
+                # JSON file next to a DB row always means "newer than the DB"
+                if self.push_config_path.exists():
+                    self._rename_legacy_json()
                 return True
             except Exception:
                 session.rollback()
@@ -232,21 +237,54 @@ class PushManager:
                 "registered_at": self.registered_at,
             }
 
+            # temp file + atomic replace: a failed write (disk full) must not
+            # truncate the only copy of the credentials
+            tmp_path = self.push_config_path.with_suffix(".json.tmp")
             fd = os.open(
-                str(self.push_config_path),
-                os.O_WRONLY | os.O_CREAT | os.O_TRUNC,
+                str(tmp_path),
+                os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0),
                 0o600,
             )
             try:
                 with os.fdopen(fd, 'w', encoding='utf-8') as f:
                     json.dump(data, f, indent=2, ensure_ascii=False)
+                    f.flush()
+                    os.fsync(f.fileno())
+                os.replace(tmp_path, self.push_config_path)
             except Exception:
+                try:
+                    tmp_path.unlink()
+                except OSError:
+                    pass
                 raise
 
             logger.info("Push config saved to %s (DB fallback)", self.push_config_path)
 
         except OSError as e:
             logger.error("Failed to save push config to JSON: %s", e)
+
+    def _adopt_fallback_json(self):
+        """Take over credentials saved to JSON when the DB write failed
+        (regenerate/reset). Every committed DB save retires the JSON file, so
+        one found next to a DB row is newer than it. An unreadable or
+        incomplete file never replaces the DB credentials."""
+        if not self.push_config_path.exists():
+            return
+        try:
+            with open(self.push_config_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+        except (json.JSONDecodeError, OSError) as e:
+            logger.warning("Ignoring unreadable push_config.json: %s", e)
+            return
+        if not isinstance(data, dict) or not (data.get("instance_id") and data.get("instance_key")):
+            logger.warning("Ignoring incomplete push_config.json")
+            return
+        self.instance_id = data["instance_id"]
+        self.instance_key = data["instance_key"]
+        self.pairing_code = data.get("pairing_code")
+        self.registered_at = data.get("registered_at")
+        logger.info("Push config taken over from the JSON fallback (instance: %s)", self.instance_id)
+        self._save_to_db()
 
     def _rename_legacy_json(self):
         """Rename push_config.json to .migrated after DB migration."""

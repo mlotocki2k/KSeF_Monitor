@@ -1339,6 +1339,10 @@ class InvoiceMonitor:
 
         # Generate and save PDF
         if self.save_pdf:
+            # rendering may call the CIRFMF generator over HTTP — commit the
+            # XML artifact first so no write lock is held meanwhile
+            if db_session is not None:
+                db_session.commit()
             if REPORTLAB_AVAILABLE:
                 pdf_orig_path = target_dir / f"{base_name}.pdf"
                 pdf_path = self._resolve_safe_path(pdf_orig_path)

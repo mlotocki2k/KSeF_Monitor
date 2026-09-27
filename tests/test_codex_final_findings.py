@@ -88,6 +88,46 @@ def test_failed_db_migration_keeps_json_store(_reg, tmp_path):
     assert pm.instance_id == saved_id
 
 
+@patch.object(PushManager, "_register_instance", return_value=True)
+def test_regenerated_code_survives_failed_db_save(_reg, tmp_path):
+    db = Database(str(tmp_path / "p.db"))
+    db.create_tables()
+    pm = PushManager(_make_config(), data_dir=str(tmp_path), db=db)
+    resp = MagicMock(status_code=200)
+    pm.session.post = MagicMock(return_value=resp)
+    with patch.object(db, "save_push_instance", side_effect=OperationalError("UPDATE", {}, Exception("locked"))):
+        assert pm.regenerate_pairing_code() is True
+    new_code = pm.pairing_code
+    pm2 = PushManager(_make_config(), data_dir=str(tmp_path), db=db)
+    assert pm2.pairing_code == new_code
+    # adopted into the DB, fallback file retired
+    assert not (tmp_path / "push_config.json").exists()
+    pm3 = PushManager(_make_config(), data_dir=str(tmp_path), db=db)
+    assert pm3.pairing_code == new_code
+
+
+@patch.object(PushManager, "_register_instance", return_value=True)
+def test_corrupt_fallback_json_does_not_replace_db_credentials(_reg, tmp_path):
+    db = Database(str(tmp_path / "p.db"))
+    db.create_tables()
+    pm = PushManager(_make_config(), data_dir=str(tmp_path), db=db)
+    (tmp_path / "push_config.json").write_text("{broken", encoding="utf-8")
+    pm2 = PushManager(_make_config(), data_dir=str(tmp_path), db=db)
+    assert pm2.instance_id == pm.instance_id and pm2.instance_key == pm.instance_key
+
+
+@patch.object(PushManager, "_register_instance", return_value=True)
+def test_failed_json_write_keeps_previous_file(_reg, tmp_path):
+    pm = PushManager(_make_config(), data_dir=str(tmp_path))
+    path = tmp_path / "push_config.json"
+    before = path.read_text(encoding="utf-8")
+    pm.pairing_code = "NEWCODE"
+    with patch("app.push_manager.json.dump", side_effect=OSError(28, "No space left on device")):
+        pm._save_to_json()
+    assert path.read_text(encoding="utf-8") == before
+    assert not list(tmp_path.glob("*.tmp"))
+
+
 def test_json_dedup_keeps_more_than_1000_entries(mock_config, tmp_path, sample_invoice):
     mock_config.config["monitoring"]["subject_types"] = ["Subject2"]
     ksef = MagicMock()
