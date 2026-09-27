@@ -145,6 +145,22 @@ def test_invalid_utf8_json_keeps_db_credentials(_reg, tmp_path):
     assert pm2.instance_id == pm.instance_id
 
 
+@pytest.mark.parametrize("content", ["{broken", "[]", json.dumps({"instance_id": "X"})],
+                         ids=["malformed", "not-object", "incomplete"])
+def test_no_db_regenerated_credentials_are_persisted(tmp_path, content):
+    """JSON-only mode: credentials regenerated from a broken file must be saved,
+    or every restart creates a new identity (devices lose pairing)."""
+    def _register(self):
+        self.registered_at = "2026-01-01T00:00:00+00:00"
+        return True
+
+    (tmp_path / "push_config.json").write_text(content, encoding="utf-8")
+    with patch.object(PushManager, "_register_instance", _register):
+        pm1 = PushManager(_make_config(), data_dir=str(tmp_path))
+        pm2 = PushManager(_make_config(), data_dir=str(tmp_path))
+    assert pm2.instance_id == pm1.instance_id and pm2.instance_key == pm1.instance_key
+
+
 @patch.object(PushManager, "_register_instance", return_value=True)
 def test_unreadable_json_store_is_not_replaced(_reg, tmp_path):
     from app.push_manager import PushStorageUnavailable

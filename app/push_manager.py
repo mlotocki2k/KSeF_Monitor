@@ -83,6 +83,7 @@ class PushManager:
         self.instance_key: Optional[str] = None
         self.pairing_code: Optional[str] = None
         self.registered_at: Optional[str] = None
+        self._db_updated_at: Optional[datetime] = None  # freshness of the DB row
 
         self.session = requests.Session()
         self.session.verify = True
@@ -109,12 +110,13 @@ class PushManager:
 
         # Try legacy JSON file (and migrate to DB if found)
         if self.push_config_path.exists():
-            self._load_from_json()
+            regenerated = self._load_from_json()
             if self.instance_id and self.instance_key:
                 # Migrate only into a real DB. Without one the JSON file IS the
                 # storage: renaming it lost the credentials (and unpaired every
-                # device) on every second restart.
-                if self.db:
+                # device) on every second restart. Credentials regenerated from
+                # a broken file are saved in both modes (JSON fallback w/o DB).
+                if self.db or regenerated:
                     # renames the JSON only after a committed DB write —
                     # otherwise it is still the only copy of the credentials
                     self._save_to_db()
@@ -200,10 +202,16 @@ class PushManager:
     # ── Legacy JSON Storage ──────────────────────────────────────────────
 
     def _load_from_json(self):
-        """Load credentials from legacy push_config.json file."""
+        """Load credentials from legacy push_config.json file.
+
+        Returns True when the file was broken and new credentials were
+        generated (the caller must persist them).
+        """
         try:
             with open(self.push_config_path, 'r', encoding='utf-8') as f:
                 data = json.load(f)
+            if not isinstance(data, dict):
+                raise ValueError("push_config.json is not a JSON object")
 
             self.instance_id = data.get("instance_id")
             self.instance_key = data.get("instance_key")
@@ -213,11 +221,11 @@ class PushManager:
             if not self.instance_id or not self.instance_key:
                 logger.warning("Push config JSON incomplete, regenerating credentials")
                 self._generate_credentials()
-                if self._register_instance():
-                    return  # caller will save to DB
-                return
+                self._register_instance()
+                return True
 
             logger.info("Push config loaded from JSON (instance: %s)", self.instance_id)
+            return False
 
         except OSError as e:
             # The file exists but cannot be read (permissions, I/O): replacing
@@ -227,6 +235,7 @@ class PushManager:
             logger.error("Failed to load push config JSON: %s", e)
             self._generate_credentials()
             self._register_instance()
+            return True
 
     def _save_to_json(self):
         """Save credentials to push_config.json (fallback when DB unavailable)."""
