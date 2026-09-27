@@ -219,7 +219,11 @@ class PushManager:
 
             logger.info("Push config loaded from JSON (instance: %s)", self.instance_id)
 
-        except (json.JSONDecodeError, OSError) as e:
+        except OSError as e:
+            # The file exists but cannot be read (permissions, I/O): replacing
+            # it with new credentials would silently unpair every device.
+            raise PushStorageUnavailable(f"push_config.json unreadable: {e}") from e
+        except ValueError as e:  # corrupt JSON / encoding
             logger.error("Failed to load push config JSON: %s", e)
             self._generate_credentials()
             self._register_instance()

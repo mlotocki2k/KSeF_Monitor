@@ -146,6 +146,24 @@ def test_invalid_utf8_json_keeps_db_credentials(_reg, tmp_path):
 
 
 @patch.object(PushManager, "_register_instance", return_value=True)
+def test_unreadable_json_store_is_not_replaced(_reg, tmp_path):
+    from app.push_manager import PushStorageUnavailable
+    PushManager(_make_config(), data_dir=str(tmp_path))
+    path = tmp_path / "push_config.json"
+    before = path.read_text(encoding="utf-8")
+    real_open = open
+
+    def _open(file, *a, **k):
+        if str(file) == str(path) and "r" in (a[0] if a else k.get("mode", "r")):
+            raise PermissionError(13, "Permission denied")
+        return real_open(file, *a, **k)
+
+    with patch("builtins.open", _open), pytest.raises(PushStorageUnavailable):
+        PushManager(_make_config(), data_dir=str(tmp_path))
+    assert path.read_text(encoding="utf-8") == before
+
+
+@patch.object(PushManager, "_register_instance", return_value=True)
 def test_failed_json_write_keeps_previous_file(_reg, tmp_path):
     pm = PushManager(_make_config(), data_dir=str(tmp_path))
     path = tmp_path / "push_config.json"
