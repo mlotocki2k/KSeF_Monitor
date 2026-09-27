@@ -176,6 +176,22 @@ def test_json_without_pairing_code_keeps_instance_and_gets_new_code(tmp_path):
     assert pm2.pairing_code == pm.pairing_code
 
 
+def test_registered_json_without_code_never_invents_a_local_code(tmp_path):
+    """Only the service can install a code for a registered instance; a failed
+    repair must be retried on the next start, not replaced by a local code."""
+    (tmp_path / "push_config.json").write_text(json.dumps(
+        {"instance_id": "INST", "instance_key": "KEY",
+         "registered_at": "2026-01-01T00:00:00+00:00"}), encoding="utf-8")
+    register = MagicMock(return_value=True)
+    with patch.object(PushManager, "_register_instance", register), \
+         patch.object(PushManager, "regenerate_pairing_code", return_value=False) as regen:
+        pm = PushManager(_make_config(), data_dir=str(tmp_path))
+        assert (pm.instance_id, pm.pairing_code) == ("INST", None)
+        PushManager(_make_config(), data_dir=str(tmp_path))
+    assert regen.call_count == 2          # retried on the next start
+    register.assert_not_called()          # no re-registration with an invented code
+
+
 def test_regenerate_reports_failure_when_nothing_is_saved(tmp_path):
     with patch.object(PushManager, "_register_instance", _registering):
         pm = PushManager(_make_config(), data_dir=str(tmp_path))

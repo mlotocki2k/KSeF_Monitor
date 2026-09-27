@@ -115,12 +115,15 @@ class PushManager:
                 if not self.pairing_code:
                     # keep the instance (paired devices), replace only the code
                     logger.warning("push_config.json has no pairing code — generating a new one")
-                    if self.registered_at and self.regenerate_pairing_code():
-                        pass  # the service knows the new code; already saved
+                    if self.registered_at:
+                        # only the service can install a new code for a
+                        # registered instance; if it fails, sending still works
+                        # and the repair is retried on the next start
+                        if not self.regenerate_pairing_code():
+                            logger.warning("Pairing code not repaired — retried on next start")
                     else:
                         self.pairing_code = secrets.token_hex(8).upper()
-                        self.registered_at = None  # register with the new code
-                        regenerated = True
+                        regenerated = True  # registered with this code below
                 # Migrate only into a real DB. Without one the JSON file IS the
                 # storage: renaming it lost the credentials (and unpaired every
                 # device) on every second restart. Credentials regenerated from
