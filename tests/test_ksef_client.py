@@ -97,6 +97,13 @@ class TestKSeFClientInit:
         c = KSeFClient(mock_config)
         assert c.date_type == "Invoicing"
 
+    def test_missing_date_type_uses_default_without_warning(self, mock_config, caplog):
+        mock_config.config["monitoring"].pop("date_type", None)
+        with caplog.at_level("WARNING", logger="app.ksef_client"):
+            c = KSeFClient(mock_config)
+        assert c.date_type == "Invoicing"
+        assert "Invalid date_type" not in caplog.text
+
 
 class TestKSeFClientValidateKsefNumber:
     """Tests for _validate_ksef_number()."""

@@ -105,7 +105,8 @@ class KSeFClient:
         self.session.headers["X-Error-Format"] = "problem-details"
         self._seen_system_warnings: set = set()
 
-        date_type = config.get("monitoring", "date_type")
+        # absent key = the default, not an invalid value (no false warning)
+        date_type = config.get("monitoring", "date_type") or "Invoicing"
         if date_type not in self.VALID_DATE_TYPES:
             logger.warning(f"Invalid date_type '{date_type}', falling back to 'Invoicing'")
             date_type = "Invoicing"
