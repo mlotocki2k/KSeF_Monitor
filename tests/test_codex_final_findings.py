@@ -161,6 +161,44 @@ def test_no_db_regenerated_credentials_are_persisted(tmp_path, content):
     assert pm2.instance_id == pm1.instance_id and pm2.instance_key == pm1.instance_key
 
 
+def _registering(self):
+    self.registered_at = "2026-01-01T00:00:00+00:00"
+    return True
+
+
+def test_json_without_pairing_code_keeps_instance_and_gets_new_code(tmp_path):
+    (tmp_path / "push_config.json").write_text(
+        json.dumps({"instance_id": "INST", "instance_key": "KEY"}), encoding="utf-8")
+    with patch.object(PushManager, "_register_instance", _registering):
+        pm = PushManager(_make_config(), data_dir=str(tmp_path))
+        assert (pm.instance_id, pm.instance_key) == ("INST", "KEY") and pm.pairing_code
+        pm2 = PushManager(_make_config(), data_dir=str(tmp_path))
+    assert pm2.pairing_code == pm.pairing_code
+
+
+def test_regenerate_reports_failure_when_nothing_is_saved(tmp_path):
+    with patch.object(PushManager, "_register_instance", _registering):
+        pm = PushManager(_make_config(), data_dir=str(tmp_path))
+    pm.session.post = MagicMock(return_value=MagicMock(status_code=200))
+    with patch("app.push_manager.json.dump", side_effect=OSError(28, "No space left on device")):
+        assert pm.regenerate_pairing_code() is False
+
+
+def test_reset_reports_failure_when_nothing_is_saved(tmp_path):
+    with patch.object(PushManager, "_register_instance", _registering):
+        pm = PushManager(_make_config(), data_dir=str(tmp_path))
+        with patch("app.push_manager.json.dump", side_effect=OSError(28, "No space left on device")):
+            assert pm.reset() is False
+
+
+def test_first_run_aborts_when_credentials_cannot_be_saved(tmp_path):
+    from app.push_manager import PushStorageUnavailable
+    with patch.object(PushManager, "_register_instance", _registering), \
+         patch("app.push_manager.json.dump", side_effect=OSError(28, "No space left on device")), \
+         pytest.raises(PushStorageUnavailable):
+        PushManager(_make_config(), data_dir=str(tmp_path))
+
+
 @patch.object(PushManager, "_register_instance", return_value=True)
 def test_unreadable_json_store_is_not_replaced(_reg, tmp_path):
     from app.push_manager import PushStorageUnavailable
