@@ -213,8 +213,9 @@ class InvoiceMonitor:
 
         return date_from
 
-    # TTL for seen_invoices entries (90 days)
-    SEEN_INVOICES_TTL_DAYS = 90
+    # TTL for seen_invoices entries — longer than the widest query window
+    # (MAX_DATE_RANGE_DAYS), or a long outage re-notifies older invoices
+    SEEN_INVOICES_TTL_DAYS = MAX_DATE_RANGE_DAYS + 1
 
     def load_state(self) -> Dict:
         """
@@ -232,12 +233,21 @@ class InvoiceMonitor:
 
                     # Filter seen_invoices by TTL and migrate old format
                     raw_seen = state.get("seen_invoices", [])
-                    cutoff = (datetime.now(timezone.utc) - timedelta(days=self.SEEN_INVOICES_TTL_DAYS)).isoformat()
+                    cutoff = datetime.now(timezone.utc) - timedelta(days=self.SEEN_INVOICES_TTL_DAYS)
                     filtered = []
                     for entry in raw_seen:
                         if isinstance(entry, dict) and "h" in entry:
                             # New format: {"h": "sha256...", "ts": "ISO"}
-                            if entry.get("ts", "") >= cutoff:
+                            # compared as datetimes — ts carries the local
+                            # offset (+01/+02), string order is wrong near the cutoff
+                            try:
+                                ts = datetime.fromisoformat(entry.get("ts") or "")
+                                if ts.tzinfo is None:
+                                    ts = ts.replace(tzinfo=timezone.utc)
+                                keep = ts >= cutoff
+                            except (TypeError, ValueError):
+                                keep = True  # unknown age: keep (dedup over size)
+                            if keep:
                                 filtered.append(entry)
                         # else: old MD5 string format — discard (one-time re-download)
                     state["seen_invoices"] = filtered

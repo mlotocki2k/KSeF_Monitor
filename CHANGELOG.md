@@ -91,7 +91,8 @@ All notable changes to KSeF Monitor are documented here.
 - An invoice whose database write fails (e.g. "database is locked") is no longer notified before it is saved; the next cycle notifies it once.
 - The polling cycle commits each subject's state before querying the next one (no write lock during the KSeF query).
 - A failed migration of push credentials into the database keeps `push_config.json` (devices stayed paired only until the next restart).
-- Without a database, deduplication keeps every seen invoice within its TTL instead of the last 1000 (repeated notifications on large batches).
+- Without a database, deduplication keeps every seen invoice within its TTL instead of the last 1000 (repeated notifications on large batches); the TTL now covers the whole 100-day query window and compares timestamps as dates, not strings.
+- An unreadable `push_config.json` (permissions, I/O) stops the push setup instead of being replaced with new credentials.
 - The XML artifact is committed before PDF rendering (the CIRFMF generator call no longer holds the SQLite write lock).
 - `push_config.json` is written atomically (a full disk no longer truncates the credentials); a pairing code or reset saved to JSON because the DB write failed is taken over into the DB on the next start instead of being ignored.
 - Initial load stores `form_code` like polling (`schemaVersion`); a negative `Retry-After` no

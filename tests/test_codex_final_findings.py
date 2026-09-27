@@ -175,6 +175,24 @@ def test_failed_json_write_keeps_previous_file(_reg, tmp_path):
     assert not list(tmp_path.glob("*.tmp"))
 
 
+def test_json_dedup_ttl_covers_the_query_window(mock_config, tmp_path):
+    from datetime import datetime, timedelta, timezone
+    m = InvoiceMonitor(mock_config, MagicMock(), MagicMock(), MagicMock())
+    m.state_file = tmp_path / "last_check.json"
+    now = datetime.now(timezone.utc)
+    warsaw = timezone(timedelta(hours=2))
+    entries = [
+        {"h": "in_window", "ts": (now - timedelta(days=95)).isoformat()},
+        # 2 min inside the TTL, written with the local offset
+        {"h": "edge", "ts": (now - timedelta(days=m.SEEN_INVOICES_TTL_DAYS) + timedelta(minutes=2)).astimezone(warsaw).isoformat()},
+        {"h": "expired", "ts": (now - timedelta(days=m.SEEN_INVOICES_TTL_DAYS + 1)).isoformat()},
+    ]
+    m.state_file.write_text(json.dumps({"seen_invoices": entries}), encoding="utf-8")
+    kept = {e["h"] for e in m.load_state()["seen_invoices"]}
+    assert kept == {"in_window", "edge"}
+    assert m.SEEN_INVOICES_TTL_DAYS > m.MAX_DATE_RANGE_DAYS
+
+
 def test_json_dedup_keeps_more_than_1000_entries(mock_config, tmp_path, sample_invoice):
     mock_config.config["monitoring"]["subject_types"] = ["Subject2"]
     ksef = MagicMock()

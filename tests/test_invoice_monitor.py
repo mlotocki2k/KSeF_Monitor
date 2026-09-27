@@ -182,8 +182,8 @@ class TestInvoiceMonitorState:
         assert state["last_check"] == "2026-03-06T10:00:00+01:00"
 
     def test_load_state_filters_old_entries(self, monitor, tmp_path):
-        """TTL filtering removes entries older than 90 days."""
-        old_ts = (datetime.now(timezone.utc) - timedelta(days=100)).isoformat()
+        """TTL filtering removes entries older than SEEN_INVOICES_TTL_DAYS."""
+        old_ts = (datetime.now(timezone.utc) - timedelta(days=monitor.SEEN_INVOICES_TTL_DAYS + 10)).isoformat()
         recent_ts = (datetime.now(timezone.utc) - timedelta(days=10)).isoformat()
         state = {
             "last_check": "2026-03-01T10:00:00+01:00",
