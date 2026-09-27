@@ -347,6 +347,8 @@ class InvoiceMonitor:
                             last_check=None,
                             error=str(e),
                         )
+                        # no open write transaction during the next subject's query
+                        db_session.commit()
                     continue
 
                 polled_ok.append(subject_type)
@@ -366,6 +368,7 @@ class InvoiceMonitor:
                         last_ksef_number=last_ksef_number,
                         new_invoices=new_count,
                     )
+                    db_session.commit()
 
             # Commit DB transaction
             if use_db:
@@ -823,7 +826,9 @@ class InvoiceMonitor:
                 state["last_check"] = now.isoformat()
             for st in polled_ok or []:
                 per_subject[st] = (cursors or {}).get(st, now).isoformat()
-            state["seen_invoices"] = seen_entries[-1000:]
+            # bounded by the TTL applied in load_state(); a count cap dropped
+            # hashes still inside the queried window (re-notification)
+            state["seen_invoices"] = seen_entries
             self.save_state(state)
 
         # Update Prometheus metrics
@@ -988,6 +993,10 @@ class InvoiceMonitor:
             # Duplicate — return existing record's id so artifacts can be linked
             existing = session.query(Invoice).filter_by(ksef_number=ksef_number).first()
             return existing.id if existing else None
+        except SQLAlchemyError:
+            # e.g. "database is locked": abort before the notification — an
+            # unsaved invoice would be notified again next cycle
+            raise
         except Exception as e:
             logger.error(f"Failed to save invoice to DB: {e}")
             return None

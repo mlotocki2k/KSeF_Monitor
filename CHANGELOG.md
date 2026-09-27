@@ -88,6 +88,10 @@ All notable changes to KSeF Monitor are documented here.
 - `initial_load.start_date` with a UTC offset in the config no longer stops the automatic start.
 - The polling cycle and the XML/PDF/UPO downloads no longer hold the SQLite write lock during network I/O (UI logins and the historical import failed with "database is locked" during KSeF back-off).
 - The KSeF token-encryption key is chosen by its validity window and fetched again after a failed login (key rotation without a restart).
+- An invoice whose database write fails (e.g. "database is locked") is no longer notified before it is saved; the next cycle notifies it once.
+- The polling cycle commits each subject's state before querying the next one (no write lock during the KSeF query).
+- A failed migration of push credentials into the database keeps `push_config.json` (devices stayed paired only until the next restart).
+- Without a database, deduplication keeps every seen invoice within its TTL instead of the last 1000 (repeated notifications on large batches).
 - Initial load stores `form_code` like polling (`schemaVersion`); a negative `Retry-After` no
   longer crashes the 429 handling.
 - Invalid `monitoring` values (e.g. string intervals) are rejected at startup instead of

@@ -113,8 +113,9 @@ class PushManager:
                 # Migrate only into a real DB. Without one the JSON file IS the
                 # storage: renaming it lost the credentials (and unpaired every
                 # device) on every second restart.
-                if self.db:
-                    self._save_to_db()
+                if self.db and self._save_to_db():
+                    # only after a committed DB write — otherwise the JSON file
+                    # is still the only copy of the credentials
                     self._rename_legacy_json()
                 self._ensure_registered()
                 return
@@ -156,12 +157,15 @@ class PushManager:
             # row and silently unpair every device.
             raise PushStorageUnavailable(f"push config unreadable: {e}") from e
 
-    def _save_to_db(self):
-        """Save credentials to push_instances table."""
+    def _save_to_db(self) -> bool:
+        """Save credentials to push_instances table.
+
+        Returns True only when the DB write was committed (JSON fallback → False).
+        """
         if not self.db:
             # Fallback to JSON if no DB
             self._save_to_json()
-            return
+            return False
         try:
             session = self.db.get_session()
             try:
@@ -175,6 +179,7 @@ class PushManager:
                 )
                 session.commit()
                 logger.info("Push config saved to DB (instance: %s)", self.instance_id)
+                return True
             except Exception:
                 session.rollback()
                 raise
@@ -184,6 +189,7 @@ class PushManager:
             logger.error("Failed to save push config to DB: %s", e)
             # Fallback to JSON
             self._save_to_json()
+            return False
 
     # ── Legacy JSON Storage ──────────────────────────────────────────────
 
