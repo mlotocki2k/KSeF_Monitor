@@ -116,6 +116,35 @@ def test_corrupt_fallback_json_does_not_replace_db_credentials(_reg, tmp_path):
     assert pm2.instance_id == pm.instance_id and pm2.instance_key == pm.instance_key
 
 
+@pytest.mark.parametrize("content", [
+    # stale fallback (older than the DB row)
+    json.dumps({"instance_id": "OLD", "instance_key": "K", "pairing_code": "P",
+                "saved_at": "2020-01-01T00:00:00+00:00"}),
+    # legacy file without saved_at
+    json.dumps({"instance_id": "OLD", "instance_key": "K", "pairing_code": "P"}),
+    # incomplete: no pairing code
+    json.dumps({"instance_id": "OLD", "instance_key": "K", "saved_at": "2099-01-01T00:00:00+00:00"}),
+], ids=["stale", "legacy", "no-pairing-code"])
+@patch.object(PushManager, "_register_instance", return_value=True)
+def test_untrusted_json_never_replaces_db_credentials(_reg, tmp_path, content):
+    db = Database(str(tmp_path / "p.db"))
+    db.create_tables()
+    pm = PushManager(_make_config(), data_dir=str(tmp_path), db=db)
+    (tmp_path / "push_config.json").write_text(content, encoding="utf-8")
+    pm2 = PushManager(_make_config(), data_dir=str(tmp_path), db=db)
+    assert (pm2.instance_id, pm2.pairing_code) == (pm.instance_id, pm.pairing_code)
+
+
+@patch.object(PushManager, "_register_instance", return_value=True)
+def test_invalid_utf8_json_keeps_db_credentials(_reg, tmp_path):
+    db = Database(str(tmp_path / "p.db"))
+    db.create_tables()
+    pm = PushManager(_make_config(), data_dir=str(tmp_path), db=db)
+    (tmp_path / "push_config.json").write_bytes(b"\xff\xfe{")
+    pm2 = PushManager(_make_config(), data_dir=str(tmp_path), db=db)
+    assert pm2.instance_id == pm.instance_id
+
+
 @patch.object(PushManager, "_register_instance", return_value=True)
 def test_failed_json_write_keeps_previous_file(_reg, tmp_path):
     pm = PushManager(_make_config(), data_dir=str(tmp_path))

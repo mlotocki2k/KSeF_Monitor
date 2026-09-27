@@ -148,6 +148,7 @@ class PushManager:
                 self.instance_key = instance.instance_key
                 self.pairing_code = instance.pairing_code
                 self.registered_at = instance.registered_at
+                self._db_updated_at = instance.updated_at or instance.created_at
                 logger.info("Push config loaded from DB (instance: %s)", self.instance_id)
                 return True
             finally:
@@ -235,6 +236,8 @@ class PushManager:
                 "pairing_code": self.pairing_code,
                 "central_push_url": self.central_push_url,
                 "registered_at": self.registered_at,
+                # lets startup tell a fallback newer than the DB row from a stale one
+                "saved_at": datetime.now(timezone.utc).isoformat(),
             }
 
             # temp file + atomic replace: a failed write (disk full) must not
@@ -265,20 +268,36 @@ class PushManager:
 
     def _adopt_fallback_json(self):
         """Take over credentials saved to JSON when the DB write failed
-        (regenerate/reset). Every committed DB save retires the JSON file, so
-        one found next to a DB row is newer than it. An unreadable or
-        incomplete file never replaces the DB credentials."""
+        (regenerate/reset). Adopted only when complete and saved after the DB
+        row was last updated (`saved_at`); an unreadable, incomplete, legacy
+        or stale file never replaces the DB credentials."""
         if not self.push_config_path.exists():
             return
         try:
             with open(self.push_config_path, 'r', encoding='utf-8') as f:
                 data = json.load(f)
-        except (json.JSONDecodeError, OSError) as e:
+        except (ValueError, OSError) as e:  # incl. JSONDecodeError, UnicodeDecodeError
             logger.warning("Ignoring unreadable push_config.json: %s", e)
             return
-        if not isinstance(data, dict) or not (data.get("instance_id") and data.get("instance_key")):
+        required = ("instance_id", "instance_key", "pairing_code")
+        if not isinstance(data, dict) or not all(
+                isinstance(data.get(k), str) and data.get(k) for k in required):
             logger.warning("Ignoring incomplete push_config.json")
             return
+        try:
+            saved_at = datetime.fromisoformat(data.get("saved_at") or "")
+        except (TypeError, ValueError):
+            logger.info("Ignoring push_config.json without saved_at (legacy/stale)")
+            return
+        if saved_at.tzinfo is not None:
+            saved_at = saved_at.astimezone(timezone.utc).replace(tzinfo=None)
+        db_ts = getattr(self, "_db_updated_at", None)
+        if db_ts is not None:
+            if db_ts.tzinfo is not None:
+                db_ts = db_ts.astimezone(timezone.utc).replace(tzinfo=None)
+            if saved_at <= db_ts:
+                logger.info("Ignoring push_config.json older than the DB row")
+                return
         self.instance_id = data["instance_id"]
         self.instance_key = data["instance_key"]
         self.pairing_code = data.get("pairing_code")
