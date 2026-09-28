@@ -97,7 +97,7 @@ jobs:
           lines.append("")
           lines.append("Sugestia:")
           lines.append("- przejrzyj changelogi i zaktualizuj `requirements.txt` (lub użyj narzędzia typu pip-tools/poetry).")
-          open("issue_body.md", "w", encoding="utf-8").write("\\n".join(lines))
+          open("issue_body.md", "w", encoding="utf-8").write("\n".join(lines))
           PY
 
       - name: Create or update issue if updates exist
@@ -224,16 +224,17 @@ jobs:
                 return;
               }
 
-              // Reopen if closed (and not wontfix)
-              if (issue_state === "closed") {
-                await github.rest.issues.update({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  issue_number,
-                  state: "open",
-                  body
-                });
-              }
+              // Reopen if closed (and not wontfix). Tresc zgloszenia zawsze nadpisujemy
+              // biezaca lista — to ona jest punktem odniesienia dla warunku „identyczna
+              // tresc → pomin” wyzej. Bez tego porownanie szlo z trescia z dnia zalozenia
+              // i bot komentowal codziennie to samo (#35: 145 komentarzy do 2026-09-28).
+              await github.rest.issues.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number,
+                state: "open",
+                body
+              });
 
               await github.rest.issues.createComment({
                 owner: context.repo.owner,
