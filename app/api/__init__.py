@@ -319,8 +319,9 @@ def create_app(
             route = request.scope.get("route")
             template = getattr(route, "path", None)
             if template:
+                # include_router(prefix=...) already bakes the prefix into route.path
                 prefix = "/api/v1" if request.url.path.startswith("/api/v1/") else ""
-                endpoint = prefix + template
+                endpoint = template if template.startswith(prefix) else prefix + template
             else:
                 endpoint = "unmatched"
             prometheus_metrics.rest_api_requests_total.labels(
