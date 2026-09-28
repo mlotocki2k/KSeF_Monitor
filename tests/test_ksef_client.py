@@ -79,7 +79,7 @@ class TestKSeFClientInit:
         assert c.base_url == "https://api-demo.ksef.mf.gov.pl"
 
     def test_invalid_date_type_falls_back(self, mock_config):
-        """Invalid date_type falls back to Invoicing."""
+        """Invalid date_type falls back to the default (PermanentStorage)."""
         mock_config.config["monitoring"]["date_type"] = "Invalid"
 
         def _get(*keys, default=None):
@@ -95,13 +95,13 @@ class TestKSeFClientInit:
 
         mock_config.get = _get
         c = KSeFClient(mock_config)
-        assert c.date_type == "Invoicing"
+        assert c.date_type == "PermanentStorage"
 
     def test_missing_date_type_uses_default_without_warning(self, mock_config, caplog):
         mock_config.config["monitoring"].pop("date_type", None)
         with caplog.at_level("WARNING", logger="app.ksef_client"):
             c = KSeFClient(mock_config)
-        assert c.date_type == "Invoicing"
+        assert c.date_type == "PermanentStorage"
         assert "Invalid date_type" not in caplog.text
 
 

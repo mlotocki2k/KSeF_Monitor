@@ -390,7 +390,7 @@ Szablony powiadomień: [docs/TEMPLATES.md](docs/TEMPLATES.md)
 | Pole | Default | Opis |
 |---|---|---|
 | `subject_types` | `["Subject1", "Subject2"]` | Typy faktur do monitorowania. `Subject1` = sprzedażowe (Ty = sprzedawca), `Subject2` = zakupowe (Ty = nabywca). Jedno zapytanie API na każdy typ. |
-| `date_type` | `"Invoicing"` | Typ daty w zakresie zapytania. Dozwolone wartości: `Issue` (data wystawienia), `Invoicing` (data przyjęcia w KSeF), `PermanentStorage` (data trwałego zapisu). Fallback na `Invoicing` przy niepoprawnej wartości. |
+| `date_type` | `"PermanentStorage"` | Typ daty w zakresie zapytania. Dozwolone wartości: `Issue` (data wystawienia), `Invoicing` (data przyjęcia w KSeF), `PermanentStorage` (data trwałego zapisu). Domyślnie `PermanentStorage` — jedyny typ, dla którego KSeF gwarantuje kompletność (`permanentStorageHwmDate`), więc polling przyrostowy nie gubi faktur zapisanych z opóźnieniem. Fallback na `PermanentStorage` przy niepoprawnej wartości. Import historyczny (`initial_load.date_type`) ma osobne ustawienie, domyślnie `Invoicing`. |
 | `timezone` | `"Europe/Warsaw"` | Strefa czasowa używana do wszystkich operacji z datami. Nazwa według standardu IANA (np. `Europe/Warsaw`, `America/New_York`). Zobacz [listę stref czasowych](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones). Fallback na `Europe/Warsaw` przy niepoprawnej wartości. |
 | `message_priority` | `0` | Priority powiadomień Pushover dla nowych faktur. `-2` cisza \| `-1` cicho \| `0` normalne \| `1` wysoka \| `2` pilne (wymaga potwierdzenia). Fallback na `0`. |
 | `test_notification` | `false` | Jeśli `true` — wysyła testowe powiadomienie przy starcie aplikacji. |

@@ -17,6 +17,11 @@ All notable changes to KSeF Monitor are documented here.
   (starlette was capped `<1.0`, which excluded the PYSEC-2026-161 fix).
 - **docker-compose:** the default network is pinned to `10.90.26.0/24` so Docker does not pick a
   192.168.x range that collides with the LAN.
+- **Default `monitoring.date_type` is now `PermanentStorage`** (was `Invoicing`). It is the only
+  date type KSeF guarantees complete (`permanentStorageHwmDate`), so the polling resumes at the HWM
+  and does not miss invoices stored late. Configs that set `date_type` explicitly are unchanged; a
+  config without it switches on upgrade — the first cycle may see already-known invoices again,
+  they are deduplicated. `initial_load.date_type` keeps its own default (`Invoicing`).
 
 ### Fixed (full audit, 2026-09-25)
 
@@ -148,6 +153,8 @@ All notable changes to KSeF Monitor are documented here.
 
 - PROD OpenAPI baseline refreshed to API 2.8.1 (build `2.8.1-pr-20260923.3`).
 - KSeF session/token measurement scripts moved to `examples/`; `uv.lock` ignored.
+- `build_push_test.yml` removed — it pushed the `test` image to GHCR in parallel with
+  `docker-publish.yml`, bypassing its Trivy scan.
 
 ## [0.6.4] — 2026-09-23
 

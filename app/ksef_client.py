@@ -41,6 +41,7 @@ class KSeFClient:
     # API version
     API_VERSION = "v2"
     VALID_DATE_TYPES = {"Issue", "Invoicing", "PermanentStorage"}
+    DEFAULT_DATE_TYPE = "PermanentStorage"
     # Rate limit retry settings
     MAX_429_RETRIES = 5
     DEFAULT_RETRY_AFTER = 30  # seconds
@@ -105,11 +106,14 @@ class KSeFClient:
         self.session.headers["X-Error-Format"] = "problem-details"
         self._seen_system_warnings: set = set()
 
-        # absent key = the default, not an invalid value (no false warning)
-        date_type = config.get("monitoring", "date_type") or "Invoicing"
+        # absent key = the default, not an invalid value (no false warning).
+        # PermanentStorage: the only date type with KSeF's completeness
+        # guarantee (permanentStorageHwmDate) for incremental polling.
+        date_type = config.get("monitoring", "date_type") or self.DEFAULT_DATE_TYPE
         if date_type not in self.VALID_DATE_TYPES:
-            logger.warning(f"Invalid date_type '{date_type}', falling back to 'Invoicing'")
-            date_type = "Invoicing"
+            logger.warning(f"Invalid date_type '{date_type}', falling back to "
+                           f"'{self.DEFAULT_DATE_TYPE}'")
+            date_type = self.DEFAULT_DATE_TYPE
         self.date_type = date_type
 
         # Initialize rate limiter with configurable limits
