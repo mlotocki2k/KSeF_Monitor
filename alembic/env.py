@@ -17,9 +17,11 @@ db_url = os.environ.get("DATABASE_URL")
 if db_url:
     config.set_main_option("sqlalchemy.url", db_url)
 
-# Logging
-if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+# Logging — only for the alembic CLI. When the app runs migrations at startup
+# it sets configure_logger=False: fileConfig() would replace its handlers and
+# disable every logger created before this point.
+if config.config_file_name is not None and config.attributes.get("configure_logger", True):
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 # Target metadata for autogenerate
 target_metadata = Base.metadata

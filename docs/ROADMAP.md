@@ -499,9 +499,10 @@ Rollout PRD 2.7.1 + 2.8.0 + 2.8.1 zapowiedziany na 23.09.2026; w dniu zapowiedzi
 - [x] Test regresji 403 `problem+json` bez `timestamp` (0.6.4)
 - [x] Eksport: `package: null` przy statusie 200 = nieudane okno zamiast wyjątku całego joba (0.6.4; znalezione w cross-review Codex)
 - [x] Cross-review gałęzi: Codex (GPT) + lokalny qwen3-coder w pętli do zera uwag (2026-09-23)
-- [ ] Sonda granicy `dateRange` na TEST (100 dni UTC — dokładny span do zmierzenia; „3 miesiące” dawały empirycznie 89 dni)
-- [ ] `dateRange` 90 → 100 dni w `invoice_monitor` i `initial_load_manager` — **dopiero po** rolloucie PRD (0.6.5); wcześniej PRD odrzuci zakres błędem 21405
-- [ ] Baseline `openapi.json` (PRD) → 2.8.x po rolloucie (0.6.5)
+- [ ] (Opcjonalnie) sonda `examples/probe_date_range.py` na TEST — czy KSeF przyjmuje pełne 100 dni; dziś aplikacja odpytuje 99 dni z marginesem
+- [x] `dateRange` 90 → 100 dni w `invoice_monitor` i `initial_load_manager` (0.6.5; span 99 dni) — PRD z limitem 100 dni potwierdzony w live spec 25.09.2026
+- [x] Baseline `openapi.json` (PRD) → 2.8.1 (0.6.5)
+- [x] Zależności: cryptography 50.0.1, pytz 2026.4, signxml 5.1, reportlab 5.0.1 (0.6.5)
 - Radar: `EffectiveApiRateLimits.global` (`GET /rate-limits`) — przyszłe limity per IP, dziś wyłączone; docker monitor działa z jednego IP.
 - Poza zakresem: wrapper `/testdata/rate-limits` (endpoint już dostępny na TEST — patrz status v0.6), identyfikatory zbiorcze IZ, limity zamykania sesji, błąd 21184.
 

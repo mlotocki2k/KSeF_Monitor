@@ -19,7 +19,10 @@ Browser UI uses HttpOnly cookie sessions backed by user accounts in DB
 from the API Bearer token, which stays for curl/integrations.
 
 **First launch:**
-- **Fresh install:** visit `/ui` → wizard at `/ui/setup` creates first user
+- **Fresh install:** visit `/ui` → wizard at `/ui/setup` creates first user.
+  Since 0.6.5 the wizard asks for the **install code** = `api.auth_token`
+  (auto-generated into `/data/api_token.txt` when the config has none), so a
+  client that reaches the port before the owner cannot claim the admin account.
 - **Upgrade from v0.5.0:** if `api.auth_token` was set in config, `main.py`
   auto-creates user `admin` with password = the existing `auth_token` value.
   Login at `/ui/login` as `admin` / `<your existing token>`. Change password
@@ -43,6 +46,27 @@ authenticated request. Password change revokes all sessions.
 
 **Open-redirect guard:** the `next=` query/form param is whitelisted to
 internal `/ui` paths (rejects `https://evil/x`, `//evil`).
+
+**Same-origin check (0.6.5):** a state-changing request (`POST`/`PUT`/`PATCH`/
+`DELETE`) that carries the session cookie and no Bearer header is rejected with
+403 when its `Origin` (or `Referer`) host differs from `Host`/`X-Forwarded-Host`.
+`SameSite=Strict` alone treats sibling subdomains as same-site. Requests without
+either header (non-browser clients) pass.
+
+**Reverse proxy:** set `api.forwarded_allow_ips` to the proxy's IP so rate
+limits and login-failure tracking see the real client address instead of the
+proxy's. If the proxy rewrites `Host` and sends no `X-Forwarded-Host`, list the
+public origin in `api.trusted_origins` (e.g. `["https://ksef.example.com"]`).
+
+**Bearer brute force:** 10 failed Bearer attempts per client IP within 15
+minutes answer 429 for that IP.
+
+**Bootstrap admin:** an `admin` account with password = `api.auth_token` is
+created only for a token of at least 32 characters that passes the password
+policy; otherwise use `/ui/setup` with the token as the install code.
+
+**Public paths:** `/ui/login`, `/ui/logout`, `/ui/setup`, `/ui/static/*`
+(stylesheet and icons of the login page), `/api/v1/monitor/health`, docs.
 
 ## 🔐 Security Methods Overview
 
@@ -711,13 +735,19 @@ inline JS. Tracked item — move to `app/ui/static/push.js` and switch to hashed
 
 ### `xhtml2pdf` link_callback restrictions (V5-08)
 
-The PDF generator (`invoice_pdf_template.py`) passes a `link_callback` to
-`xhtml2pdf.pisa.CreatePDF`. The callback allows only:
-- `data:` URIs (inline base64 images — used for QR codes and embedded fonts)
-- Paths under the bundled template directory
+The PDF generator (`invoice_pdf_template.py`) passes a `link_callback` and an
+explicit `resource_policy` to `xhtml2pdf.pisa.CreatePDF`:
+- policy: no network access; local reads only under the bundled template
+  directory and the directory of the Polish-capable TTF font
+  (`/usr/share/fonts/truetype/dejavu` in the image);
+- callback: allows `data:` URIs (QR code) and files whose **resolved** path lies
+  under those roots; everything else becomes an empty `data:,` URI.
 
-Any other URI (external HTTP, absolute filesystem paths outside the template root) is
-**blocked**. This prevents SSRF and LFI through user-customized HTML/CSS PDF templates.
+Until 0.6.5 the callback returned `''` for blocked URIs — xhtml2pdf then keeps the
+original URI, so the callback blocked nothing — and xhtml2pdf 0.2.20's default
+policy (reads confined to the working directory) refused the DejaVu font: invoice
+PDFs rendered Polish letters blank. Both fixed and covered by
+`tests/test_pdf_resources.py`.
 
 ### Tailwind CSS — self-hosted (V5-10)
 
@@ -735,10 +765,19 @@ Cache-busting is done via `?v={version}` query string on the static file referen
 | `python-multipart` | `>=0.0.26` | CVE-2024-53981, CVE-2026-40347, CVE-2026-24486 |
 | `cryptography` | `==46.0.7` | CVE-2026-39892 |
 
-`requirements.lock` is generated with `pip-compile --generate-hashes`; the Dockerfile
-installs via `pip install --require-hashes` to enforce the lockfile. CI runs `pip-audit
---strict` against the lockfile and `trivy image` scan of the built container (exit-code 1
-on CRITICAL/HIGH findings).
+Since 0.6.5 the Dockerfile installs `requirements.lock` with
+`pip install --require-hashes` (before that the image installed the version ranges of
+`requirements.txt` and the lockfile was stale). Regenerate the lock after every change
+to `requirements.txt`:
+
+```bash
+uv pip compile requirements.txt --universal --python-version 3.11 --generate-hashes \
+  --no-header -o requirements.lock   # then restore the header comment
+```
+
+`tests/test_requirements_lock.py` fails when a requirement is missing from the lock,
+pinned outside its range, or has no hashes. The GitHub publish workflow scans the
+image with Trivy (exit-code 1 on CRITICAL/HIGH) **before** pushing it.
 
 ### Rootless entrypoint (v0.4 F-09 carried into v0.5)
 
@@ -762,8 +801,7 @@ if the `alembic_version` table is absent (a warning is logged on startup in that
 
 ### Known deferred items
 
-1. **Regenerate `requirements.lock` under Python 3.11** — current lockfile was compiled
-   with Python 3.12. Blocked on Docker Desktop availability in the build environment.
+1. ~~Regenerate `requirements.lock` under Python 3.11~~ — done in 0.6.5.
 2. **Tighten CSP `script-src 'unsafe-inline'`** — requires moving `push.html` inline JS
    to `app/ui/static/push.js` and switching to a hashed/nonce-based script allowlist.
 3. **TOCTOU DNS rebinding in SSRF guard** — defense-in-depth gap; mitigate with

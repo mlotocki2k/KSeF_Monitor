@@ -3,7 +3,7 @@ Tests for iOS Push Notifier — sends notifications via Cloudflare Worker to APN
 """
 
 import json
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 import requests
@@ -309,3 +309,23 @@ class TestIosPushErrorAndTest:
         call_kwargs = notifier.session.post.call_args
         payload = call_kwargs.kwargs.get("json") or call_kwargs[1].get("json")
         assert payload["title"] == "KSeF Monitor Test"
+
+
+def test_reset_switches_notifier_to_new_instance(tmp_path):
+    """Codex finding: after /push/reset the notifier kept sending with old credentials."""
+    from app.database import Database
+    from app.notifiers.ios_push_notifier import IosPushNotifier
+    from app.push_manager import PushManager
+    cfg = {"notifications": {"ios_push": {"enabled": True, "worker_url": "https://push.example"}}}
+    ios = cfg["notifications"]["ios_push"]
+    db = Database(str(tmp_path / "p.db"))
+    db.create_tables()
+    with patch.object(PushManager, "_register_instance", return_value=True):
+        pm = PushManager(ios, data_dir=str(tmp_path), db=db)
+    ios["instance_id"], ios["instance_key"] = pm.instance_id, pm.instance_key  # main.py
+    n = IosPushNotifier(cfg)
+    old = n.instance_id
+    with patch.object(PushManager, "_register_instance", return_value=True):
+        pm.reset()
+    assert n.instance_id == pm.instance_id != old
+    assert n.instance_key == pm.instance_key

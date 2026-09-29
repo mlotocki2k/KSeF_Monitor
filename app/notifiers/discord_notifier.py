@@ -9,7 +9,8 @@ import requests
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
-from .base_notifier import BaseNotifier
+from .base_notifier import BaseNotifier, describe_request_error
+from ..template_renderer import discord_escape_filter
 
 logger = logging.getLogger(__name__)
 
@@ -79,7 +80,8 @@ class DiscordNotifier(BaseNotifier):
             # Build embed
             embed = {
                 "title": title[:256],  # Discord title max length
-                "description": message[:4096],  # Discord description max length
+                # may carry invoice fields (template fallback) — render as plain text
+                "description": discord_escape_filter(message)[:4096],  # Discord max length
                 "color": color,
                 "timestamp": datetime.now(timezone.utc).isoformat(),
                 "footer": {
@@ -113,7 +115,7 @@ class DiscordNotifier(BaseNotifier):
             return True
 
         except requests.exceptions.RequestException as e:
-            logger.error(f"Failed to send Discord notification: {e}")
+            logger.error("Failed to send Discord notification: %s", describe_request_error(e))
             if hasattr(e, 'response') and e.response is not None:
                 logger.error(f"Discord API response status: {e.response.status_code}")
             return False
@@ -146,7 +148,7 @@ class DiscordNotifier(BaseNotifier):
             logger.error(f"Invalid JSON from Discord template: {e}")
             return False
         except requests.exceptions.RequestException as e:
-            logger.error(f"Failed to send Discord notification: {e}")
+            logger.error("Failed to send Discord notification: %s", describe_request_error(e))
             if hasattr(e, 'response') and e.response is not None:
                 logger.error(f"Discord API response status: {e.response.status_code}")
             return False

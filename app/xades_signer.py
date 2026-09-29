@@ -9,7 +9,8 @@ Logowanie certyfikatem (alternatywa dla tokenu KSeF) polega na:
 
 Akceptowane przez KSeF (auth/podpis-xades.md):
   - format: XAdES-BES, otaczany (enveloped)
-  - podpis: http://www.w3.org/2001/04/xmldsig-more#rsa-sha256 (klucz min. 2048-bit)
+  - podpis: rsa-sha256 (klucz min. 2048-bit) lub ecdsa-sha256 (krzywa min. 256-bit) —
+    dobierany automatycznie do typu klucza z PKCS#12
   - digest: http://www.w3.org/2001/04/xmlenc#sha256
 
 Moduł nie loguje hasła ani materiału klucza.
@@ -28,9 +29,11 @@ AUTH_NS = "http://ksef.mf.gov.pl/auth/token/2.1"
 # Dozwolone wartości SubjectIdentifierType (schemat auth v2-1)
 SUBJECT_IDENTIFIER_TYPES = ("certificateSubject", "certificateFingerprint")
 
-_SIGNATURE_ALGORITHM = "rsa-sha256"
 _DIGEST_ALGORITHM = "sha256"
-_C14N_ALGORITHM = "http://www.w3.org/2001/10/xml-exc-c14n#"
+# Inclusive C14N 1.0 — signxml nie dodaje <ds:Transforms> do referencji SignedProperties
+# i KeyInfo, więc weryfikator KSeF kanonizuje je algorytmem domyślnym wg XMLDSig (inclusive).
+# Przy exc-c14n skróty się nie zgadzają i KSeF odrzuca podpis błędem 9105.
+_C14N_ALGORITHM = "http://www.w3.org/TR/2001/REC-xml-c14n-20010315"
 
 
 def build_auth_token_request(
@@ -142,13 +145,22 @@ def load_pkcs12(p12_bytes: bytes, password: str,
     return key_pem, cert_pem
 
 
+def _signature_algorithm_for_key(key_pem: bytes) -> str:
+    """Dobierz algorytm podpisu do typu klucza (KSeF przyjmuje RSA i ECDSA od 256-bit)."""
+    from cryptography.hazmat.primitives.asymmetric import ec
+    from cryptography.hazmat.primitives.serialization import load_pem_private_key
+
+    key = load_pem_private_key(key_pem, password=None)
+    return "ecdsa-sha256" if isinstance(key, ec.EllipticCurvePrivateKey) else "rsa-sha256"
+
+
 def sign_auth_token_request(
     root: etree._Element,
     key_pem: bytes,
     cert_pem: bytes,
 ) -> bytes:
     """
-    Podpisz `AuthTokenRequest` podpisem XAdES-BES (enveloped, RSA-SHA256).
+    Podpisz `AuthTokenRequest` podpisem XAdES-BES (enveloped, RSA-SHA256 lub ECDSA-SHA256).
 
     Args:
         root: element AuthTokenRequest (z `build_auth_token_request`)
@@ -162,7 +174,7 @@ def sign_auth_token_request(
     from signxml.xades import XAdESSigner
 
     signer = XAdESSigner(
-        signature_algorithm=_SIGNATURE_ALGORITHM,
+        signature_algorithm=_signature_algorithm_for_key(key_pem),
         digest_algorithm=_DIGEST_ALGORITHM,
         c14n_algorithm=_C14N_ALGORITHM,
     )

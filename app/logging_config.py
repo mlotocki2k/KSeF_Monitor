@@ -55,6 +55,11 @@ def apply_config(config):
         logger.warning(f"Invalid logging_level '{level_name}', using INFO")
         level_name = "INFO"
     logging.root.setLevel(getattr(logging, level_name))
+    # HTTP libraries log full request URLs at DEBUG: webhook paths (the Slack/
+    # Discord credential) and GET query strings with invoice data. Keep them
+    # at WARNING whatever the app level is.
+    for noisy in ("urllib3", "requests", "httpx", "httpcore"):
+        logging.getLogger(noisy).setLevel(logging.WARNING)
     logger.info(f"Logging level set to {level_name}")
 
     # Apply timezone

@@ -200,7 +200,7 @@ Po uruchomieniu z `api.enabled: true` web UI jest pod `http://localhost:8080/ui`
 
 **Pierwszy login (V5-13):**
 
-- **Świeża instalacja** (brak `auth_token` w configu): pierwszy `/ui` przekieruje na `/ui/setup` — wpisz username + hasło, kliknij _Utwórz konto i zaloguj_.
+- **Świeża instalacja** (brak `auth_token` w configu): pierwszy `/ui` przekieruje na `/ui/setup` — wpisz **kod instalacyjny** (zawartość `/data/api_token.txt`), username + hasło, kliknij _Utwórz konto i zaloguj_. Kod chroni przed przejęciem konta admina przez kogoś, kto dotrze do portu przed Tobą (od 0.6.5).
 - **Upgrade z v0.5.0** (`auth_token` już ustawiony): `main.py` przy starcie tworzy automatycznie usera `admin` z hasłem = `auth_token`. Login na `/ui/login` jako `admin` / `<wartość auth_token>`. Zmień hasło w `/ui/account`.
 - **Bearer dla curl/integracji**: `auth_token` nadal działa jak dotąd:
   ```bash

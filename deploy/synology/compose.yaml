@@ -5,6 +5,26 @@ services:
     container_name: ksef-monitor
     pull_policy: always
     #restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    # Entrypoint needs only: chown /data (DAC_READ_SEARCH to enter 0700
+    # dirs owned by a previous UID), chmod on files it no longer owns, and
+    # gosu to drop to the ksef user.
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_READ_SEARCH
+      - FOWNER
+      - SETUID
+      - SETGID
+    ulimits:
+      core: 0
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
     ports:
       - "8999:8000"   # Prometheus metrics
       - "8888:8080"   # UI / API

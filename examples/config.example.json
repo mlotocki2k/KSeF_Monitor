@@ -73,7 +73,7 @@
   },
   "monitoring": {
     "subject_types": ["Subject1", "Subject2"],
-    "date_type": "Invoicing",
+    "date_type": "PermanentStorage",
     "timezone": "Europe/Warsaw",
     "logging_level": "INFO",
     "lazy_artifacts": false,
@@ -130,13 +130,13 @@
       "default": "60/minute",
       "trigger": "2/minute"
     },
-    "description": "REST API for web UI and integrations. Disabled by default. If auth_token is empty when enabled, a random token is auto-generated and logged at startup. ui_enabled: enable server-rendered Web UI at /ui (default: true). rate_limit: slowapi rate limiting (60 req/min default, 2/min for trigger)."
+    "description": "REST API for web UI and integrations. Disabled by default. If auth_token is empty when enabled, a random token is auto-generated into /data/api_token.txt; it is also the install code asked for by the first-launch /ui/setup wizard. ui_enabled: enable server-rendered Web UI at /ui (default: true). rate_limit: slowapi rate limiting (60 req/min default, 2/min for trigger). forwarded_allow_ips: optional, IP(s) of a trusted reverse proxy (e.g. \"192.168.8.5\") so rate limits and login lockout see the real client IP. trusted_origins: optional list of public origins (e.g. [\"https://ksef.example.com\"]) accepted by the same-origin check when the proxy rewrites the Host header."
   },
   "initial_load": {
     "enabled": false,
     "start_date": "2024-01-01",
     "subject_types": ["Subject1", "Subject2"],
     "date_type": "Invoicing",
-    "description": "One-time historical invoice import via KSeF /invoices/exports API. Set enabled=true and start_date to trigger import on next startup. Date range: start_date to now, split into 90-day windows per subject_type. Progress tracked in DB (initial_load_jobs table) — safe to restart. subject_types: Subject1 (sprzedazowe), Subject2 (zakupowe). date_type: Invoicing | IssueDate. Manage via REST API: POST /api/v1/initial-load/start, GET /api/v1/initial-load/status, POST /api/v1/initial-load/cancel."
+    "description": "One-time historical invoice import via KSeF /invoices/exports API. Set enabled=true and start_date to trigger import on next startup. Date range: start_date to now, split into 99-day windows per subject_type (KSeF limit: 100 days). Progress tracked in DB (initial_load_jobs table) — safe to restart. subject_types: Subject1 (sprzedazowe), Subject2 (zakupowe). date_type: Invoicing | Issue | PermanentStorage. Manage via REST API: POST /api/v1/initial-load/start, GET /api/v1/initial-load/status, POST /api/v1/initial-load/cancel."
   }
 }

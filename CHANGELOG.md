@@ -2,6 +2,160 @@
 
 All notable changes to KSeF Monitor are documented here.
 
+## [0.6.5] — 2026-09-25
+
+### Changed
+
+- **KSeF `dateRange` cap raised from 90 to 100 days.** KSeF API 2.7.1 allows 100 days (UTC) for
+  `/invoices/query/metadata` and `/invoices/exports`; PROD serves it since 2026-09-23. The queried
+  span is 99 days (same `MAX - 1` margin as before). A one-year initial load now needs 4 export
+  windows per subject instead of 5, and a monitor that was offline for up to 100 days catches up
+  without skipping invoices.
+- **Dependencies:** cryptography 50.0.1, pytz 2026.4, signxml 5.1 (breaking changes in v5 affect
+  signature verification only; the app only signs), reportlab 5.0.1 (xhtml2pdf 0.2.20 lifted the
+  `<5` requirement). `pyproject.toml` fastapi/starlette ranges aligned with `requirements.txt`
+  (starlette was capped `<1.0`, which excluded the PYSEC-2026-161 fix).
+- **docker-compose:** the default network is pinned to `10.90.26.0/24` so Docker does not pick a
+  192.168.x range that collides with the LAN.
+- **Default `monitoring.date_type` is now `PermanentStorage`** (was `Invoicing`). It is the only
+  date type KSeF guarantees complete (`permanentStorageHwmDate`), so the polling resumes at the HWM
+  and does not miss invoices stored late. Configs that set `date_type` explicitly are unchanged; a
+  config without it switches on upgrade — the first cycle may see already-known invoices again,
+  they are deduplicated. `initial_load.date_type` keeps its own default (`Invoicing`).
+
+### Fixed (full audit, 2026-09-25)
+
+- **No more lost invoices after a failed check.** A KSeF query error (network, 5xx, auth)
+  returned an empty or partial list that the monitor treated as success, the run loop's
+  error handler moved `last_check` forward after the cycle had been rolled back, and
+  pagination stopped at 10,000 records before following `isTruncated`. The failed subject
+  now keeps its `last_check` (other subjects still advance), the query raises instead of
+  returning partial data, and truncation is followed past 10,000. In the repeated autumn
+  DST hour `last_check` resolves to the earlier instant.
+- **Polish characters in invoice PDFs.** With xhtml2pdf 0.2.20 the DejaVu font was refused
+  by the default resource policy and PDFs fell back to Helvetica (letters like ą, ł, ź came
+  out blank). PDFs are rendered with an explicit policy that allows the font directory.
+- **Certificate (XAdES) login** works against KSeF: inclusive C14N for the references and
+  ECDSA for EC keys (verified on KSeF TEST with an EC P-256 certificate).
+- **Initial load:** a failed DB write or a truncated package without a last date is a
+  failed window instead of a silent "success"; the resume cursor follows the queried
+  `date_type`; `Issue`/`PermanentStorage` accepted (`IssueDate` kept as an alias); a job
+  cancelled before its thread started stays cancelled.
+- **Logs:** startup schema migration no longer disables the app's loggers.
+- **Login page** loads its stylesheet and icons before signing in.
+- **Scheduler:** no extra run right after startup in `daily`/`weekly` mode.
+- **Webhook signature** is computed over the exact bytes sent.
+- A subject whose query keeps failing no longer stops the artifact/UPO downloads of the
+  others; the same error is pushed at most every 6 hours instead of every cycle.
+- **iOS push:** a failed registration (Worker down during a reset) is no longer reported as
+  registered; it is retried on startup and `POST /push/reset` answers 502.
+- `db_admin delete-invoices` works for invoices with artifacts.
+- **Colliding file names** (same invoice number and date from different sellers) no longer
+  link one invoice to another's PDF/XML — the API served the wrong document. The second
+  invoice gets `<name>_<KSeF number>`; the naming pattern is unchanged.
+- Polling windows overlap by 15 minutes (KSeF guarantees completeness only below
+  `permanentStorageHwmDate`); dedup drops the duplicates.
+- The config auto-start of the initial load no longer re-exports the whole history on
+  every container start once a job for the same range has finished.
+- `python -m app.user_admin` finds the container config (`/config`, `/data`) and
+  `/data/invoices.db`.
+- Pushover `message_priority: 2` sends the required `retry`/`expire`.
+- PEF fallback PDF no longer fails on `<` in names.
+- **Multi-part export packages** are decrypted part by part (KSeF encrypts each part
+  separately); joining the ciphertexts broke every export split into several parts.
+- `date_type: PermanentStorage` resumes from the returned `permanentStorageHwmDate` —
+  the point up to which KSeF guarantees a complete result.
+- **iOS push reset** takes effect immediately (the notifier kept the old credentials
+  until restart).
+- Artifact/file-system errors no longer roll back the invoice (which re-notified it every
+  cycle); failed artifacts count their retries; a PDF is registered only if written.
+- Invoice notifications are logged in the cycle's transaction (the separate SQLite
+  connection waited 5 s per channel and dropped the log row).
+- UPO: exhausted retries no longer starve later invoices, a stale session map is rebuilt
+  before a miss counts, session listings follow `continuationToken`.
+- Initial load: a resumed job keeps failures of earlier runs (`completed_with_errors`).
+- `GET /api/v1/invoices?subject_type=` works (`Subject1`… in any case; `subject1` returned
+  nothing).
+- A root-owned `/data` mount is handed to the `ksef` user by the entrypoint.
+- A logo in `pdf_templates_dir` is allowed by the PDF resource policy; monitor and API
+  render PDFs with the same options.
+- A transient DB error at startup no longer regenerates (and unpairs) push credentials.
+- **Database upgrades:** databases on alembic revisions of phases 1-3 now reach head (create_all
+  used to pre-create tables and the upgrade failed forever); phase 2-4 migrations are idempotent.
+- `daily`/`weekly` schedules use `monitoring.timezone` (the container runs in UTC).
+- Webhook `method: GET` keeps the nested invoice object (sent as JSON in one parameter) and no
+  longer sends an unverifiable signature; a warning explains that GET puts invoice data in URLs.
+- UPO forced session-map rebuild is rate-limited to once per hour.
+- **Invoice notifications that failed on every channel are retried** (up to 3 attempts, 15 min /
+  60 min apart, within 3 days; polling invoices with a logged failure only) instead of being lost.
+- Without a database, iOS push credentials are no longer replaced on every second restart.
+- `POST /initial-load/start` converts date offsets to UTC and returns 422 (not 500) on mixed input.
+- `initial_load.start_date` with a UTC offset in the config no longer stops the automatic start.
+- The polling cycle and the XML/PDF/UPO downloads no longer hold the SQLite write lock during network I/O (UI logins and the historical import failed with "database is locked" during KSeF back-off).
+- The KSeF token-encryption key is chosen by its validity window and fetched again after a failed login (key rotation without a restart).
+- An invoice whose database write fails (e.g. "database is locked") is no longer notified before it is saved; the next cycle notifies it once.
+- The polling cycle commits each subject's state before querying the next one (no write lock during the KSeF query).
+- A failed migration of push credentials into the database keeps `push_config.json` (devices stayed paired only until the next restart).
+- Without a database, deduplication keeps every seen invoice within its TTL instead of the last 1000 (repeated notifications on large batches); the TTL now covers the whole 100-day query window and compares timestamps as dates, not strings.
+- An unreadable `push_config.json` (permissions, I/O) stops the push setup instead of being replaced with new credentials.
+- Without a database, credentials regenerated from a broken `push_config.json` are saved (a new identity was created on every restart); a file missing only the pairing code keeps its instance and gets a new code.
+- Regenerating the pairing code and resetting push credentials report a failure when the result could not be saved; a first start that cannot save new credentials stops the push setup instead of creating a new identity on every restart.
+- The XML artifact is committed before PDF rendering (the CIRFMF generator call no longer holds the SQLite write lock).
+- `push_config.json` is written atomically (a full disk no longer truncates the credentials); a pairing code or reset saved to JSON because the DB write failed is taken over into the DB on the next start instead of being ignored.
+- Initial load stores `form_code` like polling (`schemaVersion`); a negative `Retry-After` no
+  longer crashes the 429 handling.
+- Invalid `monitoring` values (e.g. string intervals) are rejected at startup instead of
+  silently stopping every cycle; previously working values keep their meaning.
+- JSON-state mode: a subject with a longer poll interval is polled after upgrading an old
+  state file; the error-push throttle resets after a successful cycle.
+
+### Security
+
+- `/ui/setup` requires the **install code** (`api.auth_token` / `/data/api_token.txt`).
+- Cookie-authenticated state changes must be same-origin (`Origin`/`Referer`).
+- Notification JSON templates escape every field (a buyer identifier typed by the invoice
+  issuer could inject JSON keys); `json_number` filter for amounts. `entrypoint.sh` refreshes
+  unmodified template copies in `/data` so the fix reaches existing installs; it seeds as
+  `ksef` and skips symlinks.
+- Slack/Discord/webhook URLs no longer appear in error logs; ios_push `worker_url` must be
+  https; plain-http webhook URLs and SMTP login without TLS log a warning.
+- CIRFMF PDF generator requests no longer follow redirects (the URL check stays public-only, #64).
+- Prometheus labels use route templates / `{id}` — no invoice numbers (seller NIP) on
+  `/metrics`, and unauthenticated requests cannot create unbounded series.
+- Invoice XML is decoded from raw bytes and checked against `x-ms-meta-hash`; export parts
+  are https-only, size-capped, hash-required; `_metadata.json` zip-bomb guard.
+- xhtml2pdf resource blocking actually blocks (`''` from `link_callback` kept the URI).
+- `api_token.txt` and uploaded certificates are created `0600` with `O_NOFOLLOW`; stale
+  login-attempt rows are pruned; KSeF error text is stripped of control characters.
+- New `api.forwarded_allow_ips` for a trusted reverse proxy and `api.trusted_origins` for
+  the same-origin check behind a proxy that rewrites `Host`.
+- 10 failed Bearer attempts per IP in 15 minutes lock Bearer auth for that IP (the global
+  rate limit counted each path separately).
+- The automatic `admin` account (password = `api.auth_token`) needs a token of 32+ chars
+  that passes the password policy; otherwise `/ui/setup` with the token as install code.
+- UI shows only known message codes from `?error=`/`?ok=` (no text injection via links);
+  paired device names are HTML-escaped on the push page.
+- Uncached `/invoices/{n}/xml|pdf` answers 503 instead of blocking in the KSeF limiter.
+- `db_admin export-invoices` CSV neutralizes spreadsheet formulas.
+- Slack/Discord notifications escape invoice fields: no `<!channel>` pings or disguised
+  links from a seller name (`slack_escape`, `discord_escape` template filters).
+- Same-origin check requires matching ports when both sides state one.
+- The KSeF budget gate also honors an active 429 pause and fails closed on limiter errors.
+- Control characters from invoice fields are removed from file names (log injection).
+- REST metrics: non-standard HTTP methods share the `OTHER` label.
+- HTTP library loggers are capped at WARNING (DEBUG logged webhook URLs and query strings).
+- Docker image installs a hash-pinned `requirements.lock` (`--require-hashes`); the
+  Synology compose drops all capabilities except CHOWN/DAC_READ_SEARCH/FOWNER/SETUID/SETGID and sets
+  `no-new-privileges`. GitHub workflows: external values whitelisted, actions pinned to
+  SHAs, image pushed only after the Trivy gate.
+
+### Maintenance
+
+- PROD OpenAPI baseline refreshed to API 2.8.1 (build `2.8.1-pr-20260923.3`).
+- KSeF session/token measurement scripts moved to `examples/`; `uv.lock` ignored.
+- `build_push_test.yml` removed — it pushed the `test` image to GHCR in parallel with
+  `docker-publish.yml`, bypassing its Trivy scan.
+
 ## [0.6.4] — 2026-09-23
 
 ### Changed

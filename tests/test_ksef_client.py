@@ -79,7 +79,7 @@ class TestKSeFClientInit:
         assert c.base_url == "https://api-demo.ksef.mf.gov.pl"
 
     def test_invalid_date_type_falls_back(self, mock_config):
-        """Invalid date_type falls back to Invoicing."""
+        """Invalid date_type falls back to the default (PermanentStorage)."""
         mock_config.config["monitoring"]["date_type"] = "Invalid"
 
         def _get(*keys, default=None):
@@ -95,7 +95,14 @@ class TestKSeFClientInit:
 
         mock_config.get = _get
         c = KSeFClient(mock_config)
-        assert c.date_type == "Invoicing"
+        assert c.date_type == "PermanentStorage"
+
+    def test_missing_date_type_uses_default_without_warning(self, mock_config, caplog):
+        mock_config.config["monitoring"].pop("date_type", None)
+        with caplog.at_level("WARNING", logger="app.ksef_client"):
+            c = KSeFClient(mock_config)
+        assert c.date_type == "PermanentStorage"
+        assert "Invalid date_type" not in caplog.text
 
 
 class TestKSeFClientValidateKsefNumber:
@@ -431,15 +438,17 @@ class TestKSeFClientGetInvoiceXml:
         client.access_token = "valid-token"
         mock_response = MagicMock()
         mock_response.status_code = 200
+        mock_response.content = b"<Faktura>...</Faktura>"
         mock_response.text = "<Faktura>...</Faktura>"
-        mock_response.headers = {"x-ms-meta-hash": "sha256hash"}
+        header = base64.b64encode(hashlib.sha256(mock_response.content).digest()).decode()
+        mock_response.headers = {"x-ms-meta-hash": header}
         mock_response.raise_for_status = MagicMock()
         client.session.request = MagicMock(return_value=mock_response)
 
         result = client.get_invoice_xml("1234567890-20260301-ABCDEF-XY")
         assert result is not None
         assert result["xml_content"] == "<Faktura>...</Faktura>"
-        assert result["sha256_hash"] == "sha256hash"
+        assert result["sha256_hash"] == header
 
     def test_not_authenticated(self, client):
         """No access token triggers authentication."""
@@ -564,13 +573,13 @@ class TestKSeFClientPublicKeyId:
             {
                 "certificate": cert_b64, "certificateId": "SYM",
                 "publicKeyId": "X" * 44,
-                "validFrom": "2026-01-01T00:00:00Z", "validTo": "2027-01-01T00:00:00Z",
+                "validFrom": "2026-01-01T00:00:00Z", "validTo": "2099-01-01T00:00:00Z",
                 "usage": ["SymmetricKeyEncryption"],
             },
             {
                 "certificate": cert_b64, "certificateId": "TOK",
                 "publicKeyId": "Y" * 44,
-                "validFrom": "2026-01-01T00:00:00Z", "validTo": "2027-01-01T00:00:00Z",
+                "validFrom": "2026-01-01T00:00:00Z", "validTo": "2099-01-01T00:00:00Z",
                 "usage": ["KsefTokenEncryption"],
             },
         ]
@@ -578,6 +587,41 @@ class TestKSeFClientPublicKeyId:
             client._fetch_public_key()
         assert client._ksef_public_key is not None
         assert client._ksef_public_key_id == "Y" * 44  # from the token-encryption cert
+
+    def test_fetch_public_key_skips_expired_key(self, client):
+        cert_b64 = self._self_signed_cert_b64()
+        resp = MagicMock()
+        resp.raise_for_status.return_value = None
+        resp.json.return_value = [
+            {"certificate": cert_b64, "publicKeyId": "OLD", "usage": ["KsefTokenEncryption"],
+             "validFrom": "2020-01-01T00:00:00Z", "validTo": "2021-01-01T00:00:00Z"},
+            {"certificate": cert_b64, "publicKeyId": "NEW", "usage": ["KsefTokenEncryption"],
+             "validFrom": "2020-01-01T00:00:00Z", "validTo": "2099-01-01T00:00:00Z"},
+        ]
+        with patch.object(client, "_request_with_retry", return_value=resp):
+            client._fetch_public_key()
+        assert client._ksef_public_key_id == "NEW"
+
+    def test_failed_token_auth_drops_cached_key(self, client):
+        client._ksef_public_key = self._rsa_public_key()
+        client._ksef_public_key_id = "OLD"
+        client.auth_method = "token"
+        with patch.object(client, "_get_challenge", return_value={"challenge": "c" * 20, "timestampMs": 1}), \
+             patch.object(client, "_authenticate_with_token", return_value=None):
+            assert client.authenticate() is False
+        assert client._ksef_public_key is None and client._ksef_public_key_id is None
+
+    def test_failed_auth_status_drops_cached_key(self, client):
+        """KSeF accepts POST /auth/ksef-token (202) and reports a wrong key later."""
+        client._ksef_public_key = self._rsa_public_key()
+        client._ksef_public_key_id = "OLD"
+        client.auth_method = "token"
+        with patch.object(client, "_get_challenge", return_value={"challenge": "c" * 20, "timestampMs": 1}), \
+             patch.object(client, "_authenticate_with_token",
+                          return_value={"referenceNumber": "R", "authenticationToken": {"token": "T"}}), \
+             patch.object(client, "_wait_for_auth_status", return_value=False):
+            assert client.authenticate() is False
+        assert client._ksef_public_key is None and client._ksef_public_key_id is None
 
 
 class TestKSeFClientUPO:

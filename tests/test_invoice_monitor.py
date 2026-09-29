@@ -182,8 +182,8 @@ class TestInvoiceMonitorState:
         assert state["last_check"] == "2026-03-06T10:00:00+01:00"
 
     def test_load_state_filters_old_entries(self, monitor, tmp_path):
-        """TTL filtering removes entries older than 90 days."""
-        old_ts = (datetime.now(timezone.utc) - timedelta(days=100)).isoformat()
+        """TTL filtering removes entries older than SEEN_INVOICES_TTL_DAYS."""
+        old_ts = (datetime.now(timezone.utc) - timedelta(days=monitor.SEEN_INVOICES_TTL_DAYS + 10)).isoformat()
         recent_ts = (datetime.now(timezone.utc) - timedelta(days=10)).isoformat()
         state = {
             "last_check": "2026-03-01T10:00:00+01:00",
@@ -235,19 +235,19 @@ class TestInvoiceMonitorCapDateFrom:
     """Tests for _cap_date_from()."""
 
     def test_within_range(self, monitor):
-        """Date within 90 days is not capped."""
+        """Date within 100 days is not capped."""
         now = datetime(2026, 3, 7, 12, 0, tzinfo=timezone.utc)
         date_from = now - timedelta(days=30)
         result = monitor._cap_date_from(date_from, now)
         assert result == date_from
 
     def test_exceeds_range(self, monitor):
-        """Date older than 90 days is capped to (now - 89 days) so the
-        inclusive [date_from, now] range stays at 90 days, not 91."""
+        """Date older than 100 days is capped to (now - 99 days) so the
+        inclusive [date_from, now] range stays at 100 days, not 101."""
         now = datetime(2026, 3, 7, 12, 0, tzinfo=timezone.utc)
         date_from = now - timedelta(days=120)
         result = monitor._cap_date_from(date_from, now)
-        expected = now - timedelta(days=89)
+        expected = now - timedelta(days=99)
         assert result == expected
 
 

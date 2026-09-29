@@ -151,7 +151,7 @@ class InvoicePDFGenerator:
             ]))
             # QR with label underneath
             ksef_num = data.get('ksef_metadata', {}).get('ksef_number', '')
-            label_para = Paragraph(ksef_num or '', self.styles['Small'])
+            label_para = Paragraph(self._rl_escape(ksef_num or ''), self.styles['Small'])
             qr_inner = Table(
                 [[qr_img], [label_para]],
                 colWidths=[qr_size],
@@ -233,7 +233,7 @@ class InvoicePDFGenerator:
         kod = h.get('kod_formularza', '')
         wariant = h.get('wariant', '')
         if kod:
-            elements.append(Paragraph(f'{kod} ({wariant})', self.styles['Title2']))
+            elements.append(Paragraph(f'{self._rl_escape(kod)} ({self._rl_escape(wariant)})', self.styles['Title2']))
 
         return elements
 
@@ -440,12 +440,12 @@ class InvoicePDFGenerator:
             vat = vs.get(p14_field, '') if p14_field else ''
             row = [
                 Paragraph(display_label, self.styles['TDC']),
-                Paragraph(self._fmt_amt(net), self.styles['TDR']),
-                Paragraph(self._fmt_amt(vat) if vat else '', self.styles['TDR']),
+                Paragraph(self._rl_escape(self._fmt_amt(net)), self.styles['TDR']),
+                Paragraph(self._rl_escape(self._fmt_amt(vat)) if vat else '', self.styles['TDR']),
             ]
             if has_w:
                 vat_w = vs.get(p14w_field, '') if p14w_field else ''
-                row.append(Paragraph(self._fmt_amt(vat_w) if vat_w else '', self.styles['TDR']))
+                row.append(Paragraph(self._rl_escape(self._fmt_amt(vat_w)) if vat_w else '', self.styles['TDR']))
             tdata.append(row)
 
         if len(tdata) <= 1:
@@ -486,7 +486,7 @@ class InvoicePDFGenerator:
 
         tdata = [[
             Paragraph(f'<b>{label}</b>', self.styles['SumBold']),
-            Paragraph(f'<b>{self._fmt_amt(p15)}{currency_suffix}</b>', self.styles['SumBold']),
+            Paragraph(f'<b>{self._rl_escape(self._fmt_amt(p15))}{currency_suffix}</b>', self.styles['SumBold']),
         ]]
         t = Table(tdata, colWidths=[120*mm, 66*mm])
         t.setStyle(TableStyle([
@@ -501,7 +501,7 @@ class InvoicePDFGenerator:
         kurs = h.get('kurs_waluty_z')
         if kurs and currency:
             elements.append(Paragraph(
-                f'Kurs waluty: {kurs} PLN/{currency}', self.styles['Small']))
+                f'Kurs waluty: {self._rl_escape(kurs)} PLN/{currency}', self.styles['Small']))
 
         return elements
 
@@ -1077,7 +1077,7 @@ class InvoicePDFGenerator:
         if h.get('data_wytworzenia'):
             elements.append(Spacer(1, 3*mm))
             elements.append(Paragraph(
-                f'Data wytworzenia faktury: {h["data_wytworzenia"]}',
+                f'Data wytworzenia faktury: {self._rl_escape(h["data_wytworzenia"])}',
                 self.styles['Small']))
 
         return elements
@@ -1288,7 +1288,9 @@ def _try_ksef_generator(xml_content: str, ksef_number: str,
 
     Returns BytesIO with PDF on success, None on any failure (caller falls back).
     """
-    # Validate URL — must be public HTTP(S) (prevents SSRF to internal services)
+    # Validate URL — must be public HTTP(S). Deliberately strict: this call
+    # sends the full invoice XML, so the webhook allow_private_network
+    # override does not apply here (issue #64).
     if not is_safe_public_url(base_url):
         logger.warning("CIRFMF generator URL rejected (non-public or bad scheme): %s", base_url)
         return None
@@ -1305,6 +1307,7 @@ def _try_ksef_generator(xml_content: str, ksef_number: str,
             files={'xml': (filename, xml_bytes, 'application/xml')},
             headers={'Accept': 'application/pdf'},
             timeout=30,
+            allow_redirects=False,  # a redirect would bypass the URL check above
         )
         if resp.status_code == 200:
             pdf_bytes = resp.content
@@ -1343,7 +1346,8 @@ def _generate_pef_pdf(invoice_data: Dict, ksef_number: str,
     story = []
 
     def para(text, style='Normal'):
-        story.append(Paragraph(str(text), styles[style]))
+        # values come from the invoice XML — escape for the ReportLab markup parser
+        story.append(Paragraph(html.escape(str(text), quote=False), styles[style]))
 
     hdr = invoice_data.get('header', {})
     seller = invoice_data.get('seller', {})

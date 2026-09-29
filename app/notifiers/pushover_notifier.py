@@ -35,6 +35,20 @@ class PushoverNotifier(BaseNotifier):
         if not self.is_configured:
             logger.debug("Pushover credentials not configured")
 
+    # Pushover API docs: for emergency priority (2) "the retry and expire
+    # parameters must be supplied" (retry >= 30 s, expire <= 10800 s).
+    EMERGENCY_RETRY = 60
+    EMERGENCY_EXPIRE = 3600
+
+    def _add_emergency_params(self, payload: Dict[str, Any]) -> None:
+        try:
+            emergency = int(payload.get("priority", 0)) == 2
+        except (TypeError, ValueError):
+            emergency = False
+        if emergency:
+            payload.setdefault("retry", self.EMERGENCY_RETRY)
+            payload.setdefault("expire", self.EMERGENCY_EXPIRE)
+
     @property
     def is_configured(self) -> bool:
         """Check if Pushover credentials are configured"""
@@ -80,6 +94,7 @@ class PushoverNotifier(BaseNotifier):
                 payload["url"] = url
                 payload["url_title"] = "View in KSeF"
 
+            self._add_emergency_params(payload)
             response = self.session.post(self.API_URL, data=payload, timeout=10)
             response.raise_for_status()
 
@@ -114,6 +129,7 @@ class PushoverNotifier(BaseNotifier):
                 payload["url"] = url
                 payload["url_title"] = "View in KSeF"
 
+            self._add_emergency_params(payload)
             response = self.session.post(self.API_URL, data=payload, timeout=10)
             response.raise_for_status()
 

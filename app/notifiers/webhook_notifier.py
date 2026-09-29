@@ -13,7 +13,7 @@ from typing import Any, Dict, Optional
 
 from app._ssrf_guard import is_safe_public_url
 
-from .base_notifier import BaseNotifier
+from .base_notifier import BaseNotifier, describe_request_error
 
 logger = logging.getLogger(__name__)
 
@@ -65,6 +65,12 @@ class WebhookNotifier(BaseNotifier):
         # Disable redirects to prevent SSRF via redirect to internal IPs
         self.session.max_redirects = 0
         self.method = webhook_config.get("method", "POST").upper()
+        if self.method == "GET":
+            logger.warning(
+                "Webhook method GET puts invoice data (names, NIPs, amounts) in the URL, "
+                "where proxies and servers log it; X-Signature is not sent (there is no "
+                "body to sign). Prefer POST."
+            )
         self.headers = webhook_config.get("headers", {})
         self.timeout = webhook_config.get("timeout", 10)
         self.signing_secret = webhook_config.get("signing_secret")
@@ -99,6 +105,21 @@ class WebhookNotifier(BaseNotifier):
             hashlib.sha256,
         ).hexdigest()
         return {"X-Signature": f"sha256={signature}"}
+
+    def _request_headers(self, payload_bytes: bytes) -> Dict[str, str]:
+        # GET sends no body: a signature over one would not verify
+        if self.method == "GET":
+            return dict(self.headers)
+        return {**self.headers, **self._sign_payload(payload_bytes)}
+
+    @staticmethod
+    def _get_params(payload: Dict[str, Any]) -> Dict[str, Any]:
+        """Query parameters for GET: nested objects (the template's "invoice")
+        as JSON — requests would otherwise send only their keys."""
+        return {
+            k: json.dumps(v, ensure_ascii=False, separators=(",", ":")) if isinstance(v, (dict, list)) else v
+            for k, v in payload.items()
+        }
 
     @property
     def channel_name(self) -> str:
@@ -141,25 +162,26 @@ class WebhookNotifier(BaseNotifier):
             if url:
                 payload["url"] = url
 
-            # Compute HMAC signature if signing_secret is configured
+            # Compute HMAC signature if signing_secret is configured; the body
+            # sent is exactly the signed bytes so receivers can verify it
             payload_bytes = json.dumps(payload, separators=(',', ':')).encode('utf-8')
-            headers = {**self.headers, **self._sign_payload(payload_bytes)}
+            headers = self._request_headers(payload_bytes)
 
             # Send request based on configured method (redirects disabled for SSRF protection)
             if self.method == "POST":
                 response = self.session.post(
-                    self.url, json=payload, headers=headers, timeout=self.timeout,
+                    self.url, data=payload_bytes, headers=headers, timeout=self.timeout,
                     allow_redirects=False
                 )
             elif self.method == "PUT":
                 response = self.session.put(
-                    self.url, json=payload, headers=headers, timeout=self.timeout,
+                    self.url, data=payload_bytes, headers=headers, timeout=self.timeout,
                     allow_redirects=False
                 )
             elif self.method == "GET":
                 # For GET, send as query parameters
                 response = self.session.get(
-                    self.url, params=payload, headers=headers, timeout=self.timeout,
+                    self.url, params=self._get_params(payload), headers=headers, timeout=self.timeout,
                     allow_redirects=False
                 )
             else:
@@ -172,7 +194,7 @@ class WebhookNotifier(BaseNotifier):
             return True
 
         except requests.exceptions.RequestException as e:
-            logger.error(f"Failed to send webhook notification: {e}")
+            logger.error("Failed to send webhook notification: %s", describe_request_error(e))
             if hasattr(e, 'response') and e.response is not None:
                 logger.error(f"Webhook response status: {e.response.status_code}")
             return False
@@ -193,14 +215,14 @@ class WebhookNotifier(BaseNotifier):
         try:
             payload = json.loads(rendered)
             payload_bytes = json.dumps(payload, separators=(',', ':')).encode('utf-8')
-            headers = {**self.headers, **self._sign_payload(payload_bytes)}
+            headers = self._request_headers(payload_bytes)
 
             if self.method == "POST":
-                response = self.session.post(self.url, json=payload, headers=headers, timeout=self.timeout, allow_redirects=False)
+                response = self.session.post(self.url, data=payload_bytes, headers=headers, timeout=self.timeout, allow_redirects=False)
             elif self.method == "PUT":
-                response = self.session.put(self.url, json=payload, headers=headers, timeout=self.timeout, allow_redirects=False)
+                response = self.session.put(self.url, data=payload_bytes, headers=headers, timeout=self.timeout, allow_redirects=False)
             elif self.method == "GET":
-                response = self.session.get(self.url, params=payload, headers=headers, timeout=self.timeout, allow_redirects=False)
+                response = self.session.get(self.url, params=self._get_params(payload), headers=headers, timeout=self.timeout, allow_redirects=False)
             else:
                 logger.error(f"Unsupported HTTP method: {self.method}")
                 return False
@@ -214,7 +236,7 @@ class WebhookNotifier(BaseNotifier):
             logger.error(f"Invalid JSON from webhook template: {e}")
             return False
         except requests.exceptions.RequestException as e:
-            logger.error(f"Failed to send webhook notification: {e}")
+            logger.error("Failed to send webhook notification: %s", describe_request_error(e))
             if hasattr(e, 'response') and e.response is not None:
                 logger.error(f"Webhook response status: {e.response.status_code}")
             return False

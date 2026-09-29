@@ -66,14 +66,16 @@ curl -H "Authorization: Bearer YOUR_TOKEN" http://localhost:8080/api/v1/invoices
 - Cookie: `mksef_session`, opaque 64-char hex, HttpOnly, SameSite=Strict, Secure (https), 7-dni rolling TTL
 - Sesje persisted w tabeli `ui_sessions` (Alembic head: `e0f1g2h34567`)
 - Pierwszy uruchomienie:
-  - **Fresh install:** `/ui` → redirect `/ui/setup` → wizard tworzy konto admin
+  - **Fresh install:** `/ui` → redirect `/ui/setup` → wizard tworzy konto admin; wymaga **kodu instalacyjnego** = `api.auth_token` (auto-generowany do `/data/api_token.txt`) — od 0.6.5
   - **Upgrade z v0.5.0:** jeśli `api.auth_token` był ustawiony, `main.py` automatycznie tworzy usera `admin` z hasłem = `auth_token`. Login: `admin` / `<your existing token>`. Zmień hasło w `/ui/account`.
 - `POST /ui/logout` revoke sesję w DB + clear cookie
 - `POST /ui/account/password` zmiana własnego hasła (revoke wszystkich sesji w tym bieżącej)
 
 ### Uprawnienia / endpointy publiczne
 
-- Whitelist (bez auth): `/docs`, `/redoc`, `/openapi.json`, `/api/v1/monitor/health`, `/ui/login`, `/ui/logout`, `/ui/setup`
+- Whitelist (bez auth): `/docs`, `/redoc`, `/openapi.json`, `/api/v1/monitor/health`, `/ui/login`, `/ui/logout`, `/ui/setup`, `/ui/static/*` (CSS i ikony strony logowania)
+- Żądania zmieniające stan (`POST`/`PUT`/`PATCH`/`DELETE`) z ciasteczkiem sesji i bez Bearera: `Origin`/`Referer` musi wskazywać ten sam host co `Host`/`X-Forwarded-Host`, inaczej 403 (od 0.6.5)
+- Za reverse proxy ustaw `api.forwarded_allow_ips` (IP proxy) — inaczej rate limit i blokada logowania widzą IP proxy zamiast klienta
 - Brak auth na `/ui/*` → 303 redirect do `/ui/login` (lub `/ui/setup` jeśli 0 userów w DB)
 - Brak auth na `/api/*` → 401 JSON `{"detail":"Missing or invalid Authorization header"}`
 - Opcja `api.ui_public: true` re-włącza bypass dla `/ui` (legacy reverse-proxy)
@@ -115,7 +117,7 @@ Lista faktur z paginacją, filtrowaniem i sortowaniem.
 |----------|-----|---------|------|
 | `page` | int | 1 | Numer strony (1–10000) |
 | `per_page` | int | 20 | Elementów na stronę (1–100) |
-| `subject_type` | string | — | Filtr: `subject1` (sprzedaż) lub `subject2` (zakup) |
+| `subject_type` | string | — | Filtr: `Subject1` (sprzedaż), `Subject2` (zakup), `Subject3`, `SubjectAuthorized` — wielkość liter bez znaczenia |
 | `seller_nip` | string | — | Filtr po NIP sprzedawcy (10 cyfr) |
 | `buyer_nip` | string | — | Filtr po NIP nabywcy (10 cyfr) |
 | `issue_date_from` | string | — | Filtr: data od (ISO, np. `2026-01-01`) |

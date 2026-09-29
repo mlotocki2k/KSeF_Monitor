@@ -4,6 +4,7 @@ Handles loading and validation of JSON configuration with secrets support
 """
 
 import json
+import os
 import re
 import secrets
 import sys
@@ -168,6 +169,10 @@ class ConfigManager:
         # Validate timezone (optional, defaults to Europe/Warsaw)
         self._validate_timezone(config)
 
+        # Monitoring values used in every cycle — a wrong type must stop the
+        # start, not raise in each cycle while the container looks healthy
+        self._validate_monitoring(config)
+
         # Set database defaults
         self._apply_database_defaults(config)
 
@@ -182,6 +187,52 @@ class ConfigManager:
 
         # Set initial load defaults
         self._apply_initial_load_defaults(config)
+
+    _SUBJECT_TYPES = ("Subject1", "Subject2", "Subject3", "SubjectAuthorized")
+
+    @staticmethod
+    def _is_positive_number(value) -> bool:
+        return isinstance(value, (int, float)) and not isinstance(value, bool) and value > 0
+
+    def _validate_monitoring(self, config: Dict[str, Any]):
+        """Validate monitoring.subject_types / subject_poll_intervals / artifact_batch_size."""
+        monitoring = config.get("monitoring")
+        if not isinstance(monitoring, dict):
+            return
+
+        subject_types = monitoring.get("subject_types")
+        if subject_types is not None:
+            if isinstance(subject_types, str):
+                # a single value — iterating the string would query "S", "u", …
+                subject_types = monitoring["subject_types"] = [subject_types]
+            if subject_types == []:
+                subject_types = None  # empty list = default (as before)
+            elif (not isinstance(subject_types, list)
+                    or any(st not in self._SUBJECT_TYPES for st in subject_types)):
+                raise ValueError(
+                    f"monitoring.subject_types must be a non-empty list of "
+                    f"{', '.join(self._SUBJECT_TYPES)}"
+                )
+
+        intervals = monitoring.get("subject_poll_intervals")
+        if intervals is not None:
+            # 0 / null = poll every cycle (unchanged meaning)
+            if not isinstance(intervals, dict) or any(
+                k not in self._SUBJECT_TYPES
+                or not (v is None or v == 0 or self._is_positive_number(v))
+                for k, v in intervals.items()
+            ):
+                raise ValueError(
+                    "monitoring.subject_poll_intervals must map subject types to "
+                    "positive numbers of seconds"
+                )
+
+        batch = monitoring.get("artifact_batch_size")
+        if batch is not None:
+            if isinstance(batch, float) and batch.is_integer():
+                batch = monitoring["artifact_batch_size"] = int(batch)  # JSON 50.0
+            if not (isinstance(batch, int) and not isinstance(batch, bool) and batch > 0):
+                raise ValueError("monitoring.artifact_batch_size must be a positive integer")
 
     def _validate_schedule(self, schedule: Dict[str, Any]):
         """
@@ -304,15 +355,46 @@ class ConfigManager:
     # Data-driven channel validation rules
     _CHANNEL_VALIDATORS = {
         "pushover": {"required_warn": ["user_key", "api_token"]},
-        "discord":  {"required_warn": ["webhook_url"]},
-        "slack":    {"required_warn": ["webhook_url"]},
+        # Webhook URLs are credentials — plain http exposes them on the wire
+        "discord":  {"required_warn": ["webhook_url"], "https_warn": ["webhook_url"]},
+        "slack":    {"required_warn": ["webhook_url"], "https_warn": ["webhook_url"]},
         "email":    {"required_warn": ["smtp_server", "username", "password",
                                         "from_address", "to_addresses"],
                      "list_fields": ["to_addresses"]},
         "webhook":  {"required_warn": ["url"],
-                     "enum_fields": {"method": ["GET", "POST", "PUT"]}},
-        "ios_push": {"required_warn": ["worker_url"]},
+                     "enum_fields": {"method": ["GET", "POST", "PUT"]},
+                     "https_warn": ["url"]},
+        # X-Instance-Key header is sent to the worker on every push
+        "ios_push": {"required_warn": ["worker_url"], "https_required": ["worker_url"]},
     }
+
+    @staticmethod
+    def _is_non_public_host(url: Optional[str]) -> bool:
+        """True when the URL's host resolves only to private/CGNAT addresses."""
+        import ipaddress
+        import socket
+        from urllib.parse import urlparse
+        try:
+            host = urlparse(url or "").hostname
+            if not host:
+                return False
+            infos = socket.getaddrinfo(host, None)
+            return bool(infos) and all(
+                not ipaddress.ip_address(info[4][0]).is_global for info in infos
+            )
+        except (ValueError, OSError):
+            return False
+
+    @staticmethod
+    def _is_https_or_loopback(url: str) -> bool:
+        from urllib.parse import urlparse
+        try:
+            parsed = urlparse(url)
+        except ValueError:
+            return False
+        if parsed.scheme == "https":
+            return True
+        return parsed.scheme == "http" and parsed.hostname in ("localhost", "127.0.0.1", "::1")
 
     def _validate_channel(self, channel_name: str, channel_config: Dict[str, Any]):
         """Validate a notification channel config against its rules."""
@@ -322,6 +404,29 @@ class ConfigManager:
         for field in rules.get("required_warn", []):
             if not channel_config.get(field):
                 logger.warning(f"{channel_name.capitalize()} enabled but '{field}' not configured")
+
+        # URL scheme: secrets travel in the URL or headers
+        for field in rules.get("https_required", []):
+            val = channel_config.get(field)
+            if val and not self._is_https_or_loopback(val):
+                raise ValueError(f"Field '{channel_name}.{field}' must be an https:// URL")
+        for field in rules.get("https_warn", []):
+            val = channel_config.get(field)
+            # A LAN receiver allowed via allow_private_network (#64) is fine over http
+            if channel_config.get("allow_private_network") and self._is_non_public_host(val):
+                continue
+            if val and not self._is_https_or_loopback(val):
+                logger.warning(
+                    f"{channel_name.capitalize()} '{field}' is not https:// — "
+                    f"the URL and payload are sent unencrypted"
+                )
+
+        # Email: credentials must not go over an unencrypted SMTP session
+        if (channel_name == "email" and channel_config.get("username")
+                and channel_config.get("use_tls") is False):
+            logger.warning(
+                "Email: use_tls=false with SMTP login — the password is sent unencrypted"
+            )
 
         # Check list fields
         for field in rules.get("list_fields", []):
@@ -507,7 +612,10 @@ class ConfigManager:
             # Write full token to file so user can retrieve it without it appearing in logs
             token_file = Path("/data/api_token.txt")
             try:
-                token_file.write_text(generated_token + "\n", encoding="utf-8")
+                # Created 0600 from the start (no umask window), never via a symlink
+                fd = os.open(token_file, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, 0o600)
+                with os.fdopen(fd, "w", encoding="utf-8") as f:
+                    f.write(generated_token + "\n")
                 token_file.chmod(0o600)
                 token_file_msg = f"Full token saved to: {token_file}"
             except Exception:
@@ -529,6 +637,15 @@ class ConfigManager:
                 "api.ui_public=true bypasses auth for /ui/* — only safe when "
                 "port is bound to 127.0.0.1 or a trusted reverse proxy enforces "
                 "authentication. Set to false for production."
+            )
+
+        if api["enabled"] and api["bind_address"] not in ("127.0.0.1", "::1", "localhost") \
+                and not api.get("forwarded_allow_ips"):
+            logger.warning(
+                "API bound to %s without api.forwarded_allow_ips — behind a reverse "
+                "proxy every client shares the proxy's IP, so one client can trip the "
+                "rate limits and the Bearer lockout for all. Set it to the proxy's IP.",
+                api["bind_address"],
             )
 
         if api["enabled"]:
