@@ -8,7 +8,8 @@ All notable changes to KSeF Monitor are documented here.
 
 - **KSeF `dateRange` cap raised from 90 to 100 days.** KSeF API 2.7.1 allows 100 days (UTC) for
   `/invoices/query/metadata` and `/invoices/exports`; PROD serves it since 2026-09-23. The queried
-  span is 99 days (same `MAX - 1` margin as before). A one-year initial load now needs 4 export
+  span is 99 days (same `MAX - 1` margin as before; a probe on KSeF TEST on 2026-09-28 accepted
+  exactly 100 days and rejected 100 days + 1 s). A one-year initial load now needs 4 export
   windows per subject instead of 5, and a monitor that was offline for up to 100 days catches up
   without skipping invoices.
 - **Dependencies:** cryptography 50.0.1, pytz 2026.4, signxml 5.1 (breaking changes in v5 affect

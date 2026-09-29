@@ -1,6 +1,6 @@
 # TODO — KSeF Monitor (Docker)
 
-Stan na: 2026-09-25 — `main` = 0.5.6, `test` = 0.6.4 (wdrożone na TEST), `feat/ksef-api-2.8-phase-b` = 0.6.5 (niescalona).
+Stan na: 2026-09-29 — `main` = 0.5.6, `test` = 0.6.5 (wdrożone na TEST), `release/0.6.5` = `main` + `test` gotowe do merge na `main` (checklista niżej).
 Sekcje 0.5.x poniżej zostają jako historia; scenariusze user-testu nadal obowiązują dla merge `test` → `main`.
 
 Aplikacja Docker — uruchamiana jako kontener (`docker-compose` / `docker stack`).
@@ -48,6 +48,28 @@ Release `test` → `main` gating: **manualny user-test + iOS app v1.1.1 w App St
 - [ ] Merge `test` → `main` (po zielonym user-test; warunek iOS spełniony — patrz wyżej)
 - [ ] Docker image tag `v0.6.x` po merge (dziś `main` = 0.5.6)
 
+### Release 0.6.5 → `main` (gałąź `release/0.6.5`)
+
+Gałąź = `origin/main` + merge `origin/test` (`9f12dfd`). Konflikty rozwiązane na korzyść `test`
+(wersje, requirements, `spec/*.json`, SSRF guard — `main` miał tylko backporty 0.5.5/0.5.6);
+CHANGELOG zachowuje wpisy 0.5.5/0.5.6. Suite: 1111 passed.
+
+**Uwaga — merge na `main` = automatyczny deploy prod.** Release wnosi na `main` `.gitea/workflows/ci.yml`
+(`docker-synology.yml@v0.24.0`): push na `main` buduje obraz `:latest` i wdraża na `docker.krzewiny.net`
+(`/volume1/docker/ksef_monitor`, compose z `deploy/synology/compose.yaml`). Dotąd `main` nie miał
+`.gitea/workflows` — to pierwszy prodowy deploy tą ścieżką. Od tej chwili Gitea przestaje też odpalać
+`.github/workflows` (precedence) — boty spec/deps działają dalej tylko na GitHubie.
+
+- [ ] User-test (sekcja wyżej) na TEST 0.6.5
+- [ ] Porównać `deploy/synology/compose.yaml` z compose działającym na prodzie (porty, bindy `config.json`/`data`, sieć `10.90.26.0/24`) — ręcznie na hoście
+- [ ] Backup `/volume1/docker/ksef_monitor/data` (DB `invoices.db`) przed deployem
+- [ ] Config prod: `monitoring.date_type` — brak klucza = nowy default `PermanentStorage` (patrz CHANGELOG 0.6.5)
+- [ ] (Opcjonalnie) PR `release/0.6.5` → `main` na Gitei = build-only CI przed właściwym merge
+- [ ] Merge `release/0.6.5` → `main` (`--no-ff`), ustawić datę 0.6.5 w CHANGELOG na dzień wydania
+- [ ] Po deployu: `curl http://docker.krzewiny.net:8888/api/v1/monitor/health` → `"version":"0.6.5"`, jedna faktura w UI
+- [ ] Tag `v0.6.5`
+- [ ] Zamknąć issues botów na Gitei (#6 drift PRD — nieaktualne; #1/#2 deps) — po przejściu na `.gitea/workflows` nikt ich już nie zaktualizuje
+
 ---
 
 ## Follow-ups po 0.5.3 (non-blocking)
@@ -67,23 +89,17 @@ Release `test` → `main` gating: **manualny user-test + iOS app v1.1.1 w App St
 ## v0.6 (Lightweight Polling) — zaimplementowane, otwarte weryfikacje
 
 Implementacja z `ROADMAP.md` §v0.6 (pkt 1–7) zamknięta na `test` (0.6.0–0.6.3);
-adaptacja KSeF API 2.7.x/2.8.x (pkt 8): faza A = 0.6.4 (na `test`), faza B = 0.6.5 na `feat/ksef-api-2.8-phase-b`.
+adaptacja KSeF API 2.7.x/2.8.x (pkt 8): faza A = 0.6.4, faza B = 0.6.5 (obie na `test`, wdrożone na TEST).
 Kod bez zmian wymaga już tylko danych z żywego KSeF albo rolloutu PRD:
 
-- [ ] (Opcjonalnie) **sonda granicy `dateRange` na TEST** — czy da się odpytywać pełne 100 dni zamiast 99 — `examples/probe_date_range.py` (7 wywołań metadata, sesja unieważniana na końcu):
-  ```bash
-  read -rs KSEF_TOKEN && export KSEF_TOKEN   # token TEST, bez echa
-  export KSEF_NIP=<nip>
-  python examples/probe_date_range.py
-  ```
-  Wynik (max przyjęty span) wpisać do `ROADMAP.md` §v0.6 pkt 8.
+- [x] **Sonda granicy `dateRange` na TEST** (2026-09-28, `examples/probe_date_range.py`): 100 dni → 200, 100 dni + 1 s → 400. Wynik w `ROADMAP.md` §v0.6 pkt 8.
 - [x] **0.6.5: `dateRange` 90 → 100 dni** (`MAX_DATE_RANGE_DAYS`, `MAX_WINDOW_DAYS`; span 99 dni) — live spec PRD z „100 dni w strefie UTC” potwierdzony 25.09.2026.
 - [x] **0.6.5: baseline `spec/openapi.json` (PRD) → 2.8.1.**
 - [ ] **E2E UPO** na żywym KSeF — wymaga tokenu z uprawnieniem `Introspection` (§4).
 - [ ] **E2E logowania certyfikatem XAdES** — wymaga prawdziwego `.p12` (§7).
 - [ ] **Operacyjne potwierdzenie limitów TEST = PRD** (§5).
 - [ ] (Opcjonalnie) wrapper `/testdata/rate-limits` — endpoint już dostępny na TEST (§5).
-- [x] Issues bota driftu Gitea #4, #5 zamknięte 25.09.2026 (po pushu 0.6.4). Po pushu 0.6.5: zamknąć Gitea #6 i GitHub #67/#68/#69 (drift), odpowiedzieć na issues zależności.
+- [x] Issues bota driftu Gitea #4, #5 zamknięte 25.09.2026 (po pushu 0.6.4). GitHub #67/#68/#69 (drift) zamknięte (#69 — 28.09.2026 po `47e28bd`). GitHub #70 (deps `test`) zamknięte jako wontfix 28.09.2026; #35 (deps `main`) otwarte do release. Gitea #6 — patrz checklista release.
 
 ---
 
@@ -95,17 +111,16 @@ Kod bez zmian wymaga już tylko danych z żywego KSeF albo rolloutu PRD:
 
 ## Stan branchy (versions audit)
 
-Stan 2026-09-25 (`git show origin/<branch>:…`):
+Stan 2026-09-29 (`git show origin/<branch>:…`):
 
 | Branch | `app/__init__.py` | `pyproject.toml` | PDF footer | Migracje alembic |
 |---|---|---|---|---|
 | `main` | `"0.5.6"` ✓ | `"0.5.6"` ✓ | `v{{ app_version }}` ✓ | phase1–8 |
-| `test` | `"0.6.4"` ✓ | `"0.6.4"` ✓ | `v{{ app_version }}` ✓ | phase1–8 |
-| `feat/ksef-api-2.8-phase-b` | `"0.6.5"` ✓ | `"0.6.5"` ✓ | `v{{ app_version }}` ✓ | phase1–8 |
+| `test` | `"0.6.5"` ✓ | `"0.6.5"` ✓ | `v{{ app_version }}` ✓ | phase1–8 |
+| `release/0.6.5` | `"0.6.5"` ✓ | `"0.6.5"` ✓ | `v{{ app_version }}` ✓ | phase1–8 |
 
 Niespójność wersji na `main` (2.0.0 / 0.4.0 / v0.3) zniknęła, gdy na `main` weszły wydania 0.5.2 i 0.5.3
-(`b21ea8a`, `44cd16c` — UI auth V5-12…V5-17). `test` wyprzedza `main` o 59 commitów (po merge 0.6.4); `main` ma 23 commity
-spoza `test` — cherry-picki i backporty: sync spec OpenAPI, bump zależności (cryptography, fastapi/starlette),
+(`b21ea8a`, `44cd16c` — UI auth V5-12…V5-17). `main` ma 23 commity spoza `test` — cherry-picki i backporty (scalone z `test` na `release/0.6.5`): sync spec OpenAPI, bump zależności (cryptography, fastapi/starlette),
 poprawki CI etykiet issue, webhook `allow_private_network`, runtime bez pip, usunięcie ostrzeżenia App Store.
 
 ---

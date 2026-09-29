@@ -499,7 +499,7 @@ Rollout PRD 2.7.1 + 2.8.0 + 2.8.1 zapowiedziany na 23.09.2026; w dniu zapowiedzi
 - [x] Test regresji 403 `problem+json` bez `timestamp` (0.6.4)
 - [x] Eksport: `package: null` przy statusie 200 = nieudane okno zamiast wyjątku całego joba (0.6.4; znalezione w cross-review Codex)
 - [x] Cross-review gałęzi: Codex (GPT) + lokalny qwen3-coder w pętli do zera uwag (2026-09-23)
-- [ ] (Opcjonalnie) sonda `examples/probe_date_range.py` na TEST — czy KSeF przyjmuje pełne 100 dni; dziś aplikacja odpytuje 99 dni z marginesem
+- [x] Sonda `examples/probe_date_range.py` na TEST (2026-09-28): span 89 / 90 / 99 / 100 dni → HTTP 200, 100 dni + 1 s i 101 dni → HTTP 400. Granica = dokładnie 100 dni; aplikacja zostaje przy 99 dniach (margines)
 - [x] `dateRange` 90 → 100 dni w `invoice_monitor` i `initial_load_manager` (0.6.5; span 99 dni) — PRD z limitem 100 dni potwierdzony w live spec 25.09.2026
 - [x] Baseline `openapi.json` (PRD) → 2.8.1 (0.6.5)
 - [x] Zależności: cryptography 50.0.1, pytz 2026.4, signxml 5.1, reportlab 5.0.1 (0.6.5)
