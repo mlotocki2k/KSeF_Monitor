@@ -1,4 +1,4 @@
-# KSeF Monitor v0.5.3
+# KSeF Monitor v0.6.0
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
@@ -134,6 +134,7 @@ Katalog `data/` powstaje w runtime i zawiera bazę danych `invoices.db` oraz leg
 
 - 📖 [QUICKSTART.md](docs/QUICKSTART.md) — Szybki start w 5 minut
 - 🔑 [KSEF_TOKEN.md](docs/KSEF_TOKEN.md) — Tworzenie tokena KSeF (krok po kroku, uprawnienia read-only)
+- 📜 [KSEF_CERTIFICATE_AUTH.md](docs/KSEF_CERTIFICATE_AUTH.md) — Logowanie certyfikatem (XAdES) — konfiguracja, upload `.p12` w UI (v0.6)
 - 🔔 [NOTIFICATIONS.md](docs/NOTIFICATIONS.md) — Konfiguracja powiadomień (6 kanałów, tworzenie webhooków)
 - 🎨 [TEMPLATES.md](docs/TEMPLATES.md) — Szablony Jinja2 powiadomień (zmienne, filtry, przykłady)
 - 🔒 [SECURITY.md](docs/SECURITY.md) — Najlepsze praktyki bezpieczeństwa
@@ -193,6 +194,8 @@ Skopiuj `examples/config.example.json` do `config.json` i uzupełnij wartości.
 | `environment` | `test` \| `demo` \| `prod` — wyznacza base URL API (patrz tabelka poniżej). |
 | `nip` | 10-cyfrowy NIP podmiotu. |
 | `token` | Token autoryzacyjny z portalu KSeF — **wyłącznie z uprawnieniami do przeglądania faktur** (read-only). Może być podany tu lub przez env variable / Docker secret (patrz [Sekretne wartości](#sekretne-wartości)). Przewodnik tworzenia: [KSEF_TOKEN.md](docs/KSEF_TOKEN.md) |
+| `auth_method` | `"token"` (domyślnie) \| `"certificate"`. Przy `certificate` logowanie odbywa się podpisem XAdES certyfikatem (`token` nie jest wymagany). Patrz [KSEF_CERTIFICATE_AUTH.md](docs/KSEF_CERTIFICATE_AUTH.md). |
+| `certificate` | Obiekt dla `auth_method="certificate"`: `path` (plik `.p12`/`.pfx` PKCS#12, **wymagane**), `password` (zalecane przez env `KSEF_CERT_PASSWORD` / Docker secret, nie w configu), `subject_identifier_type` (`certificateSubject` \| `certificateFingerprint`). Plik można też wgrać w UI: `/ui/certificate`. |
 
 Base URLs przypisane automatycznie:
 
@@ -346,7 +349,7 @@ System powiadomień obsługuje **6 kanałów** jednocześnie. Możesz włączyć
 4. Regeneracja credentials: `POST /api/v1/push/regenerate`
 5. Reset pełny: `POST /api/v1/push/reset`
 
-> ⚠ **Status aplikacji iOS:** wersja w App Store nie obsługuje jeszcze parowania push — pełna funkcjonalność wkrótce. Po wersję testową przez TestFlight napisz na [kontakt@krzewilabs.pl](mailto:kontakt@krzewilabs.pl).
+> ℹ️ **Aplikacja iOS:** parowanie push jest dostępne w oficjalnej wersji **Monitor KSeF w App Store** (v1.1.2+). Parowanie w aplikacji: Konfiguracja → sekcja „Powiadomienia Push" → włącz przełącznik → zeskanuj kod QR lub wpisz 8-znakowy kod ręcznie.
 
 Secret: `IOS_PUSH_INSTANCE_KEY` (env var / Docker secret)
 </details>
@@ -387,10 +390,14 @@ Szablony powiadomień: [docs/TEMPLATES.md](docs/TEMPLATES.md)
 | Pole | Default | Opis |
 |---|---|---|
 | `subject_types` | `["Subject1", "Subject2"]` | Typy faktur do monitorowania. `Subject1` = sprzedażowe (Ty = sprzedawca), `Subject2` = zakupowe (Ty = nabywca). Jedno zapytanie API na każdy typ. |
-| `date_type` | `"Invoicing"` | Typ daty w zakresie zapytania. Dozwolone wartości: `Issue` (data wystawienia), `Invoicing` (data przyjęcia w KSeF), `PermanentStorage` (data trwałego zapisu). Fallback na `Invoicing` przy niepoprawnej wartości. |
+| `date_type` | `"PermanentStorage"` | Typ daty w zakresie zapytania. Dozwolone wartości: `Issue` (data wystawienia), `Invoicing` (data przyjęcia w KSeF), `PermanentStorage` (data trwałego zapisu). Domyślnie `PermanentStorage` — jedyny typ, dla którego KSeF gwarantuje kompletność (`permanentStorageHwmDate`), więc polling przyrostowy nie gubi faktur zapisanych z opóźnieniem. Fallback na `PermanentStorage` przy niepoprawnej wartości. Import historyczny (`initial_load.date_type`) ma osobne ustawienie, domyślnie `Invoicing`. |
 | `timezone` | `"Europe/Warsaw"` | Strefa czasowa używana do wszystkich operacji z datami. Nazwa według standardu IANA (np. `Europe/Warsaw`, `America/New_York`). Zobacz [listę stref czasowych](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones). Fallback na `Europe/Warsaw` przy niepoprawnej wartości. |
 | `message_priority` | `0` | Priority powiadomień Pushover dla nowych faktur. `-2` cisza \| `-1` cicho \| `0` normalne \| `1` wysoka \| `2` pilne (wymaga potwierdzenia). Fallback na `0`. |
 | `test_notification` | `false` | Jeśli `true` — wysyła testowe powiadomienie przy starcie aplikacji. |
+| `lazy_artifacts` | `false` | Lightweight Polling (v0.6): gdy `true`, detekcja tylko kolejkuje XML/PDF, a pobieranie odbywa się w osobnej fazie (szybszy push). Wymaga bazy danych. |
+| `artifact_batch_size` | `50` | Maks. liczba artefaktów przetwarzanych w jednym przebiegu fazy 2 (lazy artifacts / UPO). |
+| `fetch_upo` | `false` | v0.6: pobieranie UPO faktur sprzedażowych (Subject1) w osobnej fazie (rozwiązanie sesji + `/upo` + weryfikacja SHA-256 → `{output_dir}/upo/{ksef}.xml`). Wymaga bazy i tokenu z uprawnieniem `Introspection`. |
+| `subject_poll_intervals` | `{}` | Opcjonalny min. interwał pollingu per subject w sekundach, np. `{"Subject1": 240, "Subject2": 420}`. Subject pollowany dopiero gdy interwał minął; nieujęte subjecty pollowane co cykl. |
 
 ### Sekcja `schedule`
 
@@ -540,7 +547,7 @@ Zarządzanie: `python db_admin.py status|invoices|stats|errors|...` — szczegó
 
 ### Sekcja `api`
 
-REST API (FastAPI) + browser UI (v0.5.3).
+REST API (FastAPI) + browser UI (v0.6.0).
 
 | Pole | Default | Opis |
 |---|---|---|
@@ -561,7 +568,7 @@ REST API (FastAPI) + browser UI (v0.5.3).
 **Browser UI auth (V5-13/V5-14, hardened w v0.5.2):** osobne konta user/pass
 w DB (bcrypt 12 rounds, SHA-256+b64 pre-hash dla haseł >72B → bcrypt 5.0-ready),
 HttpOnly + SameSite=strict cookie session, 7 dni rolling z absolute cap 30 dni
-(U-09). Pierwszy start: `/ui/setup` (race-safe via `BEGIN IMMEDIATE` — U-06)
+(U-09). Pierwszy start: `/ui/setup` z kodem instalacyjnym z `/data/api_token.txt` (od 0.6.5; race-safe via `BEGIN IMMEDIATE` — U-06)
 lub auto-bootstrap `admin` z `auth_token` (upgrade-friendly z v0.5.0). Bearer
 nadal działa dla curl/integracji. V5-14: session resolver niezależny od
 auth gate — `/ui/account` i navbar (username + Wyloguj) działają też gdy
@@ -639,12 +646,12 @@ Eksport metryk dla systemów monitorowania (Prometheus, Grafana, etc.)
 | `ksef_new_invoices_total{subject_type}` | Counter | Łączna liczba nowych faktur per `subject_type` (`Subject1`, `Subject2`) |
 | `ksef_monitor_up` | Gauge | Status monitora: `1` = running, `0` = stopped |
 | `ksef_auth_failures_total{status_code}` | Counter | Błędy autentykacji KSeF API |
-| `ksef_api_requests_total{endpoint,status_code}` | Counter | Łączna liczba żądań do KSeF API (v0.4) |
+| `ksef_api_requests_total{endpoint,status_code}` | Counter | Łączna liczba żądań do KSeF API (v0.4); identyfikatory w ścieżce (numery KSeF, referencje) zastąpione `{id}` — od 0.6.5 |
 | `ksef_api_response_time_seconds{endpoint}` | Histogram | Czas odpowiedzi KSeF API (v0.4) |
 | `ksef_api_rate_limit_waits_total` | Counter | Liczba oczekiwań rate limitera (v0.4) |
 | `ksef_api_rate_limit_remaining{window}` | Gauge | Pozostałe żądania w oknie rate limitera (v0.4) |
 | `ksef_artifacts_pending_total{type}` | Gauge | Artefakty oczekujące na pobranie (v0.4) |
-| `ksef_rest_api_requests_total{endpoint,method}` | Counter | Żądania REST API monitora (v0.4) |
+| `ksef_rest_api_requests_total{endpoint,method}` | Counter | Żądania REST API monitora (v0.4); `endpoint` = szablon trasy (np. `/api/v1/invoices/{ksef_number}`) albo `unmatched` — od 0.6.5 |
 
 **Przykład konfiguracji:**
 
@@ -895,7 +902,7 @@ Endpoint: `POST /v2/invoices/query/metadata`
 - `dateType` pochodzi z pola `date_type` w konfiguracji.
 - Daty w formacie ISO 8601 z sufixem `Z` (UTC).
 - Wszystkie daty są konwertowane z skonfigurowanej strefy czasowej (`timezone`) do UTC przed wysłaniem do API.
-- `dateRange` ograniczony do max 90 dni (limit KSeF API).
+- `dateRange` ograniczony do max 100 dni w UTC (limit KSeF API od 2.7.1; aplikacja od 0.6.5 odpytuje 99 dni).
 - `pageSize` i `pageOffset` przekazywane jako **query params** (nie w body) — zgodnie ze specyfikacją API.
 - Wszystkie zapytania podlegają rate limiting (10/s, 30/min, 120/h). Szczegóły: [docs/KSEF_API_LIMITATIONS.md](docs/KSEF_API_LIMITATIONS.md)
 
@@ -1043,7 +1050,7 @@ Plik `data/last_check.json` jest nadal zapisywany dla kompatybilności wstecznej
 
 Dokumentacja API: https://api.ksef.mf.gov.pl/docs/v2/
 
-> **Ograniczenia API:** Rate limiting (10/s, 30/min, 120/h), max 90 dni zakres dat, truncation przy 10k rekordów, brak batch download. Pełna lista: [docs/KSEF_API_LIMITATIONS.md](docs/KSEF_API_LIMITATIONS.md)
+> **Ograniczenia API:** Rate limiting (10/s, 30/min, 120/h), max 100 dni zakres dat, truncation przy 10k rekordów, brak batch download. Pełna lista: [docs/KSEF_API_LIMITATIONS.md](docs/KSEF_API_LIMITATIONS.md)
 
 ---
 

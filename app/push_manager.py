@@ -19,6 +19,7 @@ import hashlib
 import json
 import logging
 import secrets
+import time
 import uuid
 from datetime import datetime, timezone
 from io import BytesIO
@@ -34,6 +35,10 @@ except ImportError:
     QRCODE_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
+
+
+class PushStorageUnavailable(RuntimeError):
+    """Stored push credentials could not be read (as opposed to: none stored)."""
 
 # QR code prefix for pairing codes (validated by iOS app)
 QR_PREFIX = "MKSEF:"
@@ -68,6 +73,7 @@ class PushManager:
             data_dir: Directory for legacy push_config.json (default: /data)
             db: Database instance for credential storage (optional, falls back to JSON)
         """
+        self._config = config  # shared with IosPushNotifier (credentials live there)
         self.central_push_url = config.get("worker_url", "https://push.monitorksef.com")
         self.timeout = config.get("timeout", 15)
         self.push_config_path = Path(data_dir) / "push_config.json"
@@ -77,6 +83,7 @@ class PushManager:
         self.instance_key: Optional[str] = None
         self.pairing_code: Optional[str] = None
         self.registered_at: Optional[str] = None
+        self._db_updated_at: Optional[datetime] = None  # freshness of the DB row
 
         self.session = requests.Session()
         self.session.verify = True
@@ -85,27 +92,62 @@ class PushManager:
 
     def _load_or_generate(self):
         """Load credentials from DB/JSON or generate new ones on first run."""
-        # Try DB first
-        if self._load_from_db():
+        # Try DB first (a transient error is retried; persisting errors abort
+        # the push setup instead of replacing the stored credentials)
+        for attempt in range(3):
+            try:
+                loaded = self._load_from_db()
+                break
+            except PushStorageUnavailable as e:
+                logger.warning("Push config load failed (attempt %d/3): %s", attempt + 1, e)
+                if attempt == 2:
+                    raise
+                time.sleep(1)
+        if loaded:
+            self._adopt_fallback_json()
+            self._ensure_registered()
             return
 
         # Try legacy JSON file (and migrate to DB if found)
         if self.push_config_path.exists():
-            self._load_from_json()
+            regenerated = self._load_from_json()
             if self.instance_id and self.instance_key:
-                self._save_to_db()
-                self._rename_legacy_json()
+                if not self.pairing_code:
+                    # keep the instance (paired devices), replace only the code
+                    logger.warning("push_config.json has no pairing code — generating a new one")
+                    if self.registered_at:
+                        # only the service can install a new code for a
+                        # registered instance; if it fails, sending still works
+                        # and the repair is retried on the next start
+                        if not self.regenerate_pairing_code():
+                            logger.warning("Pairing code not repaired — retried on next start")
+                    else:
+                        self.pairing_code = secrets.token_hex(8).upper()
+                        regenerated = True  # registered with this code below
+                # Migrate only into a real DB. Without one the JSON file IS the
+                # storage: renaming it lost the credentials (and unpaired every
+                # device) on every second restart. Credentials regenerated from
+                # a broken file are saved in both modes (JSON fallback w/o DB).
+                if self.db or regenerated:
+                    # renames the JSON only after a committed DB write —
+                    # otherwise it is still the only copy of the credentials
+                    if not self._save_to_db() and regenerated:
+                        raise PushStorageUnavailable(
+                            "regenerated push credentials could not be saved")
+                self._ensure_registered()
                 return
 
         # First run: generate new credentials
         self._generate_credentials()
         registered = self._register_instance()
-        self._save_to_db()
+        if not self._save_to_db():
+            # a new identity on every restart would break pairing silently
+            raise PushStorageUnavailable("new push credentials could not be saved")
         self._log_pairing_info()
         if not registered:
             logger.warning(
                 "Could not register with Central Push Service — "
-                "credentials saved, registration will be retried on next push"
+                "credentials saved, registration will be retried on next start"
             )
 
     # ── DB Storage ───────────────────────────────────────────────────────
@@ -124,20 +166,26 @@ class PushManager:
                 self.instance_key = instance.instance_key
                 self.pairing_code = instance.pairing_code
                 self.registered_at = instance.registered_at
+                self._db_updated_at = instance.updated_at or instance.created_at
                 logger.info("Push config loaded from DB (instance: %s)", self.instance_id)
                 return True
             finally:
                 session.close()
         except Exception as e:
-            logger.warning("Failed to load push config from DB: %s", e)
-            return False
+            # Not "no row": the DB is unreadable right now (locked, I/O…).
+            # Generating new credentials here would overwrite the existing
+            # row and silently unpair every device.
+            raise PushStorageUnavailable(f"push config unreadable: {e}") from e
 
-    def _save_to_db(self):
-        """Save credentials to push_instances table."""
+    def _save_to_db(self) -> bool:
+        """Save credentials to push_instances table.
+
+        Returns True when the credentials were persisted — in the DB or, as a
+        fallback, in push_config.json; False when neither write succeeded.
+        """
         if not self.db:
             # Fallback to JSON if no DB
-            self._save_to_json()
-            return
+            return self._save_to_json()
         try:
             session = self.db.get_session()
             try:
@@ -151,6 +199,11 @@ class PushManager:
                 )
                 session.commit()
                 logger.info("Push config saved to DB (instance: %s)", self.instance_id)
+                # a leftover fallback/legacy JSON is now stale — retire it, so a
+                # JSON file next to a DB row always means "newer than the DB"
+                if self.push_config_path.exists():
+                    self._rename_legacy_json()
+                return True
             except Exception:
                 session.rollback()
                 raise
@@ -159,15 +212,21 @@ class PushManager:
         except Exception as e:
             logger.error("Failed to save push config to DB: %s", e)
             # Fallback to JSON
-            self._save_to_json()
+            return self._save_to_json()
 
     # ── Legacy JSON Storage ──────────────────────────────────────────────
 
     def _load_from_json(self):
-        """Load credentials from legacy push_config.json file."""
+        """Load credentials from legacy push_config.json file.
+
+        Returns True when the file was broken and new credentials were
+        generated (the caller must persist them).
+        """
         try:
             with open(self.push_config_path, 'r', encoding='utf-8') as f:
                 data = json.load(f)
+            if not isinstance(data, dict):
+                raise ValueError("push_config.json is not a JSON object")
 
             self.instance_id = data.get("instance_id")
             self.instance_key = data.get("instance_key")
@@ -177,16 +236,21 @@ class PushManager:
             if not self.instance_id or not self.instance_key:
                 logger.warning("Push config JSON incomplete, regenerating credentials")
                 self._generate_credentials()
-                if self._register_instance():
-                    return  # caller will save to DB
-                return
+                self._register_instance()
+                return True
 
             logger.info("Push config loaded from JSON (instance: %s)", self.instance_id)
+            return False
 
-        except (json.JSONDecodeError, OSError) as e:
+        except OSError as e:
+            # The file exists but cannot be read (permissions, I/O): replacing
+            # it with new credentials would silently unpair every device.
+            raise PushStorageUnavailable(f"push_config.json unreadable: {e}") from e
+        except ValueError as e:  # corrupt JSON / encoding
             logger.error("Failed to load push config JSON: %s", e)
             self._generate_credentials()
             self._register_instance()
+            return True
 
     def _save_to_json(self):
         """Save credentials to push_config.json (fallback when DB unavailable)."""
@@ -200,23 +264,76 @@ class PushManager:
                 "pairing_code": self.pairing_code,
                 "central_push_url": self.central_push_url,
                 "registered_at": self.registered_at,
+                # lets startup tell a fallback newer than the DB row from a stale one
+                "saved_at": datetime.now(timezone.utc).isoformat(),
             }
 
+            # temp file + atomic replace: a failed write (disk full) must not
+            # truncate the only copy of the credentials
+            tmp_path = self.push_config_path.with_suffix(".json.tmp")
             fd = os.open(
-                str(self.push_config_path),
-                os.O_WRONLY | os.O_CREAT | os.O_TRUNC,
+                str(tmp_path),
+                os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0),
                 0o600,
             )
             try:
                 with os.fdopen(fd, 'w', encoding='utf-8') as f:
                     json.dump(data, f, indent=2, ensure_ascii=False)
+                    f.flush()
+                    os.fsync(f.fileno())
+                os.replace(tmp_path, self.push_config_path)
             except Exception:
+                try:
+                    tmp_path.unlink()
+                except OSError:
+                    pass
                 raise
 
             logger.info("Push config saved to %s (DB fallback)", self.push_config_path)
+            return True
 
         except OSError as e:
             logger.error("Failed to save push config to JSON: %s", e)
+            return False
+
+    def _adopt_fallback_json(self):
+        """Take over credentials saved to JSON when the DB write failed
+        (regenerate/reset). Adopted only when complete and saved after the DB
+        row was last updated (`saved_at`); an unreadable, incomplete, legacy
+        or stale file never replaces the DB credentials."""
+        if not self.push_config_path.exists():
+            return
+        try:
+            with open(self.push_config_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+        except (ValueError, OSError) as e:  # incl. JSONDecodeError, UnicodeDecodeError
+            logger.warning("Ignoring unreadable push_config.json: %s", e)
+            return
+        required = ("instance_id", "instance_key", "pairing_code")
+        if not isinstance(data, dict) or not all(
+                isinstance(data.get(k), str) and data.get(k) for k in required):
+            logger.warning("Ignoring incomplete push_config.json")
+            return
+        try:
+            saved_at = datetime.fromisoformat(data.get("saved_at") or "")
+        except (TypeError, ValueError):
+            logger.info("Ignoring push_config.json without saved_at (legacy/stale)")
+            return
+        if saved_at.tzinfo is not None:
+            saved_at = saved_at.astimezone(timezone.utc).replace(tzinfo=None)
+        db_ts = getattr(self, "_db_updated_at", None)
+        if db_ts is not None:
+            if db_ts.tzinfo is not None:
+                db_ts = db_ts.astimezone(timezone.utc).replace(tzinfo=None)
+            if saved_at <= db_ts:
+                logger.info("Ignoring push_config.json older than the DB row")
+                return
+        self.instance_id = data["instance_id"]
+        self.instance_key = data["instance_key"]
+        self.pairing_code = data.get("pairing_code")
+        self.registered_at = data.get("registered_at")
+        logger.info("Push config taken over from the JSON fallback (instance: %s)", self.instance_id)
+        self._save_to_db()
 
     def _rename_legacy_json(self):
         """Rename push_config.json to .migrated after DB migration."""
@@ -242,9 +359,22 @@ class PushManager:
         self.instance_id = str(uuid.uuid4())
         self.instance_key = secrets.token_hex(32)
         self.pairing_code = secrets.token_hex(8).upper()  # 64-bit
+        self.registered_at = None  # new credentials are not registered yet
         logger.info("Generated new push credentials (instance: %s)", self.instance_id)
 
     # ── Worker Registration ──────────────────────────────────────────────
+
+    def _ensure_registered(self) -> None:
+        """Retry a registration that failed earlier (e.g. Worker down at reset)."""
+        if self.registered_at:
+            return
+        if self._register_instance():
+            self._save_to_db()
+        else:
+            logger.warning(
+                "Push instance not registered with Central Push Service — "
+                "notifications will fail; registration is retried on next start"
+            )
 
     def _register_instance(self) -> bool:
         """Register instance with Central Push Service.
@@ -407,7 +537,11 @@ class PushManager:
 
             if response.status_code == 200:
                 self.pairing_code = new_code
-                self._save_to_db()
+                if not self._save_to_db():
+                    # the service already uses the new code; a restart would
+                    # bring back the old one — report it instead of success
+                    logger.error("Pairing code regenerated but could not be saved")
+                    return False
                 logger.info("Pairing code regenerated")
                 return True
             else:
@@ -532,11 +666,22 @@ class PushManager:
                 return False
 
         self._generate_credentials()
-        self._register_instance()
-        self._save_to_db()
+        registered = self._register_instance()
+        saved = self._save_to_db()
+        # the notifier reads these on every send — stop using the old instance now
+        self._config["instance_id"] = self.instance_id
+        self._config["instance_key"] = self.instance_key
         self._log_pairing_info()
-        logger.info("Push credentials reset — new pairing code: %s", self.pairing_code)
-        return True
+        if registered:
+            logger.info("Push credentials reset — new pairing code generated")
+        else:
+            logger.error(
+                "Push credentials reset, but registration with Central Push "
+                "Service failed — retried on next start"
+            )
+        if not saved:
+            logger.error("Push credentials reset, but they could not be saved")
+        return saved
 
     # ── Properties ───────────────────────────────────────────────────────
 

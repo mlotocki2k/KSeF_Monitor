@@ -565,9 +565,10 @@ xmllint --noout invoice_<numer>.xml
 
 ### Obecne ograniczenia
 
-1. **Tylko format FA(3)**
-   - Obsługiwane faktury zgodne ze schematem FA(3) v1-0E
-   - Brak wsparcia dla starszych wersji schematu
+1. **Multi-schema (od v0.5, pełne pokrycie v0.6)**
+   - Obsługiwane: FA(3) v1-0E, FA(2) v1-0E, FA_RR(1) v1-1E, PEF (PEPPOL UBL)
+   - Nieznany schemat → zapis XML bez PDF + warning (`UNKNOWN` fallback)
+   - Auto-detekcja po namespace XML (`detect_schema_type`)
 
 2. **Brak batch processing**
    - Trzeba pobierać faktury pojedynczo
@@ -683,7 +684,8 @@ Klucz `file_exists_strategy` w sekcji `storage` kontroluje zachowanie gdy plik (
 - [x] QR Code Type I na PDF
 - [x] Katalog archiwum z konfigurowalną strukturą folderów
 - [x] Konfigurowalny szablon PDF (HTML/CSS, Jinja2, xhtml2pdf)
-- [x] Pełna zgodność parsera z FA(3) v1-0E
+- [x] Pełne pokrycie pól FA(3) v1-0E (rozszerzone w v0.6 — korekty, PodmiotUpowazniony, znaczniki GV/JST, transport, negacje, tabele załączników)
+- [x] Multi-schema: FA(2) v1-0E, FA_RR(1) v1-1E, PEF (PEPPOL UBL) (v0.5–v0.6)
 - [x] Multi-page support (ReportLab automatycznie łamie strony)
 
 ### Planowane

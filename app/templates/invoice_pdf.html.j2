@@ -327,6 +327,12 @@
         {% if header.p6_do %}
         <tr><td class="info-label">Okres faktury do:</td><td class="info-value">{{ header.p6_do }}</td></tr>
         {% endif %}
+        {% if header.fp == '1' %}
+        <tr><td class="info-label">Faktura art. 109 ust. 3d (FP):</td><td class="info-value">Tak</td></tr>
+        {% endif %}
+        {% if header.tp == '1' %}
+        <tr><td class="info-label">Powiązania nabywca–sprzedawca (TP):</td><td class="info-value">Tak</td></tr>
+        {% endif %}
         </table>
     </td>
     {% if qr_code_data_uri %}
@@ -361,11 +367,29 @@ Kod kraju: {{ party.kod_kraju }}<br/>
 {% if party.adres_l1 %}
 {{ party.adres_l1 }}{% if party.adres_l2 %} {{ party.adres_l2 }}{% endif %}<br/>
 {% endif %}
+{% if party.adres_koresp and party.adres_koresp.adres_l1 %}
+Adres koresp.: {{ party.adres_koresp.adres_l1 }}{% if party.adres_koresp.adres_l2 %} {{ party.adres_koresp.adres_l2 }}{% endif %}<br/>
+{% endif %}
 {% if party.nr_eori %}
 EORI: {{ party.nr_eori }}<br/>
 {% endif %}
+{% if party.id_wew %}
+ID wewn.: {{ party.id_wew }}<br/>
+{% endif %}
+{% if party.brak_id == '1' %}
+Brak identyfikatora podatkowego<br/>
+{% endif %}
 {% if party.gln %}
 GLN: {{ party.gln }}<br/>
+{% endif %}
+{% if party.gv == '1' %}
+Członek grupy VAT<br/>
+{% endif %}
+{% if party.jst == '1' %}
+Jednostka podrzędna JST<br/>
+{% endif %}
+{% if party.id_nabywcy %}
+ID nabywcy: {{ party.id_nabywcy }}<br/>
 {% endif %}
 {% if party.email %}
 Email: {{ party.email }}<br/>
@@ -400,8 +424,20 @@ Tel: {{ party.telefon }}<br/>
 </table>
 {% endfor %}
 
+{# ===== PODMIOT UPOWAŻNIONY ===== #}
+{% if podmiot_upowazniony and podmiot_upowazniony.nazwa %}
+{% set rola_pu_map = {'1': 'Organ egzekucyjny', '2': 'Komornik sądowy', '3': 'Przedstawiciel podatkowy'} %}
+<table class="parties-table">
+<tr>
+    <td colspan="2">
+        {{ party_block(podmiot_upowazniony, 'PODMIOT UPOWAŻNIONY' + (' &mdash; ' + rola_pu_map.get(podmiot_upowazniony.rola_pu, '') if podmiot_upowazniony.rola_pu else '')) }}
+    </td>
+</tr>
+</table>
+{% endif %}
+
 {# ===== CORRECTION INFO ===== #}
-{% if header.przyczyna_korekty or dane_korygowanej %}
+{% if header.przyczyna_korekty or dane_korygowanej or header.nr_fa_korygowany or podmiot_korekty %}
 <div class="section-header">Dane korekty</div>
 <table class="payment-table">
 {% if header.przyczyna_korekty %}
@@ -414,10 +450,22 @@ Tel: {{ party.telefon }}<br/>
 {% if header.nr_fa_korekty %}
 <tr><td class="payment-label">Nr faktury korygowanej:</td><td class="payment-value">{{ header.nr_fa_korekty }}</td></tr>
 {% endif %}
+{% if header.nr_fa_korygowany %}
+<tr><td class="payment-label">Poprawny nr faktury korygowanej:</td><td class="payment-value">{{ header.nr_fa_korygowany }}</td></tr>
+{% endif %}
+{% if header.okres_fa_korygowanej %}
+<tr><td class="payment-label">Okres faktury korygowanej:</td><td class="payment-value">{{ header.okres_fa_korygowanej }}</td></tr>
+{% endif %}
 {% for d in dane_korygowanej %}
 {% set nr = d.nr_ksef or d.nr_faktury | default('') %}
-<tr><td class="payment-label">Faktura korygowana:</td><td class="payment-value">{{ nr }}{% if d.data_wyst %} ({{ d.data_wyst }}){% endif %}</td></tr>
+<tr><td class="payment-label">Faktura korygowana:</td><td class="payment-value">{{ nr }}{% if d.data_wyst %} ({{ d.data_wyst }}){% endif %}{% if d.nr_ksef_n == '1' %} — wystawiona poza KSeF{% endif %}</td></tr>
 {% endfor %}
+{% if podmiot_korekty.seller_k %}
+<tr><td class="payment-label">Sprzedawca przed korektą:</td><td class="payment-value">{{ podmiot_korekty.seller_k.nazwa | default('') }}{% if podmiot_korekty.seller_k.nip %} (NIP: {{ podmiot_korekty.seller_k.nip }}){% endif %}{% if podmiot_korekty.seller_k.adres_l1 %}, {{ podmiot_korekty.seller_k.adres_l1 }}{% endif %}</td></tr>
+{% endif %}
+{% if podmiot_korekty.buyer_k %}
+<tr><td class="payment-label">Nabywca przed korektą:</td><td class="payment-value">{{ podmiot_korekty.buyer_k.nazwa | default('') }}{% if podmiot_korekty.buyer_k.nip %} (NIP: {{ podmiot_korekty.buyer_k.nip }}){% endif %}{% if podmiot_korekty.buyer_k.adres_l1 %}, {{ podmiot_korekty.buyer_k.adres_l1 }}{% endif %}</td></tr>
+{% endif %}
 </table>
 {% endif %}
 
@@ -564,8 +612,14 @@ Tel: {{ party.telefon }}<br/>
 {% for termin in payment.terminy | default([]) %}
 <tr><td class="payment-label">Termin płatności:</td><td class="payment-value">{{ termin.termin | default('') }}{% if termin.opis_ilosc %} ({{ termin.opis_ilosc }} {{ termin.opis_jednostka | default('') }}){% endif %}</td></tr>
 {% endfor %}
+{% if payment.ipksef %}
+<tr><td class="payment-label">Identyfikator płatności KSeF:</td><td class="payment-value">{{ payment.ipksef }}</td></tr>
+{% endif %}
+{% if payment.link_do_platnosci %}
+<tr><td class="payment-label">Link do płatności:</td><td class="payment-value">{{ payment.link_do_platnosci }}</td></tr>
+{% endif %}
 {% for r in payment.rachunki | default([]) %}
-<tr><td class="payment-label">Rachunek bankowy:</td><td class="payment-value">{{ r.nr_rb | default('') }}{% if r.swift %} (SWIFT: {{ r.swift }}){% endif %}</td></tr>
+<tr><td class="payment-label">Rachunek bankowy{% if r.wlasny == '1' %} (własny banku){% endif %}:</td><td class="payment-value">{{ r.nr_rb | default('') }}{% if r.swift %} (SWIFT: {{ r.swift }}){% endif %}</td></tr>
 {% if r.nazwa_banku %}
 <tr><td class="payment-label">Bank:</td><td class="payment-value">{{ r.nazwa_banku }}</td></tr>
 {% endif %}
@@ -613,7 +667,7 @@ Tel: {{ party.telefon }}<br/>
 {% if annotations.p18 %}{% set _ = ann_items.append(('Odwrotne obciażenie', annotations.p18)) %}{% endif %}
 {% if annotations.p18a %}{% set _ = ann_items.append(('Mechanizm podzielonej płatności', annotations.p18a)) %}{% endif %}
 {% if annotations.p23 %}{% set _ = ann_items.append(('Procedura uproszczona (drugi sprzedawca)', annotations.p23)) %}{% endif %}
-{% if ann_items or annotations.p19 == '1' or annotations.p_pmarzy == '1' or annotations.p22 == '1' %}
+{% if ann_items or annotations.p19 == '1' or annotations.p19n == '1' or annotations.p_pmarzy == '1' or annotations.p_pmarzyn == '1' or annotations.p22 == '1' or annotations.p22n == '1' %}
 <div class="section-header">Adnotacje</div>
 <table class="annotation-table">
 {% for label, val in ann_items %}
@@ -622,6 +676,15 @@ Tel: {{ party.telefon }}<br/>
     <td class="annotation-value">{% if val == '1' %}Tak{% elif val == '2' %}Nie{% else %}{{ val }}{% endif %}</td>
 </tr>
 {% endfor %}
+{% if annotations.p19n == '1' %}
+<tr><td class="annotation-label">Brak zwolnienia od podatku:</td><td class="annotation-value">Tak</td></tr>
+{% endif %}
+{% if annotations.p_pmarzyn == '1' %}
+<tr><td class="annotation-label">Brak procedury marży:</td><td class="annotation-value">Tak</td></tr>
+{% endif %}
+{% if annotations.p22n == '1' %}
+<tr><td class="annotation-label">Brak dostawy nowych środków transportu:</td><td class="annotation-value">Tak</td></tr>
+{% endif %}
 {% if annotations.p19 == '1' %}
 <tr><td class="annotation-label">Zwolnienie od podatku:</td><td class="annotation-value">Tak</td></tr>
 {% if annotations.p19a %}
@@ -664,6 +727,10 @@ Tel: {{ party.telefon }}<br/>
 {% if veh.rok_prod %}{% set _ = parts.append('Rok: ' + veh.rok_prod) %}{% endif %}
 {% if veh.pojemnosc %}{% set _ = parts.append('Poj.: ' + veh.pojemnosc + ' cm³') %}{% endif %}
 {% if veh.przebieg %}{% set _ = parts.append('Przebieg: ' + veh.przebieg + ' km') %}{% endif %}
+{% if veh.moc %}{% set _ = parts.append('Moc: ' + veh.moc) %}{% endif %}
+{% if veh.liczba_miejsc %}{% set _ = parts.append('Miejsca: ' + veh.liczba_miejsc) %}{% endif %}
+{% if veh.ladownosc %}{% set _ = parts.append('Ładowność: ' + veh.ladownosc) %}{% endif %}
+{% if veh.nr_wiersza %}{% set _ = parts.append('Wiersz: ' + veh.nr_wiersza) %}{% endif %}
 {% if parts %}
 <tr><td class="annotation-label">&nbsp;&nbsp;Pojazd:</td><td class="annotation-value">{{ parts | join(', ') }}</td></tr>
 {% endif %}
@@ -727,6 +794,18 @@ Tel: {{ party.telefon }}<br/>
 {% if tr.data_zak %}
 <tr><td class="payment-label">&nbsp;&nbsp;Zakończenie:</td><td class="payment-value">{{ tr.data_zak }}</td></tr>
 {% endif %}
+{% if tr.wysylka_z and tr.wysylka_z.adres_l1 %}
+<tr><td class="payment-label">&nbsp;&nbsp;Wysyłka z:</td><td class="payment-value">{{ tr.wysylka_z.adres_l1 }}{% if tr.wysylka_z.kod_kraju %} ({{ tr.wysylka_z.kod_kraju }}){% endif %}</td></tr>
+{% endif %}
+{% if tr.wysylka_przez and tr.wysylka_przez.adres_l1 %}
+<tr><td class="payment-label">&nbsp;&nbsp;Wysyłka przez:</td><td class="payment-value">{{ tr.wysylka_przez.adres_l1 }}{% if tr.wysylka_przez.kod_kraju %} ({{ tr.wysylka_przez.kod_kraju }}){% endif %}</td></tr>
+{% endif %}
+{% if tr.wysylka_do and tr.wysylka_do.adres_l1 %}
+<tr><td class="payment-label">&nbsp;&nbsp;Wysyłka do:</td><td class="payment-value">{{ tr.wysylka_do.adres_l1 }}{% if tr.wysylka_do.kod_kraju %} ({{ tr.wysylka_do.kod_kraju }}){% endif %}</td></tr>
+{% endif %}
+{% if tr.adres_przewoznika and tr.adres_przewoznika.adres_l1 %}
+<tr><td class="payment-label">&nbsp;&nbsp;Adres przewoźnika:</td><td class="payment-value">{{ tr.adres_przewoznika.adres_l1 }}</td></tr>
+{% endif %}
 {% endfor %}
 {% if wt.podmiot_posredniczacy == '1' %}
 <tr><td class="payment-label">Podmiot pośredniczący:</td><td class="payment-value">Tak (art. 22 ust. 2d)</td></tr>
@@ -783,6 +862,22 @@ Tel: {{ party.telefon }}<br/>
 {% for a in blok.akapity | default([]) %}
 <div class="small-text">{{ a }}</div>
 {% endfor %}
+{% for tab in blok.tabele | default([]) %}
+{% if tab.opis %}<div class="small-text"><b>{{ tab.opis }}</b></div>{% endif %}
+<table class="kv-table">
+{% if tab.kolumny %}
+<thead><tr>{% for k in tab.kolumny %}<th>{{ k }}</th>{% endfor %}</tr></thead>
+{% endif %}
+<tbody>
+{% for w in tab.wiersze | default([]) %}
+<tr>{% for c in w %}<td>{{ c }}</td>{% endfor %}</tr>
+{% endfor %}
+{% if tab.suma %}
+<tr>{% for c in tab.suma %}<td><b>{{ c }}</b></td>{% endfor %}</tr>
+{% endif %}
+</tbody>
+</table>
+{% endfor %}
 {% endfor %}
 {% endif %}
 
@@ -804,6 +899,16 @@ Tel: {{ party.telefon }}<br/>
     {{ parts | join(' | ') }}
 </div>
 {% endfor %}
+{% endif %}
+
+{% if header.wz %}
+<div class="footer-info">Dokumenty magazynowe (WZ): {{ header.wz | join(', ') }}</div>
+{% endif %}
+{% if header.zwrot_akcyzy == '1' %}
+<div class="footer-info">Informacja dla rolników ubiegających się o zwrot podatku akcyzowego</div>
+{% endif %}
+{% if header.system_info %}
+<div class="footer-info">System: {{ header.system_info }}</div>
 {% endif %}
 
 {% if header.data_wytworzenia %}

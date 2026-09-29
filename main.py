@@ -140,20 +140,32 @@ def main():
                 start_date_str = initial_load_config.get("start_date", "")
                 if start_date_str:
                     start_date = _dt.fromisoformat(start_date_str)
+                    if start_date.tzinfo is not None:
+                        # naive UTC like the API path — aware vs naive raises TypeError
+                        from datetime import timezone as _tz
+                        start_date = start_date.astimezone(_tz.utc).replace(tzinfo=None)
                     end_date = _dt.utcnow()
                     subject_types = initial_load_config.get("subject_types", ["Subject1", "Subject2"])
                     date_type = initial_load_config.get("date_type", "Invoicing")
                     initial_load_manager.resume_interrupted_jobs()
-                    job_id = initial_load_manager.start_job(
-                        start_date=start_date,
-                        end_date=end_date,
-                        subject_types=subject_types,
-                        date_type=date_type,
-                    )
-                    if job_id:
-                        logger.info("✓ Initial load job started: %s", job_id)
+                    done = initial_load_manager.finished_job_for(start_date, subject_types, date_type)
+                    if done is not None:
+                        logger.info(
+                            "Initial load from %s already finished (job %s, %s) — not "
+                            "restarting; use the UI/API to run it again",
+                            start_date_str, done.id, done.status,
+                        )
                     else:
-                        logger.info("Initial load: job already running, not starting new one")
+                        job_id = initial_load_manager.start_job(
+                            start_date=start_date,
+                            end_date=end_date,
+                            subject_types=subject_types,
+                            date_type=date_type,
+                        )
+                        if job_id:
+                            logger.info("✓ Initial load job started: %s", job_id)
+                        else:
+                            logger.info("Initial load: job already running, not starting new one")
             except Exception as e:
                 logger.warning(f"Failed to initialize Initial Load Manager: {e}")
                 logger.info("Continuing without initial load")
@@ -238,17 +250,29 @@ def main():
                 if (
                     database is not None
                     and bootstrap_token
-                    and len(bootstrap_token) >= 8
                     and not token_auto_generated
                 ):
                     try:
                         from app.ui_auth import (
                             count_users as _count_users,
                             create_user as _create_user,
+                            validate_password as _validate_password,
                         )
 
                         with database.get_session() as _s:
-                            if _count_users(_s) == 0:
+                            # The token becomes the password of a predictable
+                            # 'admin' account — only when it is strong enough.
+                            # Otherwise /ui/setup (install code = this token).
+                            if _count_users(_s) == 0 and (
+                                len(bootstrap_token) < 32
+                                or _validate_password(bootstrap_token, username="admin")
+                            ):
+                                logger.warning(
+                                    "api.auth_token is shorter than 32 characters or "
+                                    "too weak — no automatic 'admin' account; open "
+                                    "/ui/setup and use the token as the install code."
+                                )
+                            elif _count_users(_s) == 0:
                                 _create_user(_s, "admin", bootstrap_token)
                                 logger.warning(
                                     "Bootstrap: created UI user 'admin' with "
@@ -266,7 +290,7 @@ def main():
                                 logger.warning(
                                     "Fresh install detected (auto-generated auth_token, "
                                     "no UI users) — open /ui/setup to create the first "
-                                    "admin account."
+                                    "admin account (install code: /data/api_token.txt)."
                                 )
                     except Exception:
                         pass
@@ -285,11 +309,13 @@ def main():
                     ui_public=api_config.get("ui_public", False),
                     cookie_secure_mode=api_config.get("cookie_secure_mode", "auto"),
                     session_strict_binding=api_config.get("session_strict_binding", False),
+                    trusted_origins=api_config.get("trusted_origins"),
                 )
                 api_server = APIServer(
                     api_app,
                     host=api_config.get("bind_address", "127.0.0.1"),
                     port=api_config.get("port", 8080),
+                    forwarded_allow_ips=api_config.get("forwarded_allow_ips"),
                 )
                 api_server.start()
                 logger.info("✓ REST API server started")

@@ -24,12 +24,11 @@ RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-reco
 # (jaraco.context CVE-2026-23949, wheel CVE-2026-24049 live in setuptools _vendor/)
 RUN pip install --no-cache-dir --upgrade pip setuptools wheel
 
-# Install Python dependencies
-# NOTE: requirements.lock exists but needs regen under Python 3.11 (currently Py3.12).
-# Until regen lands (R2 deferred), install from requirements.txt with range pins.
-# Upper bounds + CVE-driven lower bounds guard against supply-chain drift.
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Install Python dependencies from the hash-pinned lock (generated for
+# Python 3.11 from requirements.txt): every downloaded file must match a
+# recorded sha256, so a tampered or re-published package fails the build.
+COPY requirements.lock .
+RUN pip install --no-cache-dir --require-hashes -r requirements.lock
 
 # Remove build-only dependencies to keep image smaller
 RUN apt-get purge -y --auto-remove gcc pkg-config libcairo2-dev

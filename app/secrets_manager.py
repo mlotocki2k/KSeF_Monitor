@@ -123,6 +123,17 @@ class SecretsManager:
                 "KSEF_TOKEN env var or Docker secret for better security"
             )
 
+        # KSeF certificate password (logowanie certyfikatem / XAdES)
+        ksef_cert_password = self.get_secret("KSEF_CERT_PASSWORD")
+        if ksef_cert_password:
+            config.setdefault("ksef", {}).setdefault("certificate", {})["password"] = ksef_cert_password
+            logger.info("KSeF certificate password loaded from secure source")
+        elif config.get("ksef", {}).get("certificate", {}).get("password"):
+            logger.warning(
+                "KSeF certificate password loaded from config file — consider using "
+                "KSEF_CERT_PASSWORD env var or Docker secret for better security"
+            )
+
         # Pushover credentials (support both old and new structure)
         pushover_user = self.get_secret("PUSHOVER_USER_KEY")
         if pushover_user:

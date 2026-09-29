@@ -8,7 +8,8 @@ import logging
 import re
 import time
 import base64
-from datetime import datetime
+import hashlib
+from datetime import datetime, timezone
 from typing import Optional, Dict, List
 import requests
 from cryptography.hazmat.primitives.asymmetric import padding as asym_padding
@@ -26,20 +27,32 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
+class KSeFQueryError(Exception):
+    """Invoice query failed or returned an incomplete result.
+
+    Raised instead of returning a partial/empty list so the caller does not
+    advance its last_check past invoices it never received.
+    """
+
+
 class KSeFClient:
     """Client for KSeF API v2.2/v2.3 interactions"""
     
     # API version
     API_VERSION = "v2"
     VALID_DATE_TYPES = {"Issue", "Invoicing", "PermanentStorage"}
+    DEFAULT_DATE_TYPE = "PermanentStorage"
     # Rate limit retry settings
     MAX_429_RETRIES = 5
     DEFAULT_RETRY_AFTER = 30  # seconds
+    SYSTEM_WARNING_MAX_LEN = 500
     MAX_RETRY_AFTER = 1800  # cap: 30 minutes
 
     # Pagination settings for metadata queries
     PAGINATION_PAGE_SIZE = 250  # max allowed by KSeF API spec (min=10, max=250)
-    PAGINATION_MAX_RECORDS = 10_000  # safety limit (matches KSeF truncation limit)
+    # Safety limit for one query incl. all truncation narrowings (KSeF itself
+    # truncates at 10,000 per dateRange; narrowing continues past that).
+    PAGINATION_MAX_RECORDS = 200_000
 
     # Mapping from dateType config value to InvoiceMetadata field name
     _DATE_TYPE_TO_FIELD = {
@@ -59,7 +72,17 @@ class KSeFClient:
         self.environment = config.get("ksef", "environment")
         self.nip = config.get("ksef", "nip")
         self.token = config.get("ksef", "token")
-        
+
+        # Metoda uwierzytelniania: "token" (domyślnie) lub "certificate" (XAdES)
+        self.auth_method = (config.get("ksef", "auth_method") or "token").lower()
+        cert_cfg = config.get("ksef", "certificate")
+        cert_cfg = cert_cfg if isinstance(cert_cfg, dict) else {}
+        self.cert_path = cert_cfg.get("path")
+        self.cert_password = cert_cfg.get("password")
+        self.cert_subject_identifier_type = cert_cfg.get(
+            "subject_identifier_type", "certificateSubject"
+        )
+
         # Set base URL based on environment
         if self.environment == "prod":
             self.base_url = "https://api.ksef.mf.gov.pl"
@@ -70,17 +93,27 @@ class KSeFClient:
 
         self.access_token = None
         self.refresh_token = None
+        self.last_hwm_date: Optional[str] = None
         self.session_reference = None  # Session referenceNumber for UPO endpoints
         self._ksef_public_key = None
+        self._ksef_public_key_id = None  # publicKeyId selektora (rotacja kluczy KSeF v2.5.0)
         self.on_auth_failure = None  # Optional callback: on_auth_failure(status_code: int)
         self.prometheus_metrics = None  # Set externally from main.py
         self.session = requests.Session()
         self.session.verify = True  # Explicit TLS certificate verification
+        # Spójny format błędów (application/problem+json) także dla 400/429 —
+        # _extract_api_error_details parsuje problem+json. (KSeF v2.5.0+)
+        self.session.headers["X-Error-Format"] = "problem-details"
+        self._seen_system_warnings: set = set()
 
-        date_type = config.get("monitoring", "date_type")
+        # absent key = the default, not an invalid value (no false warning).
+        # PermanentStorage: the only date type with KSeF's completeness
+        # guarantee (permanentStorageHwmDate) for incremental polling.
+        date_type = config.get("monitoring", "date_type") or self.DEFAULT_DATE_TYPE
         if date_type not in self.VALID_DATE_TYPES:
-            logger.warning(f"Invalid date_type '{date_type}', falling back to 'Invoicing'")
-            date_type = "Invoicing"
+            logger.warning(f"Invalid date_type '{date_type}', falling back to "
+                           f"'{self.DEFAULT_DATE_TYPE}'")
+            date_type = self.DEFAULT_DATE_TYPE
         self.date_type = date_type
 
         # Initialize rate limiter with configurable limits
@@ -93,6 +126,23 @@ class KSeFClient:
 
         logger.info(f"KSeF client initialized for {self.environment} environment")
         logger.info(f"Base URL: {self.base_url}, date_type: {self.date_type}")
+
+    # Path segment that is an identifier (KSeF number, reference number) —
+    # anything with a digit except the API version segment.
+    _ID_SEGMENT = re.compile(r"^(?!v\d+$).*\d.*$")
+
+    def _metrics_endpoint(self, url: str) -> str:
+        """Bounded Prometheus label for a request URL.
+
+        Identifiers are replaced with {id}: KSeF numbers carry the seller NIP
+        and each one would otherwise create a new time series.
+        """
+        if not url.startswith(self.base_url):
+            return "external"
+        path = url[len(self.base_url):].split("?")[0]
+        return "/".join(
+            "{id}" if self._ID_SEGMENT.match(seg) else seg for seg in path.split("/")
+        )
 
     def _request_with_retry(self, method: str, url: str, **kwargs) -> requests.Response:
         """
@@ -111,8 +161,7 @@ class KSeFClient:
         Raises:
             requests.HTTPError: If non-429 error or retries exhausted
         """
-        # Extract endpoint path for metrics (strip base URL and query params)
-        endpoint = url.replace(self.base_url, "").split("?")[0] if self.base_url in url else url
+        endpoint = self._metrics_endpoint(url)
 
         for attempt in range(self.MAX_429_RETRIES + 1):
             # Proactive rate limiting — acquire slot before sending request
@@ -133,6 +182,7 @@ class KSeFClient:
             start_time = time.monotonic()
             response = self.session.request(method, url, **kwargs)
             elapsed = time.monotonic() - start_time
+            self._log_system_warning(response)
 
             # Record API request metrics
             if self.prometheus_metrics:
@@ -172,7 +222,8 @@ class KSeFClient:
                         retry_after = max(int(delta), 1)
                     except (ValueError, TypeError):
                         retry_after = self.DEFAULT_RETRY_AFTER
-            retry_after = min(retry_after, self.MAX_RETRY_AFTER)
+            # a negative or zero value would make time.sleep() raise / spin
+            retry_after = max(1, min(retry_after, self.MAX_RETRY_AFTER))
             # Inform rate limiter about server-enforced backoff
             self.rate_limiter.pause_until(retry_after)
             logger.warning("Rate limited (429). Waiting %ds before retry %d/%d. %s",
@@ -180,8 +231,35 @@ class KSeFClient:
             time.sleep(retry_after)
         return response  # unreachable, but satisfies type checker
 
+    def _log_system_warning(self, response: requests.Response) -> None:
+        """Log KSeF X-System-Warning header (v2.6.0+) once per distinct value."""
+        raw = response.headers.get("X-System-Warning")
+        if not raw:
+            return
+        # Dedup po pełnej wartości (skrót), żeby obcięcie nie zlewało różnych ostrzeżeń
+        digest = hashlib.sha256(str(raw).encode("utf-8", "replace")).hexdigest()
+        if digest in self._seen_system_warnings:
+            return
+        self._seen_system_warnings.add(digest)
+        # Nagłówek pochodzi z zewnątrz — bez znaków sterujących (log injection), z limitem długości
+        value = "".join(ch if ch.isprintable() else " " for ch in str(raw))
+        logger.warning("KSeF X-System-Warning: %s", value[: self.SYSTEM_WARNING_MAX_LEN])
+
+    API_ERROR_DETAILS_MAX_LEN = 1000
+
+    @classmethod
+    def _extract_api_error_details(cls, response: requests.Response) -> str:
+        """Error details for logging — response text is external input, so
+        control characters are replaced (log injection) and length is capped."""
+        try:
+            text = cls._format_api_error_details(response)
+        except Exception:
+            text = f"status={getattr(response, 'status_code', '?')}"
+        text = "".join(ch if ch.isprintable() else " " for ch in text)
+        return text[: cls.API_ERROR_DETAILS_MAX_LEN]
+
     @staticmethod
-    def _extract_api_error_details(response: requests.Response) -> str:
+    def _format_api_error_details(response: requests.Response) -> str:
         """
         Extract human-readable error details from KSeF API error response.
 
@@ -288,12 +366,17 @@ class KSeFClient:
 
     def authenticate(self) -> bool:
         """
-        Authenticate with KSeF API using authorization token
-        Full flow: Challenge -> KSeF Token -> Poll Status -> Redeem
+        Authenticate with KSeF API.
+
+        Dispatches by configured auth method (`ksef.auth_method`):
+          - "token" (default): Challenge -> KSeF Token (RSA-OAEP) -> Poll Status -> Redeem
+          - "certificate": Challenge -> XAdES-signed AuthTokenRequest -> Poll Status -> Redeem
 
         Returns:
             True if authentication successful, False otherwise
         """
+        if self.auth_method == "certificate":
+            return self._authenticate_certificate_flow()
         try:
             # Step 1: Get authentication challenge (returns challenge + timestampMs)
             challenge_data = self._get_challenge()
@@ -313,6 +396,9 @@ class KSeFClient:
             auth_result = self._authenticate_with_token(challenge, timestamp_ms)
             if not auth_result:
                 logger.error("Failed to authenticate with token")
+                # the key may have been retired — fetch it again next time
+                self._ksef_public_key = None
+                self._ksef_public_key_id = None
                 return False
 
             reference_number = auth_result.get("referenceNumber")
@@ -321,6 +407,9 @@ class KSeFClient:
             # Step 4: Poll status using the temporary authenticationToken
             if not self._wait_for_auth_status(reference_number, authentication_token):
                 logger.error("Authentication status check failed")
+                # KSeF reports a bad encryption key asynchronously (status 4xx)
+                self._ksef_public_key = None
+                self._ksef_public_key_id = None
                 return False
 
             # Step 5: Redeem for accessToken + refreshToken
@@ -333,10 +422,119 @@ class KSeFClient:
 
         except Exception as e:
             logger.error(f"Authentication failed: {e}")
+            self._ksef_public_key = None
+            self._ksef_public_key_id = None
             if self.on_auth_failure:
                 self.on_auth_failure(0)
             return False
-    
+
+    def _authenticate_certificate_flow(self) -> bool:
+        """
+        Authenticate with KSeF using a certificate (XAdES signature).
+        Full flow: Challenge -> XAdES-signed AuthTokenRequest -> Poll Status -> Redeem
+
+        Returns:
+            True if authentication successful, False otherwise
+        """
+        try:
+            # Step 1: Get authentication challenge
+            challenge_data = self._get_challenge()
+            if not challenge_data:
+                logger.error("Failed to get authentication challenge")
+                return False
+
+            challenge = challenge_data.get("challenge")
+            logger.info(f"Got authentication challenge: {challenge[:10]}...")
+
+            # Step 2: Build + sign AuthTokenRequest, submit XAdES signature
+            auth_result = self._authenticate_with_xades(challenge)
+            if not auth_result:
+                logger.error("Failed to authenticate with certificate (XAdES)")
+                return False
+
+            reference_number = auth_result.get("referenceNumber")
+            authentication_token = auth_result.get("authenticationToken", {}).get("token")
+
+            # Step 3: Poll status using the temporary authenticationToken
+            if not self._wait_for_auth_status(reference_number, authentication_token):
+                logger.error("Authentication status check failed")
+                return False
+
+            # Step 4: Redeem for accessToken + refreshToken
+            if not self._redeem_token(authentication_token):
+                logger.error("Failed to redeem access token")
+                return False
+
+            logger.info(f"Certificate authentication successful (session: {reference_number})")
+            return True
+
+        except Exception as e:
+            logger.error(f"Certificate authentication failed: {e}")
+            if self.on_auth_failure:
+                self.on_auth_failure(0)
+            return False
+
+    def _authenticate_with_xades(self, challenge: str) -> Optional[Dict]:
+        """
+        Authenticate using a certificate-signed AuthTokenRequest.
+        Endpoint: POST /v2/auth/xades-signature  (Content-Type: application/xml)
+
+        Builds AuthTokenRequest (auth v2-1 schema), signs it with XAdES-BES
+        (enveloped, RSA-SHA256) using the configured PKCS#12 certificate, and
+        submits the signed XML.
+
+        Args:
+            challenge: Challenge string from /auth/challenge response
+
+        Returns:
+            Auth result dict with referenceNumber and authenticationToken, or None
+        """
+        try:
+            # Import leniwy — signxml potrzebny tylko przy logowaniu certyfikatem
+            try:
+                from .xades_signer import build_signed_auth_request
+            except ImportError:
+                from app.xades_signer import build_signed_auth_request
+
+            if not self.cert_path:
+                logger.error("Certificate auth selected but ksef.certificate.path is not set")
+                return None
+
+            try:
+                with open(self.cert_path, "rb") as cert_file:
+                    p12_bytes = cert_file.read()
+            except OSError as e:
+                logger.error(f"Failed to read certificate file: {e}")
+                return None
+
+            signed_xml = build_signed_auth_request(
+                challenge=challenge,
+                nip=self.nip,
+                p12_bytes=p12_bytes,
+                password=self.cert_password,
+                subject_identifier_type=self.cert_subject_identifier_type,
+            )
+
+            url = f"{self.base_url}/{self.API_VERSION}/auth/xades-signature"
+            headers = {"Content-Type": "application/xml"}
+
+            response = self._request_with_retry(
+                "POST", url, data=signed_xml, headers=headers, timeout=30
+            )
+            response.raise_for_status()
+
+            return response.json()
+
+        except ValueError as e:
+            # Błąd certyfikatu / budowy podpisu (np. złe hasło) — bez stack trace z materiałem klucza
+            logger.error(f"Certificate signing failed: {e}")
+            return None
+        except Exception as e:
+            logger.error(f"XAdES authentication failed: {e}")
+            if hasattr(e, 'response') and e.response is not None:
+                logger.error(f"API error: {self._extract_api_error_details(e.response)}")
+            return None
+
     def _get_challenge(self) -> Optional[Dict]:
         """
         Get authentication challenge from KSeF
@@ -382,11 +580,23 @@ class KSeFClient:
             response.raise_for_status()
 
             certificates = response.json()
+            now = datetime.now(timezone.utc)
             for cert in certificates:
                 if "KsefTokenEncryption" in cert.get("usage", []):
+                    # skip keys outside their validity window (key rotation)
+                    try:
+                        valid_from = datetime.fromisoformat(cert.get("validFrom", "").replace("Z", "+00:00"))
+                        valid_to = datetime.fromisoformat(cert.get("validTo", "").replace("Z", "+00:00"))
+                        if not (valid_from <= now <= valid_to):
+                            continue
+                    except (ValueError, AttributeError, TypeError):
+                        pass  # no/invalid dates — use the key as before
                     cert_der = base64.b64decode(cert["certificate"])
                     x509_cert = load_der_x509_certificate(cert_der)
                     self._ksef_public_key = x509_cert.public_key()
+                    # publicKeyId — selektor klucza przy rotacji (KSeF v2.5.0);
+                    # wysyłany w /auth/ksef-token, by KSeF wiedział którym kluczem odszyfrować
+                    self._ksef_public_key_id = cert.get("publicKeyId")
                     logger.info("KSeF public key fetched successfully")
                     return
 
@@ -438,6 +648,12 @@ class KSeFClient:
                 },
                 "encryptedToken": encrypted_token_b64
             }
+
+            # Forward-compat z rotacją kluczy (KSeF v2.5.0): wskaż klucz użyty do
+            # szyfrowania. Pole opcjonalne/nullable — wysyłamy tylko gdy znamy id
+            # (pre-2.5 środowiska bez rotacji nadal działają bez niego).
+            if self._ksef_public_key_id:
+                payload["publicKeyId"] = self._ksef_public_key_id
 
             response = self._request_with_retry("POST", url, json=payload, headers=headers, timeout=30)
             response.raise_for_status()
@@ -599,14 +815,18 @@ class KSeFClient:
             subject_type: Single subjectType value (e.g. Subject1, Subject2)
 
         Returns:
-            List of invoice metadata dictionaries
+            List of invoice metadata dictionaries (complete for the date range)
+
+        Raises:
+            KSeFQueryError: authentication, transport or API failure, or a
+                result that cannot be fetched completely. Never returns a
+                partial list — the caller must not advance its state then.
         """
         try:
             # Ensure we're authenticated
             if not self.access_token:
                 if not self.authenticate():
-                    logger.error("Cannot query invoices: authentication failed")
-                    return []
+                    raise KSeFQueryError("Cannot query invoices: authentication failed")
 
             url = f"{self.base_url}/{self.API_VERSION}/invoices/query/metadata"
 
@@ -635,6 +855,9 @@ class KSeFClient:
             logger.info("Querying invoices [%s] from %s to %s", subject_type, date_from_str, date_to_str)
 
             all_invoices: List[Dict] = []
+            # permanentStorageHwmDate (PermanentStorage queries only): below it
+            # the result set is complete; the caller resumes from it.
+            self.last_hwm_date = None
             page_offset = 0
             current_from_str = date_from_str
             date_field = self._DATE_TYPE_TO_FIELD.get(self.date_type, "invoicingDate")
@@ -657,12 +880,17 @@ class KSeFClient:
 
                 # If auth failed, _make_authenticated_request returns on_failure (all_invoices)
                 if response is all_invoices:
-                    return all_invoices
+                    raise KSeFQueryError(
+                        "Cannot query invoices: authentication failed during pagination"
+                    )
 
                 response.raise_for_status()
 
                 data = response.json()
                 page_invoices = data.get("invoices", [])
+                hwm = data.get("permanentStorageHwmDate")
+                if hwm and (self.last_hwm_date is None or hwm < self.last_hwm_date):
+                    self.last_hwm_date = hwm  # most conservative value across pages
                 has_more = data.get("hasMore", False)
                 is_truncated = data.get("isTruncated", False)
 
@@ -676,20 +904,27 @@ class KSeFClient:
 
                 if not has_more:
                     break
+                if not page_invoices:
+                    # hasMore with an empty page would page forever
+                    raise KSeFQueryError("hasMore=true with an empty page — cannot continue")
 
                 if is_truncated:
                     # Hit 10,000 record limit — narrow dateRange using last record's date
                     if not page_invoices:
-                        logger.error("isTruncated=true but no invoices returned — aborting pagination")
-                        break
+                        raise KSeFQueryError(
+                            "isTruncated=true but no invoices returned — cannot continue"
+                        )
                     last_invoice = page_invoices[-1]
                     last_date = last_invoice.get(date_field)
                     if not last_date:
-                        logger.error(
-                            "Cannot narrow dateRange: field '%s' missing in last invoice — aborting",
-                            date_field
+                        raise KSeFQueryError(
+                            f"Cannot narrow dateRange: field '{date_field}' missing in last invoice"
                         )
-                        break
+                    if last_date == current_from_str:
+                        # >10,000 invoices share one timestamp — narrowing cannot progress
+                        raise KSeFQueryError(
+                            f"Cannot narrow dateRange past {last_date} (truncated result)"
+                        )
                     logger.info(
                         "Truncation limit reached — narrowing dateRange.from to %s (field: %s)",
                         last_date, date_field
@@ -700,24 +935,27 @@ class KSeFClient:
                     # More pages available — increment pageOffset
                     page_offset += 1
 
-            if len(all_invoices) >= self.PAGINATION_MAX_RECORDS:
-                logger.warning(
-                    "Safety limit reached: %d records fetched (max: %d). "
-                    "Some invoices may be missing.",
-                    len(all_invoices), self.PAGINATION_MAX_RECORDS
+            else:
+                # Loop ended on the safety limit, not on hasMore=false
+                raise KSeFQueryError(
+                    f"Safety limit reached: {len(all_invoices)} records fetched "
+                    f"(max: {self.PAGINATION_MAX_RECORDS}) — result incomplete"
                 )
 
             logger.info("Found %d invoice(s) total", len(all_invoices))
             return all_invoices
 
+        except KSeFQueryError as e:
+            logger.error("Failed to get invoices: %s", e)
+            raise
         except requests.exceptions.RequestException as e:
             logger.error("Failed to get invoices: %s", e)
             if hasattr(e, 'response') and e.response is not None:
                 logger.error("API error: %s", self._extract_api_error_details(e.response))
-            return []
+            raise KSeFQueryError(f"Failed to get invoices: {type(e).__name__}") from e
         except Exception as e:
             logger.error("Unexpected error while getting invoices: %s", e)
-            return []
+            raise KSeFQueryError(f"Unexpected error while getting invoices: {type(e).__name__}") from e
     
     def get_current_sessions(self) -> List[Dict]:
         """
@@ -817,14 +1055,27 @@ class KSeFClient:
             # Get SHA-256 hash from header
             sha256_hash = response.headers.get('x-ms-meta-hash', '')
 
-            # Response is XML (application/xml)
-            xml_content = response.text
+            # Work on the raw bytes: the hash covers them, and application/xml
+            # without a charset makes response.text guess the encoding.
+            raw = response.content
+            hash_verified = False
+            if sha256_hash:
+                if not self._verify_sha256(raw, sha256_hash):
+                    logger.error("Invoice XML hash mismatch for %s — discarding", ksef_number)
+                    return None
+                hash_verified = True
 
-            logger.info(f"Invoice XML fetched successfully (size: {len(xml_content)} bytes)")
+            # XML without an encoding declaration is UTF-8; KSeF FA schemas declare UTF-8
+            xml_content = raw.decode("utf-8")
+            if xml_content.startswith("﻿"):
+                xml_content = xml_content[1:]
+
+            logger.info(f"Invoice XML fetched successfully (size: {len(raw)} bytes)")
 
             return {
                 'xml_content': xml_content,
                 'sha256_hash': sha256_hash,
+                'hash_verified': hash_verified,
                 'ksef_number': ksef_number
             }
 
@@ -835,6 +1086,144 @@ class KSeFClient:
             return None
         except Exception as e:
             logger.error(f"Unexpected error while getting invoice XML: {e}")
+            return None
+
+    # ── UPO (Urzędowe Poświadczenie Odbioru) ────────────────────────────────
+    # Pobieranie UPO faktur sprzedażowych. Wymaga tokenu z uprawnieniem
+    # Introspection (lub InvoiceWrite, ograniczone do sesji własnych).
+    # API zweryfikowane skryptem examples/test_upo_download.py (env=test).
+
+    @staticmethod
+    def _verify_sha256(data: bytes, header_b64: str) -> bool:
+        """Czy base64(sha256(data)) == wartość z nagłówka x-ms-meta-hash."""
+        if not header_b64:
+            return False
+        actual_b64 = base64.b64encode(hashlib.sha256(data).digest()).decode()
+        return actual_b64 == header_b64
+
+    def list_sessions(self, session_type: str = "Online", page_size: int = 50,
+                      date_from: Optional[str] = None,
+                      date_to: Optional[str] = None) -> List[Dict]:
+        """
+        List KSeF sessions for the authenticated context.
+        Endpoint: GET /v2/sessions (rate: 5/s, 10/min, 60/h)
+
+        Args:
+            session_type: "Online" or "Batch"
+            page_size: results per page (default 50)
+            date_from / date_to: optional ISO datetime range filters
+
+        Returns:
+            List of session dicts (empty list on failure).
+        """
+        try:
+            url = f"{self.base_url}/{self.API_VERSION}/sessions"
+            params = {"sessionType": session_type, "pageSize": page_size}
+            if date_from:
+                params["dateFrom"] = date_from
+            if date_to:
+                params["dateTo"] = date_to
+
+            return self._get_all_pages(url, params, "sessions", "list sessions")
+
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Failed to list sessions: {e}")
+            if hasattr(e, 'response') and e.response is not None:
+                logger.error(f"API error: {self._extract_api_error_details(e.response)}")
+            return []
+
+    def get_session_invoices(self, session_reference: str, page_size: int = 100) -> List[Dict]:
+        """
+        List invoices in a session (includes direct `upoDownloadUrl` SAS links).
+        Endpoint: GET /v2/sessions/{referenceNumber}/invoices
+
+        Returns:
+            List of invoice dicts (empty list on failure).
+        """
+        try:
+            url = f"{self.base_url}/{self.API_VERSION}/sessions/{session_reference}/invoices"
+            params = {"pageSize": page_size}
+
+            return self._get_all_pages(url, params, "invoices", "get session invoices")
+
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Failed to get session invoices: {e}")
+            if hasattr(e, 'response') and e.response is not None:
+                logger.error(f"API error: {self._extract_api_error_details(e.response)}")
+            return []
+
+    MAX_CONTINUATION_PAGES = 200
+
+    def _get_all_pages(self, url: str, params: Dict, items_key: str, what: str) -> List[Dict]:
+        """GET a list endpoint and follow continuationToken (x-continuation-token)
+        until the last page — only the first page was read before, so sessions
+        and session invoices beyond it never reached the UPO lookup."""
+        items: List[Dict] = []
+        token = None
+        for _ in range(self.MAX_CONTINUATION_PAGES):
+            headers = {"x-continuation-token": token} if token else {}
+            response = self._make_authenticated_request(
+                "GET", url, params=params, headers=headers, timeout=30
+            )
+            if response is None:
+                logger.error("Cannot %s: authentication failed", what)
+                return items
+            response.raise_for_status()
+            data = response.json()
+            items.extend(data.get(items_key, []) or [])
+            token = data.get("continuationToken")
+            if not token:
+                return items
+        logger.warning("%s: stopped after %d pages", what, self.MAX_CONTINUATION_PAGES)
+        return items
+
+    def get_invoice_upo(self, session_reference: str, ksef_number: str) -> Optional[Dict]:
+        """
+        Download the UPO (official receipt confirmation) for an invoice.
+        Endpoint: GET /v2/sessions/{ref}/invoices/ksef/{ksefNumber}/upo
+                  (rate: 10/s, 120/min, 1200/h)
+
+        Verifies the `x-ms-meta-hash` (SHA-256 base64) integrity header. On hash
+        mismatch the artifact is discarded (returns None).
+
+        Returns:
+            Dict {upo_xml, sha256_hash, hash_verified, ksef_number}, or None on
+            failure / hash mismatch. KSeF error 21178 means UPO not yet available.
+        """
+        if not self._validate_ksef_number(ksef_number):
+            logger.error(f"Invalid KSeF number format: {ksef_number}")
+            return None
+
+        try:
+            url = (f"{self.base_url}/{self.API_VERSION}/sessions/{session_reference}"
+                   f"/invoices/ksef/{ksef_number}/upo")
+
+            response = self._make_authenticated_request("GET", url, timeout=60)
+            if response is None:
+                logger.error("Cannot get UPO: authentication failed")
+                return None
+            response.raise_for_status()
+
+            content = response.content  # bytes — hash is computed over raw bytes
+            header_hash = response.headers.get("x-ms-meta-hash", "")
+
+            if header_hash and not self._verify_sha256(content, header_hash):
+                logger.error("UPO SHA-256 mismatch for %s — discarding artifact", ksef_number)
+                return None
+            if not header_hash:
+                logger.warning("UPO for %s has no x-ms-meta-hash header — integrity unverified", ksef_number)
+
+            return {
+                "upo_xml": content.decode("utf-8"),
+                "sha256_hash": header_hash,
+                "hash_verified": bool(header_hash),
+                "ksef_number": ksef_number,
+            }
+
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Failed to get UPO for {ksef_number}: {e}")
+            if hasattr(e, 'response') and e.response is not None:
+                logger.error(f"API error: {self._extract_api_error_details(e.response)}")
             return None
 
     def get_api_status(self) -> Dict:

@@ -251,3 +251,66 @@ class TestSchedulerGetNextRunInfo:
         s.should_run()
         info = s.get_next_run_info()
         assert "check" in info.lower() or "Next" in info
+
+
+class TestSchedulerIntervalSeconds:
+    """interval_seconds() for the polling-limit estimate (v0.6 §5)."""
+
+    def test_minutes(self):
+        assert Scheduler({"mode": "minutes", "interval": 7}).interval_seconds() == 420
+
+    def test_hourly(self):
+        assert Scheduler({"mode": "hourly", "interval": 2}).interval_seconds() == 7200
+
+    def test_simple(self):
+        assert Scheduler({"mode": "simple", "interval": 600}).interval_seconds() == 600
+
+    def test_daily_returns_none(self):
+        assert Scheduler({"mode": "daily", "time": "09:00"}).interval_seconds() is None
+
+
+# ── Startup must not trigger an extra run for times already passed today ─────
+
+
+
+
+@pytest.mark.parametrize("config", [
+    {"mode": "daily", "time": ["08:00", "09:00"]},
+    {"mode": "weekly", "days": ["friday"], "time": "08:00"},
+])
+def test_startup_after_scheduled_time_runs_once(config):
+    from datetime import datetime as _dt
+    from unittest.mock import patch as _patch
+    s = Scheduler(config)
+    with _patch("app.scheduler.datetime") as fake_dt:
+        fake_dt.now.return_value = _dt(2026, 9, 25, 10, 0)  # Friday
+        assert s.should_run() is True   # startup run
+        fake_dt.now.return_value = _dt(2026, 9, 25, 10, 1)
+        assert s.should_run() is False  # 08:00/09:00 already covered
+
+
+def test_startup_before_scheduled_time_still_runs_at_that_time():
+    from datetime import datetime as _dt
+    from unittest.mock import patch as _patch
+    s = Scheduler({"mode": "daily", "time": "12:00"})
+    with _patch("app.scheduler.datetime") as fake_dt:
+        fake_dt.now.return_value = _dt(2026, 9, 25, 10, 0)
+        assert s.should_run() is True
+        fake_dt.now.return_value = _dt(2026, 9, 25, 11, 0)
+        assert s.should_run() is False
+        fake_dt.now.return_value = _dt(2026, 9, 25, 12, 0)
+        assert s.should_run() is True
+
+
+def test_daily_times_use_configured_timezone():
+    """Round 7: the container runs in UTC; 09:00 must mean 09:00 in monitoring.timezone."""
+    import pytz
+    from datetime import datetime as _dt
+    from unittest.mock import patch as _patch
+    warsaw = pytz.timezone("Europe/Warsaw")
+    s = Scheduler({"mode": "daily", "time": "09:00"}, tz=warsaw)
+    s.last_run = _dt(2026, 9, 25, 0, 0)
+    utc_0730 = pytz.utc.localize(_dt(2026, 9, 25, 7, 30))  # 09:30 in Warsaw (CEST)
+    with _patch("app.scheduler.datetime") as fake_dt:
+        fake_dt.now.side_effect = lambda tz=None: utc_0730.astimezone(tz) if tz else utc_0730.replace(tzinfo=None)
+        assert s.should_run() is True

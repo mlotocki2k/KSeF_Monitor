@@ -7,6 +7,7 @@ import json
 import hashlib
 import logging
 import os
+import time
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -16,7 +17,11 @@ from .scheduler import Scheduler
 from .notifiers import NotificationManager
 from .invoice_pdf_generator import generate_invoice_pdf, REPORTLAB_AVAILABLE
 from .invoice_xml_parser import detect_schema_type, SCHEMA_TYPE_UNKNOWN
-from .database import Database, Invoice
+from .database import Database, Invoice, InvoiceArtifact, NotificationLog
+from .ksef_client import KSeFQueryError
+from sqlalchemy import func, or_
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import aliased
 
 # Optional timezone support
 try:
@@ -37,8 +42,26 @@ class InvoiceMonitor:
     }
     DEFAULT_TITLE = "Nowa faktura w KSeF"
 
-    # KSeF API maximum dateRange is 3 months (90 days)
-    MAX_DATE_RANGE_DAYS = 90
+    # KSeF API maximum dateRange: 100 days in UTC (API 2.7.1+, PROD since 2026-09-23;
+    # previously 3 months). Queried span = MAX - 1 = 99 days, safely below the limit.
+    MAX_DATE_RANGE_DAYS = 100
+
+    # Each query re-covers this much before last_check (see _get_date_from)
+    POLL_WINDOW_OVERLAP = timedelta(minutes=15)
+
+    # Invoice notifications that failed on every channel: attempts in total
+    # (incl. the first) and how far back they are retried
+    NOTIFY_RETRY_MAX = 3
+    NOTIFY_RETRY_WINDOW = timedelta(days=3)
+    # wait after the n-th failed attempt: 15 min, then 60 min (an outage is
+    # not retried within the same cycle)
+    NOTIFY_RETRY_BACKOFF = (timedelta(minutes=15), timedelta(minutes=60))
+
+    # Min. odstęp wymuszonej przebudowy mapy sesji UPO (listuje wszystkie sesje)
+    SESSION_MAP_FORCE_INTERVAL = 3600
+
+    # POST /invoices/query/metadata hour limit (KSeF x-rate-limits) — detekcja
+    METADATA_HOUR_LIMIT = 20
 
     def __init__(self, config, ksef_client, notification_manager, prometheus_metrics=None, database=None):
         """
@@ -63,6 +86,23 @@ class InvoiceMonitor:
         # Storage settings
         self.save_xml = config.get("storage", "save_xml", default=False)
         self.save_pdf = config.get("storage", "save_pdf", default=False)
+        # Lightweight Polling (v0.6): gdy True, detekcja tylko kolejkuje artefakty
+        # jako pending; pobranie XML/PDF dzieje się w osobnej fazie
+        # process_pending_artifacts(). Domyślnie inline — bez zmiany zachowania
+        # istniejących wdrożeń. Wymaga bazy danych (DB).
+        self.lazy_artifacts = bool(config.get("monitoring", "lazy_artifacts", default=False))
+        self.artifact_batch_size = config.get("monitoring", "artifact_batch_size", default=50)
+        # UPO (Urzędowe Poświadczenie Odbioru) — pobieranie dla faktur sprzedażowych
+        # (Subject1). Wymaga tokenu z uprawnieniem Introspection. Opt-in, osobny budżet API.
+        self.fetch_upo = bool(config.get("monitoring", "fetch_upo", default=False))
+        self._session_invoice_map = None     # cache: ksefNumber -> sessionReference
+        self._session_map_ts = 0.0           # czas ostatniego zbudowania mapy
+        self._session_map_ttl = 24 * 3600    # TTL cache mapy sesji (24h)
+        self._session_map_forced_ts = 0.0    # ostatnia wymuszona przebudowa mapy
+        # Opcjonalny interwał pollingu per subject type (sekundy), np.
+        # {"Subject1": 240, "Subject2": 420}. Subject bez wpisu pollowany co cykl.
+        subject_intervals = config.get("monitoring", "subject_poll_intervals")
+        self.subject_intervals = subject_intervals if isinstance(subject_intervals, dict) else {}
         output_dir = config.get("storage", "output_dir", default="/data/invoices")
         self.output_dir = Path(output_dir)
         self.folder_structure = config.get("storage", "folder_structure", default="")
@@ -99,7 +139,7 @@ class InvoiceMonitor:
                 logger.warning("No schedule configuration found, using default: 5 minutes")
                 schedule_config = {"mode": "minutes", "interval": 5}
 
-        self.scheduler = Scheduler(schedule_config)
+        self.scheduler = Scheduler(schedule_config, tz=self.timezone)
         self._manual_trigger = False
 
         logger.info(f"Invoice Monitor initialized, subject_types: {self.subject_types}, message_priority: {self.message_priority}")
@@ -150,10 +190,10 @@ class InvoiceMonitor:
         """
         Cap date_from to now - MAX_DATE_RANGE_DAYS.
 
-        KSeF API v2.2.0/v2.3.0 limits dateRange to 3 months. If date_from is older,
+        KSeF API v2.7.1+ limits dateRange to 100 days (UTC). If date_from is older,
         cap it and log a warning about the skipped period.
 
-        Range is inclusive on both ends, so 90 days = (now - date_from).days + 1.
+        Range is inclusive on both ends, so 100 days = (now - date_from).days + 1.
         Subtract MAX-1 to keep the window at the limit, not 1 day past it.
         """
         max_lookback = now - timedelta(days=self.MAX_DATE_RANGE_DAYS - 1)
@@ -161,7 +201,7 @@ class InvoiceMonitor:
         if date_from < max_lookback:
             skipped_days = (max_lookback - date_from).days
             logger.warning(
-                "last_check is %d days old (%s) — exceeds KSeF API 3-month limit. "
+                "last_check is %d days old (%s) — exceeds KSeF API 100-day limit. "
                 "Capping date_from to %s. Invoices from the skipped period "
                 "(%d days) will NOT be fetched.",
                 (now - date_from).days,
@@ -173,8 +213,9 @@ class InvoiceMonitor:
 
         return date_from
 
-    # TTL for seen_invoices entries (90 days)
-    SEEN_INVOICES_TTL_DAYS = 90
+    # TTL for seen_invoices entries — longer than the widest query window
+    # (MAX_DATE_RANGE_DAYS), or a long outage re-notifies older invoices
+    SEEN_INVOICES_TTL_DAYS = MAX_DATE_RANGE_DAYS + 1
 
     def load_state(self) -> Dict:
         """
@@ -192,12 +233,21 @@ class InvoiceMonitor:
 
                     # Filter seen_invoices by TTL and migrate old format
                     raw_seen = state.get("seen_invoices", [])
-                    cutoff = (datetime.now(timezone.utc) - timedelta(days=self.SEEN_INVOICES_TTL_DAYS)).isoformat()
+                    cutoff = datetime.now(timezone.utc) - timedelta(days=self.SEEN_INVOICES_TTL_DAYS)
                     filtered = []
                     for entry in raw_seen:
                         if isinstance(entry, dict) and "h" in entry:
                             # New format: {"h": "sha256...", "ts": "ISO"}
-                            if entry.get("ts", "") >= cutoff:
+                            # compared as datetimes — ts carries the local
+                            # offset (+01/+02), string order is wrong near the cutoff
+                            try:
+                                ts = datetime.fromisoformat(entry.get("ts") or "")
+                                if ts.tzinfo is None:
+                                    ts = ts.replace(tzinfo=timezone.utc)
+                                keep = ts >= cutoff
+                            except (TypeError, ValueError):
+                                keep = True  # unknown age: keep (dedup over size)
+                            if keep:
                                 filtered.append(entry)
                         # else: old MD5 string format — discard (one-time re-download)
                     state["seen_invoices"] = filtered
@@ -270,6 +320,11 @@ class InvoiceMonitor:
         state = {} if use_db else self.load_state()
         found_any = False
         new_invoices_count = {}
+        # Subjects whose KSeF query failed — their last_check must stay put so
+        # the same window is queried again next cycle (no invoice loss).
+        failed = {}
+        polled_ok = []
+        cursors: Dict[str, datetime] = {}
 
         # JSON-based dedup — only used when DB is not available
         seen_entries = state.get("seen_invoices", []) if not use_db else []
@@ -277,10 +332,38 @@ class InvoiceMonitor:
 
         try:
             for subject_type in self.subject_types:
-                new_count, last_ksef_number = self._poll_subject_type(
-                    subject_type, db_session, state, seen_hashes, seen_entries, now
-                )
+                if not self._subject_due(subject_type, db_session, state, now):
+                    logger.debug(
+                        "Subject %s pominięty — interwał pollingu jeszcze nie minął",
+                        subject_type,
+                    )
+                    continue
 
+                try:
+                    new_count, last_ksef_number = self._poll_subject_type(
+                        subject_type, db_session, state, seen_hashes, seen_entries, now
+                    )
+                except KSeFQueryError as e:
+                    failed[subject_type] = str(e)
+                    logger.error(
+                        "Zapytanie KSeF [%s] nieudane — last_check bez zmian: %s",
+                        subject_type, e,
+                    )
+                    if use_db:
+                        self.db.update_monitor_state(
+                            session=db_session,
+                            nip=self.nip,
+                            subject_type=subject_type,
+                            last_check=None,
+                            error=str(e),
+                        )
+                        # no open write transaction during the next subject's query
+                        db_session.commit()
+                    continue
+
+                polled_ok.append(subject_type)
+                cursor = self._next_cursor(now)
+                cursors[subject_type] = cursor
                 if new_count > 0:
                     found_any = True
                     new_invoices_count[subject_type] = new_count
@@ -291,10 +374,11 @@ class InvoiceMonitor:
                         session=db_session,
                         nip=self.nip,
                         subject_type=subject_type,
-                        last_check=now,
+                        last_check=cursor,
                         last_ksef_number=last_ksef_number,
                         new_invoices=new_count,
                     )
+                    db_session.commit()
 
             # Commit DB transaction
             if use_db:
@@ -308,10 +392,17 @@ class InvoiceMonitor:
             if db_session:
                 db_session.close()
 
-        if not found_any:
+        if not found_any and not failed:
             logger.info("No new invoices found")
 
-        self._finalize_check_cycle(use_db, state, seen_entries, now, new_invoices_count)
+        self._finalize_check_cycle(use_db, state, seen_entries, now, new_invoices_count,
+                                   advance_last_check=not failed, polled_ok=polled_ok,
+                                   cursors=cursors)
+
+        if failed:
+            raise KSeFQueryError(
+                "; ".join(f"{st}: {msg}" for st, msg in failed.items())
+            )
 
     def _poll_subject_type(self, subject_type: str, db_session, json_state: Dict,
                            seen_hashes: set, seen_entries: list,
@@ -325,7 +416,7 @@ class InvoiceMonitor:
         date_from = self._get_date_from(db_session, subject_type, json_state, now)
         date_to = now
 
-        # Cap date_from to max 90 days back (KSeF API 3-month limit)
+        # Cap date_from to max 100 days back (KSeF API 100-day limit)
         date_from = self._cap_date_from(date_from, now)
 
         invoices = self.ksef.get_invoices_metadata(date_from, date_to, subject_type)
@@ -374,7 +465,7 @@ class InvoiceMonitor:
         # Send notification
         context = self.build_template_context(invoice, subject_type)
         context["_invoice_id"] = invoice_id  # for notification_log
-        success = self.notifier.send_invoice_notification(context)
+        success = self.notifier.send_invoice_notification(context, db_session=db_session)
 
         safe_ksef_log = str(ksef_number or 'N/A').replace('\n', ' ').replace('\r', ' ')
         if success:
@@ -382,22 +473,378 @@ class InvoiceMonitor:
         else:
             logger.warning("Failed to send notification [%s] invoice: %s", subject_type, safe_ksef_log)
 
-        # Save invoice artifacts (PDF, XML)
-        # Rate limiting is handled globally by RateLimiter in ksef_client
-        self._save_invoice_artifacts(invoice, subject_type, invoice_id=invoice_id, db_session=db_session)
+        # Save invoice artifacts (PDF, XML).
+        # Lightweight Polling: w trybie lazy detekcja tylko rejestruje artefakty jako
+        # pending (Faza 1); faktyczne pobranie XML/PDF dzieje się w
+        # process_pending_artifacts() (Faza 2). Wymaga DB; inaczej fallback na inline.
+        # Rate limiting jest egzekwowany globalnie przez RateLimiter w ksef_client.
+        if self.lazy_artifacts and use_db and invoice_id and (self.save_xml or self.save_pdf):
+            self._enqueue_artifacts(db_session, invoice_id)
+        else:
+            # The invoice row and its notification log are final — commit before
+            # the download (KSeF 429 back-off can take minutes) so the SQLite
+            # write lock does not block UI logins and the initial load.
+            if use_db:
+                db_session.commit()
+            # The notification is already out: a file-system error here (no
+            # space, permissions on a new month folder…) must not roll back the
+            # invoice row — the next cycle would find it "new" and notify again.
+            try:
+                self._save_invoice_artifacts(invoice, subject_type, invoice_id=invoice_id, db_session=db_session)
+            except SQLAlchemyError:
+                raise
+            except Exception as e:
+                logger.error("Saving artifacts for %s failed (invoice kept): %s", safe_ksef_log, e)
+        # the next invoice's notification must not run inside this transaction
+        if use_db:
+            db_session.commit()
+
+    def retry_failed_notifications(self) -> int:
+        """Re-send invoice notifications that failed on every channel.
+
+        The invoice row is committed even when no channel delivered, so the
+        next cycle does not see it as new and the notification would be lost.
+        Retried: invoices with a logged failure and no logged success, from the
+        polling (not the historical import), from the last NOTIFY_RETRY_WINDOW,
+        until NOTIFY_RETRY_MAX attempts. Invoices without any log row are not
+        touched (older versions often failed to write the log).
+        Returns the number of invoices delivered now.
+        """
+        channels = len(getattr(self.notifier, "notifiers", None) or [])
+        if self.db is None or channels == 0:
+            return 0
+        cutoff = (datetime.now(timezone.utc) - self.NOTIFY_RETRY_WINDOW).replace(tzinfo=None)
+        session = self.db.get_session()
+        delivered = 0
+        try:
+            sent = (session.query(NotificationLog.invoice_id)
+                    .filter(NotificationLog.event_type == "invoice",
+                            NotificationLog.status == "sent",
+                            NotificationLog.invoice_id.isnot(None)))
+            now_naive = datetime.now(timezone.utc).replace(tzinfo=None)
+            rows = (
+                session.query(Invoice, func.count(NotificationLog.id), func.max(NotificationLog.sent_at))
+                .join(NotificationLog, NotificationLog.invoice_id == Invoice.id)
+                .filter(NotificationLog.event_type == "invoice",
+                        NotificationLog.status == "failed",
+                        Invoice.id.notin_(sent),
+                        Invoice.created_at >= cutoff,
+                        or_(Invoice.source.is_(None), Invoice.source != "initial_load"))
+                .group_by(Invoice.id)
+                # each attempt logs one failed row per channel
+                .having(func.count(NotificationLog.id) < self.NOTIFY_RETRY_MAX * channels)
+                .order_by(Invoice.id)
+                .limit(200)
+                .all()
+            )
+            candidates = []
+            for inv, failed_rows, last_attempt in rows:
+                attempts = max(1, failed_rows // channels)
+                wait = self.NOTIFY_RETRY_BACKOFF[min(attempts, len(self.NOTIFY_RETRY_BACKOFF)) - 1]
+                if last_attempt is None or now_naive - last_attempt >= wait:
+                    candidates.append(inv)
+            for inv in candidates[:50]:
+                try:
+                    meta = json.loads(inv.raw_metadata or "")
+                except ValueError:
+                    continue
+                context = self.build_template_context(meta, inv.subject_type)
+                context["_invoice_id"] = inv.id
+                if self.notifier.send_invoice_notification(context, db_session=session):
+                    delivered += 1
+                    logger.info("Powiadomienie o fakturze %s wysłane ponownie", inv.ksef_number)
+                session.commit()
+        finally:
+            session.close()
+        return delivered
+
+    def _enqueue_artifacts(self, db_session, invoice_id: int) -> None:
+        """Faza 1 (lazy): zarejestruj artefakty jako pending — pobranie w Fazie 2."""
+        if self.db is None:
+            return
+        if self.save_xml:
+            self.db.create_artifact(db_session, invoice_id, "xml", status="pending")
+        if self.save_pdf:
+            self.db.create_artifact(db_session, invoice_id, "pdf", status="pending")
+
+    def _mark_remaining_pending_failed(self, db_session, invoice_id: int, reason: str,
+                                       types=("xml", "pdf")) -> None:
+        """Oznacz jako failed artefakty faktury, które po próbie wciąż są 'pending'/'failed'.
+
+        Zwiększa licznik prób (`download_attempts`), dzięki czemu
+        `get_pending_artifacts` przestanie je zwracać po 3 nieudanych próbach.
+        `types` ogranicza działanie do wybranych typów (UPO ma osobny przebieg).
+        """
+        pending = (
+            db_session.query(InvoiceArtifact)
+            .filter_by(invoice_id=invoice_id)
+            # failed ones are retried too (get_pending_artifacts returns both):
+            # without counting their attempts they would be retried forever
+            .filter(InvoiceArtifact.status.in_(["pending", "failed"]))
+            .filter(InvoiceArtifact.artifact_type.in_(types))
+            .all()
+        )
+        for art in pending:
+            self.db.mark_artifact_failed(db_session, invoice_id, art.artifact_type, reason)
+
+    def process_pending_artifacts(self, limit: Optional[int] = None) -> int:
+        """Faza 2 (lazy artifacts): pobierz XML/PDF dla zakolejkowanych faktur.
+
+        Grupuje pending artefakty per faktura i pobiera je raz na fakturę
+        (`_save_invoice_artifacts` pobiera XML i generuje PDF w jednym kroku).
+        Limity KSeF API są egzekwowane globalnie przez RateLimiter w ksef_client.
+
+        Returns:
+            Liczba faktur, dla których udało się pobrać artefakty.
+        """
+        if self.db is None:
+            return 0
+
+        limit = limit if limit is not None else self.artifact_batch_size
+        processed = 0
+        session = self.db.get_session()
+        try:
+            pending = self.db.get_pending_artifacts(session, limit=limit)
+            # UPO ma osobny przebieg (process_pending_upo) — tu tylko XML/PDF.
+            pending = [a for a in pending if a.artifact_type in ("xml", "pdf")]
+            if not pending:
+                return 0
+
+            # Grupuj per faktura, zachowując kolejność (created_at z get_pending_artifacts)
+            invoice_ids = []
+            seen = set()
+            for art in pending:
+                if art.invoice_id not in seen:
+                    seen.add(art.invoice_id)
+                    invoice_ids.append(art.invoice_id)
+
+            for invoice_id in invoice_ids:
+                inv = session.query(Invoice).filter_by(id=invoice_id).first()
+                if inv is None or not inv.raw_metadata:
+                    logger.warning(
+                        "Pending artifacts: brak raw_metadata dla invoice_id=%s — pomijam",
+                        invoice_id,
+                    )
+                    self._mark_remaining_pending_failed(session, invoice_id, "missing raw_metadata")
+                    continue
+
+                try:
+                    invoice = json.loads(inv.raw_metadata)
+                except (ValueError, TypeError) as e:
+                    logger.error(
+                        "Pending artifacts: nieprawidłowy raw_metadata dla invoice_id=%s: %s",
+                        invoice_id, e,
+                    )
+                    self._mark_remaining_pending_failed(session, invoice_id, "invalid raw_metadata")
+                    continue
+
+                subject_type = inv.subject_type or self.subject_types[0]
+                # no open write transaction during the download
+                session.commit()
+                try:
+                    self._save_invoice_artifacts(
+                        invoice, subject_type, invoice_id=invoice_id, db_session=session
+                    )
+                    processed += 1
+                except Exception as e:
+                    logger.error(
+                        "Pending artifacts: pobranie nie powiodło się dla invoice_id=%s: %s",
+                        invoice_id, e,
+                    )
+
+                # Cokolwiek nie zostało pobrane (np. fetch XML zwrócił None) wciąż jest
+                # 'pending' → oznacz failed, by zwiększyć licznik prób (bounded retry).
+                self._mark_remaining_pending_failed(session, invoice_id, "download did not complete")
+
+            session.commit()
+        except Exception:
+            session.rollback()
+            raise
+        finally:
+            session.close()
+
+        if processed:
+            logger.info("Faza 2: pobrano artefakty dla %d faktur", processed)
+        return processed
+
+    def _session_map_is_stale(self) -> bool:
+        """True when the next _build_session_invoice_map() call rebuilds the map."""
+        return (self._session_invoice_map is None
+                or (time.time() - self._session_map_ts) >= self._session_map_ttl)
+
+    def _build_session_invoice_map(self, force: bool = False) -> dict:
+        """Zbuduj (z cache TTL) mapę ksefNumber -> sessionReference z sesji KSeF.
+
+        Listuje sesje online i ich faktury — pozwala odnaleźć sesję, w której
+        wystawiono fakturę sprzedażową, aby pobrać jej UPO.
+        """
+        now = time.time()
+        if (not force and self._session_invoice_map is not None
+                and (now - self._session_map_ts) < self._session_map_ttl):
+            return self._session_invoice_map
+
+        mapping = {}
+        for sess in self.ksef.list_sessions(session_type="Online"):
+            ref = sess.get("referenceNumber")
+            if not ref:
+                continue
+            for inv in self.ksef.get_session_invoices(ref):
+                ksef_number = inv.get("ksefNumber")
+                if ksef_number:
+                    mapping[ksef_number] = ref
+
+        self._session_invoice_map = mapping
+        self._session_map_ts = now
+        logger.info("UPO: zbudowano mapę sesji (%d faktur)", len(mapping))
+        return mapping
+
+    def _save_upo_xml(self, ksef_number: str, upo_xml: str) -> Optional[Path]:
+        """Zapisz UPO XML do {output_dir}/upo/{ksefNumber}.xml (guard path traversal)."""
+        upo_dir = self.output_dir / "upo"
+        upo_dir.mkdir(parents=True, exist_ok=True)
+        target = upo_dir / f"{ksef_number}.xml"
+        if not target.resolve().is_relative_to(self.output_dir.resolve()):
+            logger.error("UPO: path traversal blocked for %s", ksef_number)
+            return None
+        try:
+            with open(target, "w", encoding="utf-8") as f:
+                f.write(upo_xml)
+        except OSError as e:
+            logger.error("UPO: zapis nie powiódł się dla %s: %s", ksef_number, e)
+            return None
+        return target
+
+    def process_pending_upo(self, limit: Optional[int] = None) -> int:
+        """Pobierz UPO dla wykrytych faktur sprzedażowych (Subject1) bez UPO.
+
+        Dla każdej takiej faktury: odnajdź sesję (mapa ksefNumber->sessionRef),
+        pobierz UPO (`get_invoice_upo`, z weryfikacją SHA-256), zapisz XML i ustaw
+        `has_upo`/`upo_path`. Próby liczone artefaktem typu 'upo' (bounded retry —
+        np. KSeF 21178 „UPO not found" może pojawić się z opóźnieniem). Wymaga DB
+        oraz `fetch_upo=True`.
+
+        Returns:
+            Liczba pobranych UPO.
+        """
+        if self.db is None or not self.fetch_upo:
+            return 0
+
+        limit = limit if limit is not None else self.artifact_batch_size
+        processed = 0
+        session = self.db.get_session()
+        try:
+            # Exhausted retries are excluded in SQL, before LIMIT — otherwise a
+            # batch made only of exhausted invoices starved all later ones.
+            upo_art = aliased(InvoiceArtifact)
+            invoices = (
+                session.query(Invoice)
+                .outerjoin(upo_art, (upo_art.invoice_id == Invoice.id)
+                           & (upo_art.artifact_type == "upo"))
+                .filter(Invoice.subject_type == "Subject1", Invoice.has_upo.is_(False))
+                .filter(or_(upo_art.id.is_(None), upo_art.download_attempts < 3))
+                .order_by(Invoice.id)
+                .limit(limit)
+                .all()
+            )
+            if not invoices:
+                return 0
+
+            session_map = None
+            map_fresh = False
+            for inv in invoices:
+                # artefakt 'upo' do liczenia prób (no-op jeśli już istnieje)
+                self.db.create_artifact(session, inv.id, "upo", status="pending")
+                art = (session.query(InvoiceArtifact)
+                       .filter_by(invoice_id=inv.id, artifact_type="upo").first())
+                if art and (art.download_attempts or 0) >= 3:
+                    continue  # próby wyczerpane
+                # no open write transaction during session listing / UPO download
+                session.commit()
+
+                if session_map is None:
+                    map_fresh = self._session_map_is_stale()
+                    session_map = self._build_session_invoice_map()
+                session_ref = session_map.get(inv.ksef_number)
+                if not session_ref and not map_fresh:
+                    # A cached map (TTL 24 h) cannot know newer invoices. A
+                    # forced rebuild lists every session (all pages), so it is
+                    # rate-limited; until the next one, a miss against the old
+                    # map does not use up an attempt.
+                    if (time.time() - self._session_map_forced_ts) < self.SESSION_MAP_FORCE_INTERVAL:
+                        continue
+                    self._session_map_forced_ts = time.time()
+                    session_map = self._build_session_invoice_map(force=True)
+                    map_fresh = True
+                    session_ref = session_map.get(inv.ksef_number)
+                if not session_ref:
+                    self.db.mark_artifact_failed(session, inv.id, "upo", "session not found")
+                    continue
+
+                upo = self.ksef.get_invoice_upo(session_ref, inv.ksef_number)
+                if not upo:
+                    self.db.mark_artifact_failed(
+                        session, inv.id, "upo", "UPO unavailable (e.g. 21178) or hash mismatch")
+                    continue
+
+                path = self._save_upo_xml(inv.ksef_number, upo["upo_xml"])
+                if path is None:
+                    self.db.mark_artifact_failed(session, inv.id, "upo", "save failed")
+                    continue
+
+                inv.has_upo = True
+                inv.upo_path = str(path)
+                self.db.mark_artifact_downloaded(
+                    session, inv.id, "upo", file_path=str(path),
+                    file_hash=upo.get("sha256_hash") or None,
+                )
+                processed += 1
+
+            session.commit()
+        except Exception:
+            session.rollback()
+            raise
+        finally:
+            session.close()
+
+        if processed:
+            logger.info("UPO: pobrano %d UPO", processed)
+        return processed
 
     def _finalize_check_cycle(self, use_db: bool, state: Dict, seen_entries: list,
-                              now: datetime, new_invoices_count: Dict) -> None:
-        """Save state and update Prometheus metrics after a check cycle."""
+                              now: datetime, new_invoices_count: Dict,
+                              advance_last_check: bool = True,
+                              polled_ok: Optional[List[str]] = None,
+                              cursors: Optional[Dict[str, datetime]] = None) -> None:
+        """Save state and update Prometheus metrics after a check cycle.
+
+        advance_last_check=False (a KSeF query failed): JSON mode keeps the old
+        global last_check so the window is re-queried; seen invoices are still
+        saved so the retry does not re-notify.
+        """
         # Save JSON state only when DB is not active (fallback mode)
         if not use_db:
-            state["last_check"] = now.isoformat()
-            state["seen_invoices"] = seen_entries[-1000:]
+            # Per-subject progress: a subject that keeps failing must not pin
+            # the window of the others (global last_check stays for compat).
+            per_subject = state.setdefault("last_check_by_subject", {})
+            # Old state files have only the global value: seed every subject
+            # with it first, or a subject with a longer poll interval would
+            # keep reading the global value that the others move every cycle.
+            if state.get("last_check"):
+                for st in self.subject_types:
+                    per_subject.setdefault(st, state["last_check"])
+            if advance_last_check:
+                state["last_check"] = now.isoformat()
+            for st in polled_ok or []:
+                per_subject[st] = (cursors or {}).get(st, now).isoformat()
+            # bounded by the TTL applied in load_state(); a count cap dropped
+            # hashes still inside the queried window (re-notification)
+            state["seen_invoices"] = seen_entries
             self.save_state(state)
 
         # Update Prometheus metrics
         if self.metrics:
-            self.metrics.update_last_check(now)
+            if advance_last_check:
+                self.metrics.update_last_check(now)
             for subject_type, count in new_invoices_count.items():
                 self.metrics.increment_new_invoices(subject_type, count)
 
@@ -419,27 +866,107 @@ class InvoiceMonitor:
                 except Exception as e:
                     logger.debug("Failed to update artifacts_pending metric: %s", e)
     
-    def _get_date_from(self, db_session, subject_type: str, json_state: Dict, now: datetime) -> datetime:
-        """Determine date_from for a subject_type. DB has priority over JSON state."""
+    def _get_last_check(self, db_session, subject_type: str, json_state: Dict) -> Optional[datetime]:
+        """Last check time for a subject (DB priority over JSON), or None if never checked."""
         if db_session is not None:
             ms = self.db.get_monitor_state(db_session, self.nip, subject_type)
             if ms and ms.last_check:
                 dt = ms.last_check
                 if dt.tzinfo is None and self.timezone:
-                    dt = self.timezone.localize(dt)
+                    # Stored as naive local time. In the repeated autumn hour pick
+                    # the earlier instant: re-querying a little overlaps (dedup
+                    # handles it); the later one would skip up to an hour.
+                    dt = self.timezone.localize(dt, is_dst=True)
                 elif dt.tzinfo is not None and self.timezone:
                     dt = dt.astimezone(self.timezone)
                 return dt
 
-        # Fallback to JSON state
-        if json_state.get("last_check"):
+        per_subject = json_state.get("last_check_by_subject") or {}
+        raw = per_subject.get(subject_type) or json_state.get("last_check")
+        if raw:
             try:
-                return self._parse_datetime(json_state["last_check"])
+                return self._parse_datetime(raw)
             except (ValueError, TypeError):
                 logger.warning("Invalid last_check date, using 24h ago")
 
+        return None
+
+    def _next_cursor(self, now: datetime) -> datetime:
+        """Where the next query for a subject resumes.
+
+        With date_type=PermanentStorage KSeF returns permanentStorageHwmDate:
+        only invoices stored up to it are guaranteed complete (ksef-docs
+        hwm.md), so the next query starts there instead of at `now`. Other
+        date types have no HWM — `now` plus the window overlap.
+        """
+        if getattr(self.ksef, "date_type", None) != "PermanentStorage":
+            return now
+        raw = getattr(self.ksef, "last_hwm_date", None)
+        if not isinstance(raw, str) or not raw:
+            return now
+        try:
+            hwm = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        except ValueError:
+            return now
+        if hwm.tzinfo is None:
+            hwm = hwm.replace(tzinfo=timezone.utc)
+        if self.timezone:
+            hwm = hwm.astimezone(self.timezone)
+        return min(hwm, now) if now.tzinfo else now
+
+    def _get_date_from(self, db_session, subject_type: str, json_state: Dict, now: datetime) -> datetime:
+        """Determine date_from for a subject_type. DB has priority over JSON state."""
+        last = self._get_last_check(db_session, subject_type, json_state)
+        if last is not None:
+            # Overlap consecutive windows: KSeF guarantees completeness only
+            # below permanentStorageHwmDate, so an invoice may become queryable
+            # after its (Invoicing) date already fell behind last_check.
+            # Duplicates are removed by dedup (ksef_number / seen hashes).
+            return last - self.POLL_WINDOW_OVERLAP
         logger.info("First run - checking last 24 hours")
         return now - timedelta(hours=24)
+
+    def _subject_due(self, subject_type: str, db_session, json_state: Dict, now: datetime) -> bool:
+        """Czy minął skonfigurowany interwał pollingu dla danego subject type.
+
+        Brak wpisu w `subject_poll_intervals` → subject pollowany w każdym cyklu
+        (zachowanie domyślne). Pierwszy raz (brak last_check) → zawsze due.
+        """
+        interval = self.subject_intervals.get(subject_type)
+        if not interval:
+            return True
+        last = self._get_last_check(db_session, subject_type, json_state)
+        if last is None:
+            return True
+        return (now - last).total_seconds() >= interval
+
+    def _estimate_metadata_calls_per_hour(self) -> Optional[float]:
+        """Szacowana liczba zapytań/h do /invoices/query/metadata (suma po subjectach).
+
+        Uwzględnia per-subject interwał: subject pollowany co max(cykl, jego interwał).
+        Zwraca None dla trybów daily/weekly (niski wolumen — pomijamy ostrzeżenie).
+        """
+        base = self.scheduler.interval_seconds()
+        if not base:
+            return None
+        total = 0.0
+        for subject in self.subject_types:
+            eff = max(base, self.subject_intervals.get(subject) or 0)
+            if eff > 0:
+                total += 3600.0 / eff
+        return total
+
+    def _warn_if_polling_exceeds_limit(self) -> None:
+        """Ostrzeż przy starcie, jeśli konfiguracja pollingu przekracza limit metadata."""
+        calls = self._estimate_metadata_calls_per_hour()
+        if calls is not None and calls > self.METADATA_HOUR_LIMIT:
+            logger.warning(
+                "Konfiguracja pollingu: ~%.0f zapytań/h do /invoices/query/metadata "
+                "przy %d subject(ach) — przekracza limit KSeF %d/h. Zwiększ interwał "
+                "(min. ~7 min dla 2 subjectów) lub ustaw monitoring.subject_poll_intervals. "
+                "Klient zastosuje backoff na 429.",
+                calls, len(self.subject_types), self.METADATA_HOUR_LIMIT,
+            )
 
     def _save_invoice_to_db(self, session, invoice: Dict, subject_type: str) -> Optional[int]:
         """Save invoice metadata to DB. Returns invoice.id (new or existing) or None."""
@@ -476,6 +1003,10 @@ class InvoiceMonitor:
             # Duplicate — return existing record's id so artifacts can be linked
             existing = session.query(Invoice).filter_by(ksef_number=ksef_number).first()
             return existing.id if existing else None
+        except SQLAlchemyError:
+            # e.g. "database is locked": abort before the notification — an
+            # unsaved invoice would be notified again next cycle
+            raise
         except Exception as e:
             logger.error(f"Failed to save invoice to DB: {e}")
             return None
@@ -529,9 +1060,9 @@ class InvoiceMonitor:
             "net_amount": invoice.get("netAmount"),
             "vat_amount": invoice.get("vatAmount"),
             "currency": s(invoice.get("currency", "PLN"), 10),
-            "seller_name": s(invoice.get("seller", {}).get("name", "N/A")),
+            "seller_name": s((invoice.get("seller") or {}).get("name") or "N/A"),
             "seller_nip": s(invoice.get("seller", {}).get("nip", "N/A"), 20),
-            "buyer_name": s(invoice.get("buyer", {}).get("name", "N/A")),
+            "buyer_name": s((invoice.get("buyer") or {}).get("name") or "N/A"),
             "buyer_nip": s(
                 invoice.get("buyer", {}).get("identifier", {}).get("value")
                 or invoice.get("buyer", {}).get("nip", "N/A"),
@@ -648,6 +1179,45 @@ class InvoiceMonitor:
 
         return path
 
+    def _collision_free_base(self, target_dir: Path, base_name: str, ksef_number: str,
+                             invoice_id: Optional[int], db_session,
+                             xml_content=None) -> str:
+        """File base name that cannot point at another invoice's artifact.
+
+        The default pattern ({type}_{date}_{invoice_number}) collides for two
+        invoices with the same number and date from different sellers; with the
+        `skip` strategy the second invoice used to be linked to the first one's
+        file (the API then served the wrong PDF/XML). A file owned by another
+        invoice (per DB) or an XML with different content means a collision:
+        this invoice gets `<base>_<ksef number>` instead.
+        """
+        alt = f"{base_name}_{self._sanitize_filename_value(ksef_number)}"
+        for suffix in (".xml", ".pdf"):
+            path = target_dir / f"{base_name}{suffix}"
+            if not path.exists():
+                continue
+            if db_session is not None and invoice_id is not None:
+                owner = (db_session.query(InvoiceArtifact.invoice_id)
+                         .filter(InvoiceArtifact.file_path == str(path),
+                                 InvoiceArtifact.invoice_id != invoice_id)
+                         .first())
+                # rows older than the invoice_artifacts mirror (pre-0.5.3)
+                # carry the path only on the invoice itself
+                legacy_owner = (db_session.query(Invoice.id)
+                                .filter((Invoice.xml_path == str(path)) | (Invoice.pdf_path == str(path)),
+                                        Invoice.id != invoice_id)
+                                .first())
+                if owner is not None or legacy_owner is not None:
+                    return alt
+            if suffix == ".xml" and xml_content is not None:
+                expected = xml_content if isinstance(xml_content, bytes) else xml_content.encode("utf-8")
+                try:
+                    if path.read_bytes() != expected:
+                        return alt
+                except OSError:
+                    return alt
+        return base_name
+
     @staticmethod
     def _sanitize_filename_value(value: str) -> str:
         """Sanitize a value for safe use in filenames."""
@@ -657,6 +1227,8 @@ class InvoiceMonitor:
         for ch in r'/\:*?"<>|':
             result = result.replace(ch, '_')
         result = result.replace('\x00', '')
+        # other control characters (\n, \r…) from invoice fields: file names and logs
+        result = "".join(ch if ch.isprintable() else "_" for ch in result)
         result = result.strip('. ')
         return result[:100] or "unknown"
 
@@ -746,6 +1318,8 @@ class InvoiceMonitor:
             return
 
         xml_content = xml_result['xml_content']
+        base_name = self._collision_free_base(target_dir, base_name, ksef_number,
+                                              invoice_id, db_session, xml_content)
 
         # Detect schema type for logging and downstream decisions
         schema_type = detect_schema_type(xml_content)
@@ -775,6 +1349,10 @@ class InvoiceMonitor:
 
         # Generate and save PDF
         if self.save_pdf:
+            # rendering may call the CIRFMF generator over HTTP — commit the
+            # XML artifact first so no write lock is held meanwhile
+            if db_session is not None:
+                db_session.commit()
             if REPORTLAB_AVAILABLE:
                 pdf_orig_path = target_dir / f"{base_name}.pdf"
                 pdf_path = self._resolve_safe_path(pdf_orig_path)
@@ -782,11 +1360,17 @@ class InvoiceMonitor:
                     try:
                         tz_name = self.config.get_timezone() if hasattr(self.config, 'get_timezone') else ''
                         template_dir = self.config.get("storage", "pdf_templates_dir", default=None)
-                        generate_invoice_pdf(xml_content, ksef_number=ksef_number,
-                                             output_path=str(pdf_path), environment=self.ksef.environment,
-                                             timezone=tz_name, template_dir=template_dir)
-                        logger.info(f"Invoice PDF saved: {pdf_path}")
-                        self._update_artifact_in_db(db_session, invoice_id, "pdf", pdf_path)
+                        result = generate_invoice_pdf(xml_content, ksef_number=ksef_number,
+                                                      output_path=str(pdf_path), environment=self.ksef.environment,
+                                                      timezone=tz_name, template_dir=template_dir,
+                                                      ksef_generator_url=self.config.get(
+                                                          "storage", "pdf_ksef_generator_url", default=None))
+                        # None = schema without a PDF renderer: nothing was written
+                        if result is not None and pdf_path.exists():
+                            logger.info(f"Invoice PDF saved: {pdf_path}")
+                            self._update_artifact_in_db(db_session, invoice_id, "pdf", pdf_path)
+                        else:
+                            logger.warning(f"No PDF generated for {ksef_number} (unsupported schema)")
                     except Exception as e:
                         logger.error(f"Failed to generate PDF for {ksef_number}: {e}")
                 elif pdf_orig_path.exists():
@@ -885,6 +1469,10 @@ class InvoiceMonitor:
             logger.error(f"save_artifact: path traversal blocked for {ksef_number}")
             return None
 
+        base_name = self._collision_free_base(
+            target_dir, base_name, ksef_number, invoice_id, db_session,
+            content if artifact_type == "xml" else None,
+        )
         suffix = ".xml" if artifact_type == "xml" else ".pdf"
         orig_path = target_dir / f"{base_name}{suffix}"
         write_path = self._resolve_safe_path(orig_path)
@@ -914,6 +1502,35 @@ class InvoiceMonitor:
             logger.error(f"save_artifact: write failed for {ksef_number} {artifact_type}: {e}")
             return None
 
+    def _check_and_drain(self) -> None:
+        """Jeden przebieg: detekcja nowych faktur + (w trybie lazy) Faza 2 — pobranie
+        zakolejkowanych artefaktów. Błąd Fazy 2 nie przerywa detekcji.
+
+        Nieudane zapytanie KSeF dla jednego subjectu nie blokuje pobierania
+        artefaktów/UPO zapisanych przez pozostałe — błąd jest zgłaszany po drenażu.
+        """
+        query_error = None
+        try:
+            self.check_for_new_invoices()
+        except KSeFQueryError as e:
+            query_error = e
+        try:
+            self.retry_failed_notifications()
+        except Exception as e:
+            logger.error("Ponowienie powiadomień nie powiodło się: %s", e, exc_info=True)
+        if self.lazy_artifacts:
+            try:
+                self.process_pending_artifacts()
+            except Exception as e:
+                logger.error("Faza 2 (pobieranie artefaktów) nie powiodła się: %s", e, exc_info=True)
+        if self.fetch_upo:
+            try:
+                self.process_pending_upo()
+            except Exception as e:
+                logger.error("UPO: pobieranie nie powiodło się: %s", e, exc_info=True)
+        if query_error is not None:
+            raise query_error
+
     def run(self):
         """
         Main monitoring loop
@@ -930,6 +1547,7 @@ class InvoiceMonitor:
         if self.save_xml or self.save_pdf:
             logger.info(f"Output directory: {self.output_dir}")
         self.scheduler._log_schedule_info()
+        self._warn_if_polling_exceeds_limit()
         logger.info("=" * 60)
 
         # Send startup notification
@@ -944,42 +1562,69 @@ class InvoiceMonitor:
                 if self._manual_trigger:
                     self._manual_trigger = False
                     logger.info("Manual trigger received — checking for new invoices...")
-                    self.check_for_new_invoices()
+                    self._check_and_drain()
+                    self._last_error_notice = None  # a recurring error alerts again
                     logger.info(self.scheduler.get_next_run_info())
                     logger.info("-" * 60)
                 elif self.scheduler.should_run():
                     logger.info("Checking for new invoices...")
-                    self.check_for_new_invoices()
+                    self._check_and_drain()
+                    self._last_error_notice = None  # a recurring error alerts again
                     logger.info(self.scheduler.get_next_run_info())
                     logger.info("-" * 60)
 
             except Exception as e:
                 logger.error(f"Error during check: {e}", exc_info=True)
 
-                # Record error in DB monitor_state
-                if self.db:
-                    try:
-                        err_session = self.db.get_session()
-                        for st in self.subject_types:
-                            self.db.update_monitor_state(
-                                session=err_session,
-                                nip=self.nip,
-                                subject_type=st,
-                                last_check=self._get_now(),
-                                error=str(e),
-                            )
-                        err_session.commit()
-                    except Exception as db_err:
-                        logger.error(f"Failed to record error in DB: {db_err}")
-                    finally:
-                        err_session.close()
+                # KSeFQueryError is already recorded per subject by check_for_new_invoices
+                if not isinstance(e, KSeFQueryError):
+                    self._record_cycle_error(e)
 
-                # Send error notification
+                # Send error notification (throttled: a persisting error — KSeF
+                # outage, one subject without permission — must not page every cycle)
                 error_msg = f"Error occurred: {str(e)[:200]}"
-                self.notifier.send_error_notification(error_msg)
+                if self._should_notify_error(error_msg):
+                    self.notifier.send_error_notification(error_msg)
 
             # Wait until next scheduled run
             self.scheduler.wait_until_next_run()
+
+    ERROR_NOTIFY_REPEAT_SECONDS = 6 * 3600
+
+    def _should_notify_error(self, message: str) -> bool:
+        """Notify a new error at once; repeat the same one at most every 6 h."""
+        now = time.monotonic()
+        last = getattr(self, "_last_error_notice", None)
+        if last and last[0] == message and now - last[1] < self.ERROR_NOTIFY_REPEAT_SECONDS:
+            logger.info("Error notification suppressed (same error repeated)")
+            return False
+        self._last_error_notice = (message, now)
+        return True
+
+    def _record_cycle_error(self, error: Exception) -> None:
+        """Record a failed cycle in monitor_state without touching last_check.
+
+        The cycle failed part-way: invoices processed before the error are
+        committed, the rest of the queried window is not — advancing last_check
+        here would skip them (re-querying is safe, known invoices are deduped).
+        """
+        if not self.db:
+            return
+        err_session = self.db.get_session()
+        try:
+            for st in self.subject_types:
+                self.db.update_monitor_state(
+                    session=err_session,
+                    nip=self.nip,
+                    subject_type=st,
+                    last_check=None,
+                    error=str(error),
+                )
+            err_session.commit()
+        except Exception as db_err:
+            logger.error(f"Failed to record error in DB: {db_err}")
+        finally:
+            err_session.close()
 
     def trigger_check(self):
         """Set flag to run an immediate check on next loop iteration."""

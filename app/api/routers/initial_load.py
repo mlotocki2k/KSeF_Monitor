@@ -39,19 +39,15 @@ class StartJobRequest(BaseModel):
     @field_validator("date_type")
     @classmethod
     def validate_date_type(cls, v):
-        allowed = {"Invoicing", "IssueDate"}
-        if v not in allowed:
-            raise ValueError(f"date_type must be one of {allowed}")
-        return v
+        from app.initial_load_manager import normalize_date_type
+        return normalize_date_type(v)
 
     @model_validator(mode="after")
     def check_range_not_excessive(self):
         """V5-11: reject ranges > 5 years to prevent KSeF API abuse / DB churn."""
-        from datetime import datetime, timedelta
-        try:
-            start = datetime.fromisoformat(self.start_date)
-            end = datetime.fromisoformat(self.end_date)
-        except ValueError:
+        from datetime import timedelta
+        start, end = _parse_date(self.start_date), _parse_date(self.end_date)
+        if start is None or end is None:
             # Let the endpoint's own date-parsing return 422 with a clearer msg
             return self
         if (end - start) > timedelta(days=1826):
@@ -60,11 +56,18 @@ class StartJobRequest(BaseModel):
 
 
 def _parse_date(date_str: str) -> Optional[datetime]:
-    """Parse ISO date string to datetime (UTC midnight)."""
+    """Parse an ISO date/datetime to naive UTC (the export treats naive as UTC).
+
+    An offset is converted, not dropped — '2024-01-01T00:00:00+01:00' is
+    2023-12-31 23:00 UTC. Mixing naive and aware inputs no longer raises.
+    """
     try:
-        return datetime.fromisoformat(date_str).replace(tzinfo=None)
-    except ValueError:
+        dt = datetime.fromisoformat(date_str)
+    except (TypeError, ValueError):
         return None
+    if dt.tzinfo is not None:
+        dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
+    return dt
 
 
 @router.post("/initial-load/start")
@@ -73,7 +76,7 @@ def start_initial_load(request: Request, body: StartJobRequest):
     """
     Start a new historical invoice import job.
 
-    Parses the configured date range into ≤90-day windows and processes
+    Parses the configured date range into ≤100-day windows and processes
     them sequentially in a background thread. Only one job can run at a time.
     """
     mgr = getattr(request.app.state, "initial_load_manager", None)

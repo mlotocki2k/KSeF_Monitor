@@ -326,7 +326,7 @@ class PushInstance(Base):
 class InitialLoadJob(Base):
     """Tracks historical invoice import jobs using the /invoices/exports async API.
 
-    Each job covers a date range split into ≤90-day windows per subject_type.
+    Each job covers a date range split into ≤100-day windows per subject_type.
     Supports resume: current_window_from/to + current_subject_type allow restart
     after interruption without re-importing already-processed windows.
 
@@ -534,8 +534,19 @@ class Database:
 
         Runs `Base.metadata.create_all` for pristine DBs, then delegates to
         `_migrate_schema` which invokes alembic (stamp-at-head or upgrade).
+
+        A DB already tracked by alembic is upgraded without create_all first:
+        pre-creating tables of later phases made the phase 2-4 migrations
+        (unconditional create_table) fail, leaving old DBs on their revision.
         """
-        Base.metadata.create_all(self.engine)
+        from sqlalchemy import inspect as sa_inspect
+
+        tracked = "alembic_version" in sa_inspect(self.engine).get_table_names()
+        if not tracked:
+            Base.metadata.create_all(self.engine)
+        # A tracked DB whose upgrade fails is left as is: the next start
+        # retries the upgrade cleanly (pre-creating tables here would make it
+        # fail again). Phase 2-4 migrations are idempotent as well.
         self._migrate_schema()
         logger.info("Database tables created")
 
@@ -571,6 +582,8 @@ class Database:
         try:
             project_root = Path(__file__).resolve().parent.parent
             alembic_cfg = Config(str(project_root / "alembic.ini"))
+            # Keep the app's logging: env.py configures logging only for the CLI
+            alembic_cfg.attributes["configure_logger"] = False
             # Override sqlalchemy.url so each Database instance (e.g. test
             # fixtures using tmp_path) targets the correct file.
             alembic_cfg.set_main_option(
@@ -654,16 +667,22 @@ class Database:
         session: Session,
         nip: str,
         subject_type: str,
-        last_check: datetime,
+        last_check: Optional[datetime],
         last_invoice_at: Optional[datetime] = None,
         last_ksef_number: Optional[str] = None,
         new_invoices: int = 0,
         error: Optional[str] = None,
-    ) -> MonitorState:
-        """Create or update monitor state for NIP + subject_type."""
+    ) -> Optional[MonitorState]:
+        """Create or update monitor state for NIP + subject_type.
+
+        last_check=None leaves the stored last_check untouched (used when a
+        cycle failed); with no existing row there is nothing to record then.
+        """
         state = self.get_monitor_state(session, nip, subject_type)
 
         if state is None:
+            if last_check is None:
+                return None
             state = MonitorState(
                 nip=nip,
                 subject_type=subject_type,
@@ -671,7 +690,8 @@ class Database:
             )
             session.add(state)
 
-        state.last_check = last_check
+        if last_check is not None:
+            state.last_check = last_check
         state.updated_at = datetime.now(timezone.utc)
 
         if last_invoice_at:

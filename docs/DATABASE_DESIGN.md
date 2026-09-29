@@ -424,7 +424,7 @@ CREATE TABLE import_jobs (
     -- Moving window state
     current_window_from DATETIME,                  -- aktualnie przetwarzane okno (start)
     current_window_to   DATETIME,                  -- aktualnie przetwarzane okno (koniec)
-    window_size_days    INTEGER DEFAULT 90,         -- rozmiar okna (max 90 — limit API)
+    window_size_days    INTEGER DEFAULT 100,        -- rozmiar okna (max 100 — limit API od 2.7.1)
     windows_completed   INTEGER DEFAULT 0,         -- ile okien zakończono
     windows_total       INTEGER,                   -- ile okien łącznie (obliczone)
 
@@ -447,7 +447,7 @@ CREATE TABLE import_jobs (
 ```
 
 **Moving window — jak działa:**
-1. Zakres `date_from..date_to` dzielony na okna ≤90 dni (limit KSeF API)
+1. Zakres `date_from..date_to` dzielony na okna ≤100 dni (limit KSeF API od 2.7.1)
 2. Każde okno przetwarzane sekwencyjnie z paginacją
 3. Po zakończeniu okna: `windows_completed++`, `current_window_from` przesuwa się
 4. Przerwanie → restart: sprawdza `current_window_from`, wznawia od tego okna
@@ -861,7 +861,7 @@ alembic>=1.13.0,<2.0.0
 ## Powiązane dokumenty
 
 - [RATE_LIMITING_DESIGN.md](RATE_LIMITING_DESIGN.md) — rate limiter (wpływa na `api_request_log`)
-- [KSEF_API_LIMITATIONS.md](KSEF_API_LIMITATIONS.md) — limity API (90 dni, 10k truncation, rate limits)
+- [KSEF_API_LIMITATIONS.md](KSEF_API_LIMITATIONS.md) — limity API (100 dni, 10k truncation, rate limits)
 - [ROADMAP.md](ROADMAP.md) — planowane funkcjonalności per wersja
 
 ---

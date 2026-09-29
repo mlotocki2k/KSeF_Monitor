@@ -10,6 +10,8 @@ from pathlib import Path
 from unittest.mock import patch, MagicMock, mock_open
 
 from app.invoice_monitor import InvoiceMonitor
+from app.database import Database, Base, Invoice, InvoiceArtifact
+from app.scheduler import Scheduler
 
 
 @pytest.fixture
@@ -180,8 +182,8 @@ class TestInvoiceMonitorState:
         assert state["last_check"] == "2026-03-06T10:00:00+01:00"
 
     def test_load_state_filters_old_entries(self, monitor, tmp_path):
-        """TTL filtering removes entries older than 90 days."""
-        old_ts = (datetime.now(timezone.utc) - timedelta(days=100)).isoformat()
+        """TTL filtering removes entries older than SEEN_INVOICES_TTL_DAYS."""
+        old_ts = (datetime.now(timezone.utc) - timedelta(days=monitor.SEEN_INVOICES_TTL_DAYS + 10)).isoformat()
         recent_ts = (datetime.now(timezone.utc) - timedelta(days=10)).isoformat()
         state = {
             "last_check": "2026-03-01T10:00:00+01:00",
@@ -233,19 +235,19 @@ class TestInvoiceMonitorCapDateFrom:
     """Tests for _cap_date_from()."""
 
     def test_within_range(self, monitor):
-        """Date within 90 days is not capped."""
+        """Date within 100 days is not capped."""
         now = datetime(2026, 3, 7, 12, 0, tzinfo=timezone.utc)
         date_from = now - timedelta(days=30)
         result = monitor._cap_date_from(date_from, now)
         assert result == date_from
 
     def test_exceeds_range(self, monitor):
-        """Date older than 90 days is capped to (now - 89 days) so the
-        inclusive [date_from, now] range stays at 90 days, not 91."""
+        """Date older than 100 days is capped to (now - 99 days) so the
+        inclusive [date_from, now] range stays at 100 days, not 101."""
         now = datetime(2026, 3, 7, 12, 0, tzinfo=timezone.utc)
         date_from = now - timedelta(days=120)
         result = monitor._cap_date_from(date_from, now)
-        expected = now - timedelta(days=89)
+        expected = now - timedelta(days=99)
         assert result == expected
 
 
@@ -713,3 +715,301 @@ class TestSaveInvoiceToDb:
         monitor._save_invoice_to_db(MagicMock(), invoice, "Subject1")
         call_data = mock_db.save_invoice.call_args[0][1]
         assert call_data["buyer_nip"] is None  # no identifier, no nip
+
+
+class TestInvoiceMonitorLazyArtifacts:
+    """v0.6 Lightweight Polling — decouple artifact download from detection."""
+
+    def _make(self, mock_config, tmp_path, save_pdf=False, lazy=True):
+        cfg = mock_config.config
+        cfg["monitoring"]["lazy_artifacts"] = lazy
+        cfg["monitoring"]["subject_types"] = ["Subject1"]
+        cfg["storage"]["save_xml"] = True
+        cfg["storage"]["save_pdf"] = save_pdf
+        cfg["storage"]["output_dir"] = str(tmp_path / "out")
+        cfg["storage"]["folder_structure"] = ""
+        db = Database(str(tmp_path / "m.db"))
+        Base.metadata.create_all(db.engine)
+        ksef = MagicMock()
+        ksef.environment = "test"
+        ksef.nip = "1234567890"
+        nm = MagicMock()
+        nm.send_invoice_notification.return_value = True
+        m = InvoiceMonitor(mock_config, ksef, nm, MagicMock(), database=db)
+        return m, db
+
+    def test_init_reads_lazy_flag(self, mock_config, tmp_path):
+        m, _ = self._make(mock_config, tmp_path)
+        assert m.lazy_artifacts is True
+
+    def test_detection_enqueues_pending_not_inline(self, mock_config, tmp_path, sample_invoice):
+        m, db = self._make(mock_config, tmp_path)
+        m.ksef.get_invoices_metadata.return_value = [sample_invoice]
+        with patch.object(m, "_save_invoice_artifacts") as inline:
+            m.check_for_new_invoices()
+            inline.assert_not_called()  # Faza 1 nie pobiera artefaktów
+        m.ksef.get_invoice_xml.assert_not_called()
+        with db.get_session() as s:
+            arts = s.query(InvoiceArtifact).all()
+        assert len(arts) == 1
+        assert arts[0].artifact_type == "xml"
+        assert arts[0].status == "pending"
+
+    def test_process_pending_downloads_and_marks(self, mock_config, tmp_path, sample_invoice):
+        m, db = self._make(mock_config, tmp_path)
+        m.ksef.get_invoices_metadata.return_value = [sample_invoice]
+        m.check_for_new_invoices()  # Faza 1 — enqueue
+        m.ksef.get_invoice_xml.return_value = {"xml_content": "<Faktura/>"}
+        processed = m.process_pending_artifacts()  # Faza 2
+        assert processed == 1
+        m.ksef.get_invoice_xml.assert_called_once()
+        with db.get_session() as s:
+            art = s.query(InvoiceArtifact).first()
+            assert art.status == "downloaded"
+
+    def test_process_pending_noop_when_empty(self, mock_config, tmp_path):
+        m, _ = self._make(mock_config, tmp_path)
+        assert m.process_pending_artifacts() == 0
+        m.ksef.get_invoice_xml.assert_not_called()
+
+    def test_process_pending_noop_without_db(self, mock_config, tmp_path):
+        m, _ = self._make(mock_config, tmp_path)
+        m.db = None
+        assert m.process_pending_artifacts() == 0
+
+    def test_failed_xml_fetch_marks_failed_with_attempt(self, mock_config, tmp_path, sample_invoice):
+        m, db = self._make(mock_config, tmp_path)
+        m.ksef.get_invoices_metadata.return_value = [sample_invoice]
+        m.check_for_new_invoices()
+        m.ksef.get_invoice_xml.return_value = None  # fetch fails
+        m.process_pending_artifacts()
+        with db.get_session() as s:
+            art = s.query(InvoiceArtifact).first()
+            assert art.status == "failed"
+            assert art.download_attempts == 1
+
+    def test_non_lazy_downloads_inline(self, mock_config, tmp_path, sample_invoice):
+        m, db = self._make(mock_config, tmp_path, lazy=False)
+        m.ksef.get_invoices_metadata.return_value = [sample_invoice]
+        with patch.object(m, "_save_invoice_artifacts") as inline:
+            m.check_for_new_invoices()
+            inline.assert_called_once()  # inline download (zachowanie domyślne)
+        with db.get_session() as s:
+            assert s.query(InvoiceArtifact).count() == 0  # nic nie zakolejkowane
+
+    def test_check_and_drain_runs_phase2_when_lazy(self, mock_config, tmp_path):
+        m, _ = self._make(mock_config, tmp_path)
+        with patch.object(m, "check_for_new_invoices") as chk, \
+             patch.object(m, "process_pending_artifacts") as drain:
+            m._check_and_drain()
+            chk.assert_called_once()
+            drain.assert_called_once()
+
+    def test_check_and_drain_skips_phase2_when_not_lazy(self, mock_config, tmp_path):
+        m, _ = self._make(mock_config, tmp_path, lazy=False)
+        with patch.object(m, "check_for_new_invoices") as chk, \
+             patch.object(m, "process_pending_artifacts") as drain:
+            m._check_and_drain()
+            chk.assert_called_once()
+            drain.assert_not_called()
+
+
+class TestInvoiceMonitorUPO:
+    """v0.6 §4 — UPO download (sessions map + storage + bounded retry)."""
+
+    def _make(self, mock_config, tmp_path):
+        cfg = mock_config.config
+        cfg["monitoring"]["lazy_artifacts"] = False
+        cfg["monitoring"]["fetch_upo"] = True
+        cfg["monitoring"]["subject_types"] = ["Subject1"]
+        cfg["storage"]["save_xml"] = False
+        cfg["storage"]["save_pdf"] = False
+        cfg["storage"]["output_dir"] = str(tmp_path / "out")
+        cfg["storage"]["folder_structure"] = ""
+        db = Database(str(tmp_path / "u.db"))
+        Base.metadata.create_all(db.engine)
+        ksef = MagicMock()
+        ksef.environment = "test"
+        ksef.nip = "1234567890"
+        nm = MagicMock()
+        nm.send_invoice_notification.return_value = True
+        m = InvoiceMonitor(mock_config, ksef, nm, MagicMock(), database=db)
+        return m, db
+
+    def _detect_one(self, m, sample_invoice):
+        m.ksef.get_invoices_metadata.return_value = [sample_invoice]
+        m.check_for_new_invoices()  # saves Subject1 invoice (has_upo=False)
+
+    def test_init_reads_fetch_upo(self, mock_config, tmp_path):
+        m, _ = self._make(mock_config, tmp_path)
+        assert m.fetch_upo is True
+
+    def test_session_map_built_and_cached(self, mock_config, tmp_path):
+        m, _ = self._make(mock_config, tmp_path)
+        m.ksef.list_sessions.return_value = [{"referenceNumber": "S"}]
+        m.ksef.get_session_invoices.return_value = [{"ksefNumber": "K"}]
+        assert m._build_session_invoice_map() == {"K": "S"}
+        m.ksef.list_sessions.return_value = []  # changed upstream
+        assert m._build_session_invoice_map() == {"K": "S"}      # cache hit
+        assert m._build_session_invoice_map(force=True) == {}    # forced rebuild
+
+    def test_process_pending_upo_happy(self, mock_config, tmp_path, sample_invoice):
+        m, db = self._make(mock_config, tmp_path)
+        ksef_num = sample_invoice["ksefNumber"]
+        self._detect_one(m, sample_invoice)
+        m.ksef.list_sessions.return_value = [{"referenceNumber": "SESS1"}]
+        m.ksef.get_session_invoices.return_value = [{"ksefNumber": ksef_num}]
+        m.ksef.get_invoice_upo.return_value = {
+            "upo_xml": "<UPO/>", "sha256_hash": "h", "hash_verified": True,
+        }
+        assert m.process_pending_upo() == 1
+        m.ksef.get_invoice_upo.assert_called_once_with("SESS1", ksef_num)
+        with db.get_session() as s:
+            inv = s.query(Invoice).filter_by(ksef_number=ksef_num).first()
+            assert inv.has_upo is True
+            assert inv.upo_path.endswith(f"upo/{ksef_num}.xml")
+            art = s.query(InvoiceArtifact).filter_by(invoice_id=inv.id, artifact_type="upo").first()
+            assert art.status == "downloaded"
+        assert (tmp_path / "out" / "upo" / f"{ksef_num}.xml").read_text() == "<UPO/>"
+
+    def test_process_pending_upo_session_not_found(self, mock_config, tmp_path, sample_invoice):
+        m, db = self._make(mock_config, tmp_path)
+        self._detect_one(m, sample_invoice)
+        m.ksef.list_sessions.return_value = []
+        m.ksef.get_session_invoices.return_value = []
+        assert m.process_pending_upo() == 0
+        m.ksef.get_invoice_upo.assert_not_called()
+        with db.get_session() as s:
+            inv = s.query(Invoice).first()
+            assert inv.has_upo is False
+            art = s.query(InvoiceArtifact).filter_by(artifact_type="upo").first()
+            assert art.status == "failed" and art.download_attempts == 1
+
+    def test_process_pending_upo_unavailable_bounded_retry(self, mock_config, tmp_path, sample_invoice):
+        m, db = self._make(mock_config, tmp_path)
+        ksef_num = sample_invoice["ksefNumber"]
+        self._detect_one(m, sample_invoice)
+        m.ksef.list_sessions.return_value = [{"referenceNumber": "SESS1"}]
+        m.ksef.get_session_invoices.return_value = [{"ksefNumber": ksef_num}]
+        m.ksef.get_invoice_upo.return_value = None  # e.g. KSeF 21178 (not ready)
+        for _ in range(3):
+            m.process_pending_upo()
+        with db.get_session() as s:
+            art = s.query(InvoiceArtifact).filter_by(artifact_type="upo").first()
+            assert art.status == "failed" and art.download_attempts == 3
+        # 4th pass: attempts exhausted → skipped, no further API call
+        m.ksef.get_invoice_upo.reset_mock()
+        m.process_pending_upo()
+        m.ksef.get_invoice_upo.assert_not_called()
+
+    def test_process_pending_upo_noop_when_disabled(self, mock_config, tmp_path):
+        m, _ = self._make(mock_config, tmp_path)
+        m.fetch_upo = False
+        assert m.process_pending_upo() == 0
+
+    def test_process_pending_upo_noop_without_db(self, mock_config, tmp_path):
+        m, _ = self._make(mock_config, tmp_path)
+        m.db = None
+        assert m.process_pending_upo() == 0
+
+    def test_check_and_drain_runs_upo_when_enabled(self, mock_config, tmp_path):
+        m, _ = self._make(mock_config, tmp_path)
+        with patch.object(m, "check_for_new_invoices"), \
+             patch.object(m, "process_pending_upo") as upo:
+            m._check_and_drain()
+            upo.assert_called_once()
+
+    def test_process_pending_artifacts_ignores_upo_rows(self, mock_config, tmp_path, sample_invoice):
+        """Regression: the XML/PDF phase must not touch (or fail) 'upo' rows."""
+        m, db = self._make(mock_config, tmp_path)
+        m.lazy_artifacts = True
+        m.save_xml = True
+        self._detect_one(m, sample_invoice)  # enqueues pending xml
+        with db.get_session() as s:
+            inv = s.query(Invoice).first()
+            m.db.create_artifact(s, inv.id, "upo", status="pending")  # add a pending upo row
+            s.commit()
+        m.ksef.get_invoice_xml.return_value = {"xml_content": "<x/>"}
+        m.process_pending_artifacts()
+        with db.get_session() as s:
+            upo = s.query(InvoiceArtifact).filter_by(artifact_type="upo").first()
+            assert upo.status == "pending"  # untouched by XML/PDF phase
+            xml = s.query(InvoiceArtifact).filter_by(artifact_type="xml").first()
+            assert xml.status == "downloaded"
+
+
+class TestInvoiceMonitorSubjectIntervals:
+    """v0.6 §1 — configurable per-subject polling interval."""
+
+    def test_no_interval_always_due(self, monitor):
+        monitor.subject_intervals = {}
+        assert monitor._subject_due("Subject1", None, {}, monitor._get_now()) is True
+
+    def test_recent_check_not_due(self, monitor):
+        monitor.subject_intervals = {"Subject1": 600}
+        now = monitor._get_now()
+        with patch.object(monitor, "_get_last_check", return_value=now - timedelta(seconds=100)):
+            assert monitor._subject_due("Subject1", None, {}, now) is False
+
+    def test_elapsed_check_due(self, monitor):
+        monitor.subject_intervals = {"Subject1": 600}
+        now = monitor._get_now()
+        with patch.object(monitor, "_get_last_check", return_value=now - timedelta(seconds=700)):
+            assert monitor._subject_due("Subject1", None, {}, now) is True
+
+    def test_first_run_due(self, monitor):
+        monitor.subject_intervals = {"Subject1": 600}
+        with patch.object(monitor, "_get_last_check", return_value=None):
+            assert monitor._subject_due("Subject1", None, {}, monitor._get_now()) is True
+
+    def test_check_skips_not_due_subject(self, monitor, tmp_path):
+        monitor.state_file = tmp_path / "last_check.json"
+        monitor.subject_types = ["Subject1", "Subject2"]
+        monitor.subject_intervals = {"Subject2": 99999}  # huge → Subject2 not due
+        monitor.ksef.get_invoices_metadata.return_value = []
+        now = monitor._get_now()
+        monitor.state_file.write_text(
+            json.dumps({"last_check": now.isoformat(), "seen_invoices": []}), encoding="utf-8"
+        )
+
+        monitor.check_for_new_invoices()
+
+        # Subject1 (no interval) polled; Subject2 (recent + huge interval) skipped.
+        assert monitor.ksef.get_invoices_metadata.call_count == 1
+
+
+class TestInvoiceMonitorPollingLimit:
+    """v0.6 §5 — startup warning when polling would exceed /metadata 20/h limit."""
+
+    def test_estimate_two_subjects_5min_exceeds(self, monitor):
+        monitor.subject_types = ["Subject1", "Subject2"]
+        monitor.subject_intervals = {}
+        monitor.scheduler = Scheduler({"mode": "minutes", "interval": 5})
+        assert round(monitor._estimate_metadata_calls_per_hour()) == 24  # 12/h × 2 > 20
+
+    def test_estimate_respects_per_subject_interval(self, monitor):
+        monitor.subject_types = ["Subject1", "Subject2"]
+        monitor.subject_intervals = {"Subject2": 3600}  # Subject2 hourly
+        monitor.scheduler = Scheduler({"mode": "minutes", "interval": 5})
+        # Subject1: 12/h, Subject2: 1/h → 13
+        assert round(monitor._estimate_metadata_calls_per_hour()) == 13
+
+    def test_estimate_none_for_daily(self, monitor):
+        monitor.scheduler = Scheduler({"mode": "daily", "time": "09:00"})
+        assert monitor._estimate_metadata_calls_per_hour() is None
+
+    def test_warn_when_over_limit(self, monitor):
+        monitor.subject_types = ["Subject1", "Subject2"]
+        monitor.subject_intervals = {}
+        monitor.scheduler = Scheduler({"mode": "minutes", "interval": 5})
+        with patch("app.invoice_monitor.logger") as log:
+            monitor._warn_if_polling_exceeds_limit()
+        assert log.warning.called
+
+    def test_no_warn_when_safe(self, monitor):
+        monitor.subject_types = ["Subject1", "Subject2"]
+        monitor.subject_intervals = {}
+        monitor.scheduler = Scheduler({"mode": "minutes", "interval": 7})  # 17/h < 20
+        with patch("app.invoice_monitor.logger") as log:
+            monitor._warn_if_polling_exceeds_limit()
+        assert not log.warning.called

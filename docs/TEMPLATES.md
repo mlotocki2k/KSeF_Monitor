@@ -33,6 +33,12 @@ Domyślne szablony są wbudowane w aplikację i działają od razu — nie musis
 
 **Wystarczy skopiować i edytować tylko te szablony, które chcesz zmienić.** Brakujące pliki automatycznie użyją wbudowanych domyślnych wersji.
 
+**Aktualizacja kopii w `/data` (od 0.6.5).** `entrypoint.sh` kopiuje domyślne szablony do `/data/templates` i `/data/pdf_templates`. Przy każdym starcie kopia, która jest identyczna z którąś wcześniej wydaną wersją domyślną (lista `app/templates/shipped_defaults.sha256`), jest podmieniana na bieżącą — dzięki temu poprawki szablonów trafiają do istniejących instalacji. Pliki zmienione przez użytkownika zostają nietknięte (w logu: *differs from the bundled default (customized) — left unchanged*). Symlinki są pomijane, kopiowanie działa jako użytkownik `ksef`.
+
+**Slack / Discord:** pola z faktury przepuszczaj dodatkowo przez `| slack_escape` (Slack: `& < >`, blokuje `<!channel>` i linki `<url|etykieta>`) albo `| discord_escape` (Discord: znaki markdown, blokuje maskowane linki), przed `| json_escape`.
+
+**Własne szablony JSON:** każde pole tekstowe przepuszczaj przez `| json_escape`, a kwoty przez `| json_number` (brak/nieliczbowa wartość → `0`). Dane faktury pochodzą od wystawcy — bez tego cudzysłów w polu może wstrzyknąć klucz do payloadu albo zepsuć JSON.
+
 ---
 
 ## Pliki szablonów

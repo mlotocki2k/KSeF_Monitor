@@ -33,7 +33,7 @@ def _xml_with_ns(namespace: str, root: str = "Faktura", body: str = "") -> str:
 
 FA3_NS = "http://crd.gov.pl/wzor/2025/06/25/13775/"
 FA2_NS = "http://crd.gov.pl/wzor/2023/06/29/12648/"
-FA_RR_NS = "http://crd.gov.pl/wzor/2024/02/19/12978/"
+FA_RR_NS = "http://crd.gov.pl/wzor/2026/03/06/14189/"  # FA_RR(1) v1-1E (real)
 PEF_NS = "urn:oasis:names:specification:ubl:schema:xsd:Invoice-2"
 
 MINIMAL_FA3_XML = f"""<?xml version="1.0" encoding="UTF-8"?>
@@ -84,33 +84,54 @@ MINIMAL_FA_RR_XML = f"""<?xml version="1.0" encoding="UTF-8"?>
   <Naglowek>
     <KodFormularza>FA_RR</KodFormularza>
     <WariantFormularza>1</WariantFormularza>
-    <DataWytworzeniaFa>2026-03-15</DataWytworzeniaFa>
+    <DataWytworzeniaFa>2026-03-15T10:00:00Z</DataWytworzeniaFa>
+    <SystemInfo>KSeF Monitor</SystemInfo>
   </Naglowek>
   <Podmiot1>
     <DaneIdentyfikacyjne>
       <NIP>1234567890</NIP>
       <Nazwa>Skupujący Sp. z o.o.</Nazwa>
     </DaneIdentyfikacyjne>
+    <Adres><KodKraju>PL</KodKraju><AdresL1>ul. Skupowa 1, 00-001 Warszawa</AdresL1></Adres>
+    <NrKontrahenta>K-001</NrKontrahenta>
   </Podmiot1>
   <Podmiot2>
     <DaneIdentyfikacyjne>
-      <PESEL>90010112345</PESEL>
+      <NIP>9876543210</NIP>
       <Nazwa>Jan Rolnik</Nazwa>
     </DaneIdentyfikacyjne>
+    <Adres><KodKraju>PL</KodKraju><AdresL1>Wieś 5, 11-111 Pole</AdresL1></Adres>
   </Podmiot2>
-  <Fa>
-    <RodzajFaktury>RR</RodzajFaktury>
+  <FakturaRR>
     <KodWaluty>PLN</KodWaluty>
-    <P_1>2026-03-10</P_1>
-    <P_2>RR/2026/001</P_2>
-    <KwotaVatRR>350.00</KwotaVatRR>
-    <StawkaVatRR>7</StawkaVatRR>
-    <P_15RR>5350.00</P_15RR>
-  </Fa>
-  <OswiadczenieDostawcy>
-    <ImieNazwiskoOsoba>Jan Rolnik</ImieNazwiskoOsoba>
-    <DataOswiadczenia>2026-03-10</DataOswiadczenia>
-  </OswiadczenieDostawcy>
+    <P_1M>Warszawa</P_1M>
+    <P_4A>2026-03-08</P_4A>
+    <P_4B>2026-03-10</P_4B>
+    <P_4C>RR/2026/001</P_4C>
+    <P_11_1>5000.00</P_11_1>
+    <P_11_2>350.00</P_11_2>
+    <P_12_1>5350.00</P_12_1>
+    <RodzajFaktury>VAT_RR</RodzajFaktury>
+    <DokumentZaplaty>
+      <NrDokumentu>WB/2026/03/11</NrDokumentu>
+      <DataDokumentu>2026-03-11</DataDokumentu>
+    </DokumentZaplaty>
+    <FakturaRRWiersz>
+      <NrWierszaFa>1</NrWierszaFa>
+      <P_5>Ziemniaki jadalne</P_5>
+      <P_6A>kg</P_6A>
+      <P_6B>1000</P_6B>
+      <P_7>5.00</P_7>
+      <P_8>5000.00</P_8>
+      <P_9>7</P_9>
+      <P_10>350.00</P_10>
+      <P_11>5350.00</P_11>
+    </FakturaRRWiersz>
+    <Platnosc>
+      <FormaPlatnosci>6</FormaPlatnosci>
+      <RachunekBankowy1><NrRB>PL61109010140000071219812874</NrRB></RachunekBankowy1>
+    </Platnosc>
+  </FakturaRR>
 </Faktura>"""
 
 CBC_NS = "urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2"
@@ -302,37 +323,57 @@ class TestFA_RRParser:
         assert data['schema_type'] == SCHEMA_TYPE_FA_RR
 
     def test_parses_header(self):
+        # P_4C = invoice number, P_4B = issue date, RodzajFaktury = VAT_RR
         data = FA_RRInvoiceXMLParser(MINIMAL_FA_RR_XML).parse()
         assert data['header']['p2'] == 'RR/2026/001'
-        assert data['header']['rodzaj'] == 'RR'
+        assert data['header']['p1'] == '2026-03-10'
+        assert data['header']['rodzaj'] == 'VAT_RR'
+        assert data['header']['p15'] == '5350.00'   # P_12_1
+        assert data['header']['system_info'] == 'KSeF Monitor'
 
     def test_farmer_field_present(self):
         data = FA_RRInvoiceXMLParser(MINIMAL_FA_RR_XML).parse()
         assert 'farmer' in data
         assert 'fa_rr' in data
 
-    def test_fa_rr_fields_parsed(self):
+    def test_fa_rr_totals_parsed(self):
         data = FA_RRInvoiceXMLParser(MINIMAL_FA_RR_XML).parse()
         fa_rr = data['fa_rr']
-        assert fa_rr['kwota_vat_rr'] == '350.00'
-        assert fa_rr['stawka_vat_rr'] == '7'
-        assert fa_rr['p15_rr'] == '5350.00'
+        assert fa_rr['p11_1'] == '5000.00'   # net value of products
+        assert fa_rr['p11_2'] == '350.00'    # flat-rate refund
+        assert fa_rr['p12_1'] == '5350.00'   # grand total
 
-    def test_farmer_pesel_extracted(self):
+    def test_payment_documents_parsed(self):
         data = FA_RRInvoiceXMLParser(MINIMAL_FA_RR_XML).parse()
-        assert data['fa_rr']['farmer_pesel'] == '90010112345'
+        docs = data['fa_rr'].get('dokumenty_zaplaty', [])
+        assert len(docs) == 1
+        assert docs[0]['nr'] == 'WB/2026/03/11'
+        assert docs[0]['data'] == '2026-03-11'
 
-    def test_declaration_parsed(self):
+    def test_items_parsed(self):
         data = FA_RRInvoiceXMLParser(MINIMAL_FA_RR_XML).parse()
-        oswiad = data['fa_rr'].get('oswiadczenie', {})
-        assert oswiad.get('imie_nazwisko') == 'Jan Rolnik'
-        assert oswiad.get('data') == '2026-03-10'
+        assert len(data['items']) == 1
+        item = data['items'][0]
+        assert item['p5'] == 'Ziemniaki jadalne'   # product name
+        assert item['p6a'] == 'kg'                  # unit
+        assert item['p9'] == '7'                    # flat-rate refund rate
+        assert item['p10'] == '350.00'              # refund amount
+        assert item['p11'] == '5350.00'             # gross value
 
-    def test_roles_swapped(self):
-        # In FA_RR: Podmiot1 = buyer (skupujący), Podmiot2 = farmer
+    def test_payment_parsed(self):
         data = FA_RRInvoiceXMLParser(MINIMAL_FA_RR_XML).parse()
-        assert data['buyer']['nip'] == '1234567890'   # Podmiot1 = skupujący
-        assert data['farmer']['nazwa'] == 'Jan Rolnik'  # Podmiot2 = farmer
+        pay = data['payment']
+        assert pay['forma'] == '6'
+        assert pay['rachunki'][0]['nr_rb'] == 'PL61109010140000071219812874'
+
+    def test_roles(self):
+        # FA_RR: Podmiot1 = nabywca (skupujący/issuer), Podmiot2 = rolnik (dostawca)
+        data = FA_RRInvoiceXMLParser(MINIMAL_FA_RR_XML).parse()
+        assert data['buyer']['nip'] == '1234567890'    # Podmiot1 = skupujący
+        assert data['buyer']['nr_klienta'] == 'K-001'  # NrKontrahenta
+        assert data['farmer']['nazwa'] == 'Jan Rolnik'  # Podmiot2 = rolnik
+        # 'seller' aliases Podmiot1 (issuer) so QR-code generation finds the NIP
+        assert data['seller']['nip'] == '1234567890'
 
 
 # ── PEFInvoiceXMLParser ───────────────────────────────────────────────────────
@@ -457,3 +498,151 @@ class TestGenerateInvoicePDFMultiSchema:
             assert result is not None
         except Exception:
             pass
+
+
+# ── FA(3) extended fields (v1-0E coverage expansion) ──────────────────────────
+
+EXTENDED_FA3_XML = f"""<?xml version="1.0" encoding="UTF-8"?>
+<Faktura xmlns="{FA3_NS}">
+  <Naglowek>
+    <KodFormularza>FA</KodFormularza>
+    <WariantFormularza>3</WariantFormularza>
+    <DataWytworzeniaFa>2026-02-01T08:00:00Z</DataWytworzeniaFa>
+    <SystemInfo>Mój System ERP</SystemInfo>
+  </Naglowek>
+  <Podmiot1>
+    <PrefiksPodatnika>PL</PrefiksPodatnika>
+    <DaneIdentyfikacyjne><NIP>1111111111</NIP><Nazwa>Sprzedawca</Nazwa></DaneIdentyfikacyjne>
+    <Adres><KodKraju>PL</KodKraju><AdresL1>ul. A 1</AdresL1></Adres>
+    <AdresKoresp><KodKraju>PL</KodKraju><AdresL1>skr. poczt. 9</AdresL1></AdresKoresp>
+    <GV>1</GV>
+    <JST>1</JST>
+  </Podmiot1>
+  <Podmiot2>
+    <DaneIdentyfikacyjne>
+      <NIP>2222222222</NIP><Nazwa>Nabywca</Nazwa><IDWew>2222222222-001</IDWew>
+    </DaneIdentyfikacyjne>
+    <Adres><KodKraju>PL</KodKraju><AdresL1>ul. B 2</AdresL1></Adres>
+    <StatusInfoPodatnika>1</StatusInfoPodatnika>
+    <IDNabywcy>NAB-7</IDNabywcy>
+  </Podmiot2>
+  <PodmiotUpowazniony>
+    <DaneIdentyfikacyjne><NIP>3333333333</NIP><Nazwa>Biuro Rachunkowe</Nazwa></DaneIdentyfikacyjne>
+    <Adres><KodKraju>PL</KodKraju><AdresL1>ul. C 3</AdresL1></Adres>
+    <DaneKontaktowe><EmailPU>biuro@example.pl</EmailPU><TelefonPU>+48111222333</TelefonPU></DaneKontaktowe>
+    <RolaPU>1</RolaPU>
+  </PodmiotUpowazniony>
+  <Fa>
+    <KodWaluty>PLN</KodWaluty>
+    <P_1>2026-01-31</P_1>
+    <P_2>KOR/2026/9</P_2>
+    <P_15>1230.00</P_15>
+    <ZwrotAkcyzy>1</ZwrotAkcyzy>
+    <WZ>WZ/1</WZ>
+    <WZ>WZ/2</WZ>
+    <Adnotacje>
+      <Zwolnienie><P_19>2</P_19><P_19N>1</P_19N></Zwolnienie>
+      <NoweSrodkiTransportu>
+        <P_22>1</P_22><P_22N>2</P_22N>
+        <NowySrodekTransportu>
+          <P_NrWierszaNST>1</P_NrWierszaNST><P_22BMK>Marka</P_22BMK><P_22B2>150</P_22B2>
+        </NowySrodekTransportu>
+      </NoweSrodkiTransportu>
+      <PMarzy><P_PMarzy>2</P_PMarzy><P_PMarzyN>1</P_PMarzyN></PMarzy>
+    </Adnotacje>
+    <RodzajFaktury>KOR</RodzajFaktury>
+    <PrzyczynaKorekty>Błędna cena</PrzyczynaKorekty>
+    <TypKorekty>2</TypKorekty>
+    <NrFaKorygowany>FV/2026/1-POPRAWNY</NrFaKorygowany>
+    <OkresFaKorygowanej>2026-01</OkresFaKorygowanej>
+    <DaneFaKorygowanej>
+      <DataWystFaKorygowanej>2026-01-15</DataWystFaKorygowanej>
+      <NrFaKorygowanej>FV/2026/1</NrFaKorygowanej>
+      <NrKSeFN>1</NrKSeFN>
+    </DaneFaKorygowanej>
+    <Podmiot1K>
+      <DaneIdentyfikacyjne><NIP>1111111111</NIP><Nazwa>Sprzedawca STARY</Nazwa></DaneIdentyfikacyjne>
+      <Adres><KodKraju>PL</KodKraju><AdresL1>ul. Stara 1</AdresL1></Adres>
+    </Podmiot1K>
+    <FaWiersz>
+      <NrWierszaFa>1</NrWierszaFa><P_7>Towar</P_7><P_11>1000.00</P_11><P_12>23</P_12>
+    </FaWiersz>
+    <Platnosc>
+      <FormaPlatnosci>6</FormaPlatnosci>
+      <IPKSeF>IPK-123</IPKSeF>
+      <LinkDoPlatnosci>https://pay.example.pl/x</LinkDoPlatnosci>
+      <RachunekBankowy><NrRB>PL00</NrRB><RachunekWlasnyBanku>1</RachunekWlasnyBanku></RachunekBankowy>
+    </Platnosc>
+    <WarunkiTransakcji>
+      <Transport>
+        <RodzajTransportu>3</RodzajTransportu>
+        <WysylkaZ><KodKraju>PL</KodKraju><AdresL1>Magazyn A</AdresL1></WysylkaZ>
+        <WysylkaDo><KodKraju>DE</KodKraju><AdresL1>Lager B</AdresL1></WysylkaDo>
+      </Transport>
+    </WarunkiTransakcji>
+  </Fa>
+</Faktura>"""
+
+
+class TestFA3ExtendedFields:
+    @pytest.fixture(scope="class")
+    def data(self):
+        return InvoiceXMLParser(EXTENDED_FA3_XML).parse()
+
+    def test_system_info(self, data):
+        assert data['header']['system_info'] == 'Mój System ERP'
+
+    def test_seller_markers(self, data):
+        assert data['seller']['gv'] == '1'
+        assert data['seller']['jst'] == '1'
+        assert data['seller']['adres_koresp']['adres_l1'] == 'skr. poczt. 9'
+
+    def test_buyer_markers(self, data):
+        assert data['buyer']['status_info'] == '1'
+        assert data['buyer']['id_nabywcy'] == 'NAB-7'
+        assert data['buyer']['id_wew'] == '2222222222-001'
+
+    def test_podmiot_upowazniony(self, data):
+        pu = data['podmiot_upowazniony']
+        assert pu['nip'] == '3333333333'
+        assert pu['email'] == 'biuro@example.pl'
+        assert pu['telefon'] == '+48111222333'
+        assert pu['rola_pu'] == '1'
+
+    def test_correction_header(self, data):
+        h = data['header']
+        assert h['nr_fa_korygowany'] == 'FV/2026/1-POPRAWNY'
+        assert h['okres_fa_korygowanej'] == '2026-01'
+
+    def test_dane_korygowanej_nr_ksef_n(self, data):
+        assert data['dane_korygowanej'][0]['nr_ksef_n'] == '1'
+
+    def test_podmiot_korekty(self, data):
+        pk = data['podmiot_korekty']
+        assert pk['seller_k']['nazwa'] == 'Sprzedawca STARY'
+
+    def test_payment_extras(self, data):
+        pay = data['payment']
+        assert pay['ipksef'] == 'IPK-123'
+        assert pay['link_do_platnosci'] == 'https://pay.example.pl/x'
+        assert pay['rachunki'][0]['wlasny'] == '1'
+
+    def test_wz_and_zwrot_akcyzy(self, data):
+        assert data['header']['wz'] == ['WZ/1', 'WZ/2']
+        assert data['header']['zwrot_akcyzy'] == '1'
+
+    def test_annotation_negations(self, data):
+        ann = data['annotations']
+        assert ann['p19n'] == '1'
+        assert ann['p_pmarzyn'] == '1'
+        assert ann['p22n'] == '2'
+
+    def test_vehicle_extras(self, data):
+        veh = data['annotations']['nowe_srodki'][0]
+        assert veh['nr_wiersza'] == '1'
+        assert veh['moc'] == '150'
+
+    def test_transport_addresses(self, data):
+        tr = data['payment']['warunki_transakcji']['transport'][0]
+        assert tr['wysylka_z']['adres_l1'] == 'Magazyn A'
+        assert tr['wysylka_do']['kod_kraju'] == 'DE'

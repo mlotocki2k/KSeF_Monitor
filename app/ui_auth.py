@@ -425,6 +425,17 @@ def record_login_failure(
 
     canonical = _normalize_username(username)
     now = datetime.now(timezone.utc)
+
+    # Failures with random usernames each create a row — drop the ones whose
+    # window has passed and that hold no active lock, so the table stays bounded.
+    session.execute(
+        delete(UiLoginAttempt).where(
+            UiLoginAttempt.username != canonical,
+            UiLoginAttempt.last_failed_at < now - LOGIN_FAIL_WINDOW,
+            (UiLoginAttempt.locked_until.is_(None)) | (UiLoginAttempt.locked_until < now),
+        )
+    )
+
     row = session.get(UiLoginAttempt, canonical)
     if row is None:
         row = UiLoginAttempt(username=canonical, failed_count=1, last_failed_at=now)

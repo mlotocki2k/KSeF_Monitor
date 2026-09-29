@@ -35,7 +35,9 @@ from pathlib import Path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from sqlalchemy import func, inspect, text
-from app.database import Database, Invoice, MonitorState, NotificationLog, PushInstance
+from app.database import (
+    Database, Invoice, InvoiceArtifact, MonitorState, NotificationLog, PushInstance,
+)
 
 
 def _db_path_from_config() -> str:
@@ -554,11 +556,25 @@ def cmd_delete_invoices(args):
             NotificationLog.invoice_id.in_(invoice_ids)
         ).delete(synchronize_session="fetch")
         print(f"Deleted {notif_count} related notification log(s).")
+        # invoice_artifacts.invoice_id has no ON DELETE and foreign keys are
+        # enforced — rows must go first (files on disk are left in place)
+        art_count = session.query(InvoiceArtifact).filter(
+            InvoiceArtifact.invoice_id.in_(invoice_ids)
+        ).delete(synchronize_session="fetch")
+        print(f"Deleted {art_count} related artifact record(s).")
 
     deleted = query.delete(synchronize_session="fetch")
     session.commit()
     print(f"Deleted {deleted} invoice(s).")
     session.close()
+
+
+def _csv_safe(value):
+    """Neutralize spreadsheet formulas: names/numbers come from the invoice
+    issuer, and a cell starting with = + - @ is executed by Excel/Calc."""
+    if isinstance(value, str) and value[:1] in ("=", "+", "-", "@", "\t", "\r"):
+        return "'" + value
+    return value
 
 
 def cmd_cleanup_notifications(args):
@@ -622,7 +638,7 @@ def cmd_export_invoices(args):
         writer = csv.DictWriter(buf, fieldnames=columns)
         writer.writeheader()
         for inv in invoices:
-            row = {col: getattr(inv, col) for col in columns}
+            row = {col: _csv_safe(getattr(inv, col)) for col in columns}
             writer.writerow(row)
         output = buf.getvalue()
 

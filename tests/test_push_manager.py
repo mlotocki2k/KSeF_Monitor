@@ -564,3 +564,92 @@ def test_regenerate_pairing_code_is_16_hex_chars(tmp_path, monkeypatch):
     assert mgr.pairing_code is not None
     assert len(mgr.pairing_code) == 16
     assert all(c in "0123456789ABCDEF" for c in mgr.pairing_code)
+
+
+class TestPushRegistrationRecovery:
+    """A failed registration must not look registered and must be retried."""
+
+    def _db(self, tmp_path):
+        db = Database(str(tmp_path / "t.db"))
+        db.create_tables()
+        return db
+
+    def test_reset_with_worker_down_is_not_registered(self, tmp_path):
+        db = self._db(tmp_path)
+        with patch.object(PushManager, "_register_instance", return_value=True):
+            pm = PushManager(_make_config(), data_dir=str(tmp_path), db=db)
+        pm.registered_at = "2026-01-01T00:00:00+00:00"
+        with patch.object(PushManager, "_register_instance", return_value=False):
+            assert pm.reset() is True
+        assert pm.is_registered is False
+
+    def test_unregistered_instance_retried_on_start(self, tmp_path):
+        db = self._db(tmp_path)
+        with patch.object(PushManager, "_register_instance", return_value=False):
+            PushManager(_make_config(), data_dir=str(tmp_path), db=db)
+        calls = []
+
+        def ok(self):
+            calls.append(1)
+            self.registered_at = "2026-09-25T00:00:00+00:00"
+            return True
+
+        with patch.object(PushManager, "_register_instance", ok):
+            pm = PushManager(_make_config(), data_dir=str(tmp_path), db=db)
+        assert calls == [1]
+        assert pm.is_registered is True
+        with patch.object(PushManager, "_register_instance", return_value=False) as again:
+            PushManager(_make_config(), data_dir=str(tmp_path), db=db)
+        again.assert_not_called()  # registration persisted
+
+
+class TestPushStorageErrors:
+    def test_db_error_does_not_replace_credentials(self, tmp_path):
+        from app.push_manager import PushStorageUnavailable
+        db = Database(str(tmp_path / "e.db"))
+        db.create_tables()
+        with patch.object(PushManager, "_register_instance", return_value=True):
+            pm = PushManager(_make_config(), data_dir=str(tmp_path), db=db)
+        original = pm.instance_id
+        with patch.object(db, "get_push_instance", side_effect=RuntimeError("database is locked")), \
+             patch("app.push_manager.time.sleep"), \
+             patch.object(PushManager, "_register_instance", return_value=True):
+            with pytest.raises(PushStorageUnavailable):
+                PushManager(_make_config(), data_dir=str(tmp_path), db=db)
+        with db.get_session() as s:
+            assert db.get_push_instance(s).instance_id == original
+
+    def test_transient_db_error_retried(self, tmp_path):
+        db = Database(str(tmp_path / "t.db"))
+        db.create_tables()
+        with patch.object(PushManager, "_register_instance", return_value=True):
+            pm = PushManager(_make_config(), data_dir=str(tmp_path), db=db)
+        real = db.get_push_instance
+        calls = {"n": 0}
+
+        def flaky(session):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise RuntimeError("database is locked")
+            return real(session)
+
+        with patch.object(db, "get_push_instance", side_effect=flaky), \
+             patch("app.push_manager.time.sleep"), \
+             patch.object(PushManager, "_register_instance", return_value=True):
+            pm2 = PushManager(_make_config(), data_dir=str(tmp_path), db=db)
+        assert pm2.instance_id == pm.instance_id
+
+
+def test_credentials_survive_restarts_without_db(tmp_path):
+    """Round 10: with db=None the JSON store was renamed away on every second start."""
+    ids = set()
+
+    def register(self):  # like the real one: marks the instance registered
+        self.registered_at = "2026-09-25T00:00:00+00:00"
+        return True
+
+    with patch.object(PushManager, "_register_instance", register):
+        for _ in range(4):
+            ids.add(PushManager(_make_config(), data_dir=str(tmp_path), db=None).instance_id)
+    assert len(ids) == 1
+    assert (tmp_path / "push_config.json").exists()

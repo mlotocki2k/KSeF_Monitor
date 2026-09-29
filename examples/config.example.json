@@ -3,6 +3,14 @@
     "environment": "test",
     "nip": "1234567890",
     "token": "your-ksef-token-here",
+    "auth_method": "token",
+    "auth_method_description": "Metoda logowania do KSeF: 'token' (domyślnie — NIP + token) lub 'certificate' (podpis XAdES certyfikatem .p12/.pfx). Przy 'certificate' pole 'token' nie jest wymagane.",
+    "certificate": {
+      "path": "/data/certs/ksef.p12",
+      "password": "",
+      "subject_identifier_type": "certificateSubject",
+      "description": "Logowanie certyfikatem (gdy auth_method='certificate'). 'path' = plik .p12/.pfx (PKCS#12). Hasło podawaj przez KSEF_CERT_PASSWORD (env var / Docker secret), NIE w configu. 'subject_identifier_type': 'certificateSubject' lub 'certificateFingerprint'."
+    },
     "description": "KSeF API Configuration. Environment: 'test', 'demo', or 'prod'. Get token from KSeF portal. Token can also be provided via KSEF_TOKEN env var or Docker secret.",
     "rate_limit": {
       "per_second": 10,
@@ -65,15 +73,22 @@
   },
   "monitoring": {
     "subject_types": ["Subject1", "Subject2"],
-    "date_type": "Invoicing",
+    "date_type": "PermanentStorage",
     "timezone": "Europe/Warsaw",
     "logging_level": "INFO",
+    "lazy_artifacts": false,
+    "artifact_batch_size": 50,
+    "lazy_artifacts_description": "Lightweight Polling (v0.6): when true, the detection cycle only queues XML/PDF as pending and downloads them in a separate phase (faster push, separate rate budget). Requires database. Default false = download inline during detection. artifact_batch_size: max artifacts processed per phase-2 pass (default 50).",
+    "fetch_upo": false,
+    "fetch_upo_description": "UPO download (v0.6): when true, fetch the official receipt (UPO) for sales invoices (Subject1) in a separate phase — resolves the KSeF session, downloads /sessions/{ref}/invoices/ksef/{ksef}/upo with SHA-256 verification, saves to {output_dir}/upo/{ksef}.xml and sets has_upo. Requires database and a token with the Introspection permission. Opt-in (extra API budget).",
+    "subject_poll_intervals": {},
+    "subject_poll_intervals_description": "Optional per-subject minimum polling interval in seconds, e.g. {\"Subject1\": 240, \"Subject2\": 420}. A subject is polled only when this interval has elapsed since its last check; subjects not listed are polled every cycle. Lets you poll sales (Subject1) more often than purchases (Subject2) while respecting KSeF rate limits.",
     "description": "Monitoring settings. subject_types: Subject1 (sprzedażowe - you are seller), Subject2 (zakupowe - you are buyer). date_type: Issue | Invoicing | PermanentStorage. timezone: IANA timezone name (default: Europe/Warsaw). logging_level: DEBUG | INFO | WARNING | ERROR | CRITICAL (default: INFO). See https://en.wikipedia.org/wiki/List_of_tz_database_time_zones for valid timezone values."
   },
   "schedule": {
     "mode": "minutes",
-    "interval": 5,
-    "description": "Schedule configuration. MODES: 'simple' (seconds), 'minutes', 'hourly', 'daily' (specific time), 'weekly' (specific days/times)",
+    "interval": 7,
+    "description": "Schedule configuration. MODES: 'simple' (seconds), 'minutes', 'hourly', 'daily' (specific time), 'weekly' (specific days/times). NOTE: /invoices/query/metadata limit is 20/h — with the default 2 subject_types, use >=7 min (24/h at 5 min exceeds the limit; the client applies 429 backoff, but 7 min stays safe).",
     "examples": {
       "every_5_minutes": {"mode": "minutes", "interval": 5},
       "every_2_hours": {"mode": "hourly", "interval": 2},
@@ -115,13 +130,13 @@
       "default": "60/minute",
       "trigger": "2/minute"
     },
-    "description": "REST API for web UI and integrations. Disabled by default. If auth_token is empty when enabled, a random token is auto-generated and logged at startup. ui_enabled: enable server-rendered Web UI at /ui (default: true). rate_limit: slowapi rate limiting (60 req/min default, 2/min for trigger)."
+    "description": "REST API for web UI and integrations. Disabled by default. If auth_token is empty when enabled, a random token is auto-generated into /data/api_token.txt; it is also the install code asked for by the first-launch /ui/setup wizard. ui_enabled: enable server-rendered Web UI at /ui (default: true). rate_limit: slowapi rate limiting (60 req/min default, 2/min for trigger). forwarded_allow_ips: optional, IP(s) of a trusted reverse proxy (e.g. \"192.168.8.5\") so rate limits and login lockout see the real client IP. trusted_origins: optional list of public origins (e.g. [\"https://ksef.example.com\"]) accepted by the same-origin check when the proxy rewrites the Host header."
   },
   "initial_load": {
     "enabled": false,
     "start_date": "2024-01-01",
     "subject_types": ["Subject1", "Subject2"],
     "date_type": "Invoicing",
-    "description": "One-time historical invoice import via KSeF /invoices/exports API. Set enabled=true and start_date to trigger import on next startup. Date range: start_date to now, split into 90-day windows per subject_type. Progress tracked in DB (initial_load_jobs table) — safe to restart. subject_types: Subject1 (sprzedazowe), Subject2 (zakupowe). date_type: Invoicing | IssueDate. Manage via REST API: POST /api/v1/initial-load/start, GET /api/v1/initial-load/status, POST /api/v1/initial-load/cancel."
+    "description": "One-time historical invoice import via KSeF /invoices/exports API. Set enabled=true and start_date to trigger import on next startup. Date range: start_date to now, split into 99-day windows per subject_type (KSeF limit: 100 days). Progress tracked in DB (initial_load_jobs table) — safe to restart. subject_types: Subject1 (sprzedazowe), Subject2 (zakupowe). date_type: Invoicing | Issue | PermanentStorage. Manage via REST API: POST /api/v1/initial-load/start, GET /api/v1/initial-load/status, POST /api/v1/initial-load/cancel."
   }
 }

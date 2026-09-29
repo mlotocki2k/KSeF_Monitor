@@ -12,12 +12,13 @@ to avoid internal HTTP calls and token management in browser.
 
 import json
 import logging
+import os
 import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, Form, Query, Request
+from fastapi import APIRouter, File, Form, Query, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 
@@ -119,6 +120,7 @@ def _base_ctx(request: Request) -> dict:
         {"href": "/ui", "label": "Dashboard"},
         {"href": "/ui/invoices", "label": "Faktury"},
         {"href": "/ui/initial-load", "label": "Import historyczny"},
+        {"href": "/ui/certificate", "label": "Certyfikat"},
     ]
     if _get_push_manager(request):
         nav.append({"href": "/ui/push", "label": "Parowanie iOS"})
@@ -434,6 +436,21 @@ def _set_session_cookie(resp, sid: str, request: Request) -> None:
     )
 
 
+def _render_setup(request: Request, error: Optional[str] = None, status_code: int = 200):
+    ctx = {
+        "request": request,
+        "error": error,
+        "ui_version": __version__,
+        "docs_enabled": request.app.openapi_url is not None,
+    }
+    return templates.TemplateResponse(request, "setup.html", ctx, status_code=status_code)
+
+
+# Messages shown for ?error=<code>. Free text from the query string is never
+# rendered: it would let a link put arbitrary text into the trusted UI.
+_SETUP_ERRORS = {"db": "Baza danych niedostępna."}
+
+
 @router.get("/ui/setup", response_class=HTMLResponse)
 def ui_setup_form(request: Request, error: Optional[str] = None):
     """First-launch wizard: create the initial user. Locked once any user exists."""
@@ -444,13 +461,7 @@ def ui_setup_form(request: Request, error: Optional[str] = None):
         with db.get_session() as s:
             if count_users(s) > 0:
                 return RedirectResponse(url="/ui/login", status_code=303)
-    ctx = {
-        "request": request,
-        "error": error,
-        "ui_version": __version__,
-        "docs_enabled": request.app.openapi_url is not None,
-    }
-    return templates.TemplateResponse(request, "setup.html", ctx)
+    return _render_setup(request, _SETUP_ERRORS.get(error or ""))
 
 
 @router.post("/ui/setup")
@@ -460,8 +471,16 @@ def ui_setup_submit(
     username: str = Form(...),
     password: str = Form(...),
     password_confirm: str = Form(...),
+    setup_code: str = Form(""),
 ):
-    """Create the initial user atomically (race-safe). Auto-login on success."""
+    """Create the initial user atomically (race-safe). Auto-login on success.
+
+    Requires the install code (api.auth_token, auto-generated into
+    /data/api_token.txt on a fresh install): otherwise whoever reaches the port
+    first after installation becomes the administrator.
+    """
+    import hmac
+
     from app.ui_auth import (
         create_first_admin_atomic,
         validate_password,
@@ -472,6 +491,14 @@ def ui_setup_submit(
     if db is None:
         return RedirectResponse(url="/ui/setup?error=db", status_code=303)
 
+    expected = _auth_token(request)
+    if expected and not hmac.compare_digest(
+        setup_code.strip().encode("utf-8"), expected.encode("utf-8")
+    ):
+        client_host = request.client.host if request.client else "unknown"
+        logger.warning("UI setup rejected: invalid install code from %s", client_host)
+        return _render_setup(request, "Nieprawidłowy kod instalacyjny.", status_code=400)
+
     username = username.strip()
     err = (
         validate_username(username)
@@ -479,11 +506,7 @@ def ui_setup_submit(
         or (None if password == password_confirm else "Hasła nie są takie same.")
     )
     if err:
-        from urllib.parse import quote
-
-        return RedirectResponse(
-            url=f"/ui/setup?error={quote(err)}", status_code=303
-        )
+        return _render_setup(request, err, status_code=400)
 
     # Atomic check-and-insert via BEGIN IMMEDIATE — closes U-06 race window.
     ua = request.headers.get("user-agent", "") or None
@@ -516,7 +539,8 @@ def ui_login_form(
     ctx = {
         "request": request,
         "next": _safe_next(next),
-        "error": error,
+        # Only known codes — free text from the link is never shown
+        "error": error if error in ("invalid", "locked", "db") else None,
         "ui_version": __version__,
         "docs_enabled": request.app.openapi_url is not None,
     }
@@ -619,16 +643,21 @@ def ui_logout(request: Request):
     return resp
 
 
-@router.get("/ui/account", response_class=HTMLResponse)
-def ui_account_form(request: Request, error: Optional[str] = None, ok: Optional[str] = None):
-    """Account page — change password."""
-    if getattr(request.state, "ui_user_id", None) is None:
-        return RedirectResponse(url="/ui/login?next=/ui/account", status_code=303)
+def _render_account(request: Request, error: Optional[str] = None, status_code: int = 200):
     ctx = _base_ctx(request)
     ctx["page"] = "account"
     ctx["error"] = error
-    ctx["ok"] = ok
-    return templates.TemplateResponse(request, "account.html", ctx)
+    ctx["ok"] = None
+    return templates.TemplateResponse(request, "account.html", ctx, status_code=status_code)
+
+
+@router.get("/ui/account", response_class=HTMLResponse)
+def ui_account_form(request: Request):
+    """Account page — change password. Errors are rendered by the POST handler,
+    never taken from the query string (no text injection via links)."""
+    if getattr(request.state, "ui_user_id", None) is None:
+        return RedirectResponse(url="/ui/login?next=/ui/account", status_code=303)
+    return _render_account(request)
 
 
 @router.post("/ui/account/password")
@@ -640,8 +669,6 @@ def ui_account_change_password(
     new_password_confirm: str = Form(...),
 ):
     """Change own password. Revokes all sessions including current — forces re-login."""
-    from urllib.parse import quote
-
     from app.database import UiUser
     from app.ui_auth import set_password, validate_password, verify_password
 
@@ -653,20 +680,147 @@ def ui_account_change_password(
     with db.get_session() as s:
         fresh = s.get(UiUser, user_id)
         if fresh is None or not verify_password(current_password, fresh.password_hash):
-            return RedirectResponse(
-                url=f"/ui/account?error={quote('Aktualne hasło nieprawidłowe.')}",
-                status_code=303,
-            )
+            return _render_account(request, "Aktualne hasło nieprawidłowe.", status_code=400)
 
         err = validate_password(new_password, username=fresh.username) or (
             None if new_password == new_password_confirm else "Hasła nie są takie same."
         )
         if err:
-            return RedirectResponse(
-                url=f"/ui/account?error={quote(err)}", status_code=303
-            )
+            return _render_account(request, err, status_code=400)
 
         set_password(s, fresh, new_password)
     resp = RedirectResponse(url="/ui/login?ok=password", status_code=303)
     resp.delete_cookie(_SESSION_COOKIE, path="/")
     return resp
+
+
+# ── Certificate (XAdES login) ───────────────────────────────────────────────
+
+_DEFAULT_CERT_PATH = "/data/certs/ksef.p12"
+_CERT_EXTENSIONS = (".p12", ".pfx")
+_MAX_CERT_BYTES = 256 * 1024  # certy PKCS#12 to kilka KB; 256 KB to bezpieczny zapas
+
+
+def _ksef_config(request: Request):
+    monitor = getattr(request.app.state, "monitor", None)
+    return getattr(monitor, "config", None) if monitor else None
+
+
+def _cert_path(request: Request) -> str:
+    """Skonfigurowana ścieżka certyfikatu (ksef.certificate.path) lub domyślna."""
+    cfg = _ksef_config(request)
+    if cfg is not None:
+        path = cfg.get("ksef", "certificate", "path")
+        if path:
+            return path
+    return _DEFAULT_CERT_PATH
+
+
+def _auth_method(request: Request) -> str:
+    cfg = _ksef_config(request)
+    if cfg is not None:
+        return (cfg.get("ksef", "auth_method") or "token").lower()
+    return "token"
+
+
+def _cert_status(cert_path: str) -> dict:
+    """Lekki status pliku certyfikatu (bez odszyfrowania — to wymaga hasła)."""
+    try:
+        p = Path(cert_path)
+        if p.is_file():
+            st = p.stat()
+            return {
+                "present": True,
+                "size": st.st_size,
+                "modified": datetime.fromtimestamp(st.st_mtime, tz=timezone.utc),
+            }
+    except OSError:
+        pass
+    return {"present": False, "size": 0, "modified": None}
+
+
+def _render_certificate(request: Request, error: Optional[str] = None,
+                        ok: Optional[str] = None, status_code: int = 200):
+    ctx = _base_ctx(request)
+    ctx["page"] = "certificate"
+    ctx["error"] = error
+    ctx["ok"] = ok
+    ctx["cert_path"] = _cert_path(request)
+    ctx["auth_method"] = _auth_method(request)
+    ctx["cert_status"] = _cert_status(ctx["cert_path"])
+    return templates.TemplateResponse(request, "certificate.html", ctx, status_code=status_code)
+
+
+_CERT_OK = {"saved": "Certyfikat zapisany."}
+
+
+@router.get("/ui/certificate", response_class=HTMLResponse)
+def ui_certificate_form(request: Request, ok: Optional[str] = None):
+    """Strona certyfikatu — upload pliku .p12/.pfx do logowania certyfikatem (XAdES).
+
+    Komunikaty tylko z kodów (?ok=saved) — dowolny tekst z URL nie jest wyświetlany.
+    """
+    if getattr(request.state, "ui_user_id", None) is None:
+        return RedirectResponse(url="/ui/login?next=/ui/certificate", status_code=303)
+    return _render_certificate(request, ok=_CERT_OK.get(ok or ""))
+
+
+@router.post("/ui/certificate")
+@limiter.limit("5/minute")
+async def ui_certificate_upload(
+    request: Request,
+    certificate: UploadFile = File(...),
+    password: str = Form(""),
+):
+    """Waliduj i zapisz przesłany certyfikat .p12/.pfx do skonfigurowanej ścieżki.
+
+    Hasło służy wyłącznie do weryfikacji, że plik daje się otworzyć — NIE jest
+    zapisywane. Hasło runtime podawaj przez KSEF_CERT_PASSWORD / Docker secret.
+    """
+    if getattr(request.state, "ui_user_id", None) is None:
+        return RedirectResponse(url="/ui/login?next=/ui/certificate", status_code=303)
+
+    def _err(msg: str):
+        return _render_certificate(request, error=msg, status_code=400)
+
+    filename = (certificate.filename or "").lower()
+    if not filename.endswith(_CERT_EXTENSIONS):
+        return _err("Plik musi mieć rozszerzenie .p12 lub .pfx")
+
+    data = await certificate.read()
+    if not data:
+        return _err("Przesłany plik jest pusty")
+    if len(data) > _MAX_CERT_BYTES:
+        return _err("Plik jest za duży (limit 256 KB)")
+
+    # Walidacja: czy PKCS#12 daje się otworzyć podanym hasłem
+    try:
+        from app.xades_signer import load_pkcs12
+
+        load_pkcs12(data, password)
+    except ValueError as e:
+        return _err(str(e))
+
+    # Zapis atomowy z restrykcyjnymi uprawnieniami (0600)
+    cert_path = _cert_path(request)
+    try:
+        target = Path(cert_path)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        tmp = target.with_name(target.name + ".tmp")
+        # 0600 from creation (the file holds a private key), never via a symlink
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, 0o600)
+        with os.fdopen(fd, "wb") as f:
+            f.write(data)
+        os.chmod(tmp, 0o600)
+        os.replace(tmp, target)
+    except OSError as e:
+        logger.error("Failed to save uploaded certificate: %s", e)
+        return _err("Nie udało się zapisać certyfikatu na dysku")
+
+    logger.info(
+        "Certificate uploaded via UI by user_id=%s",
+        getattr(request.state, "ui_user_id", None),
+    )
+    return RedirectResponse(
+        url="/ui/certificate?ok=saved", status_code=303
+    )

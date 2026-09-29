@@ -22,7 +22,7 @@ from app import __version__
 
 # Import module-level limiter and per-endpoint limits from dedicated submodule
 # (must come before .routers imports to avoid circular import)
-from ._limiter import limiter, _endpoint_limits, configure_limiter  # noqa: F401
+from ._limiter import limiter, _endpoint_limits, configure_limiter, check_global_default_limit  # noqa: F401
 
 from .routers import invoices, stats, monitor, artifacts, push, initial_load, ui
 
@@ -43,6 +43,7 @@ def create_app(
     ui_public: bool = False,     # V5-01 — opt-in bypass for legacy/reverse-proxy
     cookie_secure_mode: str = "auto",  # U-01 — "auto" | "always" | "never"
     session_strict_binding: bool = False,  # U-04 — opt-in UA fingerprint
+    trusted_origins: Optional[list] = None,  # extra origins for the same-origin check
 ) -> FastAPI:
     """Create and configure FastAPI application.
 
@@ -94,6 +95,14 @@ def create_app(
         # V5-01: narrow whitelist — docs + health only. UI requires auth.
         # V5-12: HttpOnly cookie session for browser UI.
         # V5-13: cookie is opaque DB session ID; /ui/setup public for first-launch wizard.
+        # Failed Bearer attempts per client IP (independent of api.rate_limit)
+        from limits import parse as _parse_limit
+        from limits.storage import MemoryStorage
+        from limits.strategies import MovingWindowRateLimiter
+
+        _BEARER_FAIL_LIMIT = _parse_limit("10/15minutes")
+        _bearer_failures = MovingWindowRateLimiter(MemoryStorage())
+
         _EXEMPT_EXACT = {
             "/docs", "/redoc", "/openapi.json",
             "/api/v1/monitor/health",
@@ -105,6 +114,10 @@ def create_app(
             path = request.url.path
             if path in _EXEMPT_EXACT:
                 return await call_next(request)
+            # CSS/icons used by the login and setup pages — public assets;
+            # StaticFiles itself refuses paths outside its directory.
+            if ui_enabled and path.startswith("/ui/static/"):
+                return await call_next(request)
             if ui_public and path.startswith("/ui"):
                 return await call_next(request)
 
@@ -115,13 +128,20 @@ def create_app(
 
             auth_header = request.headers.get("Authorization", "")
             if auth_header.startswith("Bearer "):
+                client_ip = request.client.host if request.client else "unknown"
+                # Brute-force guard: the global rate limit is per path, so
+                # guesses spread over many paths were not limited at all.
+                if not _bearer_failures.test(_BEARER_FAIL_LIMIT, "bearer-fail", client_ip):
+                    return JSONResponse(
+                        status_code=429,
+                        content={"detail": "Too many failed authentication attempts"},
+                        headers={"Retry-After": "900"},
+                    )
                 provided = auth_header[7:]
-                if hmac.compare_digest(provided, auth_token):
+                if hmac.compare_digest(provided.encode("utf-8"), auth_token.encode("utf-8")):
                     return await call_next(request)
-                logger.warning(
-                    "Failed auth attempt from %s",
-                    request.client.host if request.client else "unknown",
-                )
+                _bearer_failures.hit(_BEARER_FAIL_LIMIT, "bearer-fail", client_ip)
+                logger.warning("Failed auth attempt from %s", client_ip)
                 return JSONResponse(
                     status_code=401,
                     content={"detail": "Invalid authentication token"},
@@ -147,6 +167,77 @@ def create_app(
             )
     else:
         logger.warning("API running without authentication - set api.auth_token for production")
+
+    # CSRF defense in depth for the cookie session (SameSite=Strict already
+    # blocks cross-site requests, but "same-site" includes sibling subdomains).
+    # A browser state change made with a valid session must come from this
+    # host. Compared by host name (ports differ behind proxies); the proxy's
+    # public name comes from Host or the first X-Forwarded-Host entry, or from
+    # api.trusted_origins when the proxy rewrites both. Requests without
+    # Origin/Referer (non-browser clients), Bearer requests and requests
+    # without a valid session are not affected.
+    _SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
+    from urllib.parse import urlsplit as _urlsplit
+
+    _DEFAULT_PORTS = {"http": 80, "https": 443}
+
+    def _authority(value: str):
+        """(hostname, port or None) of an origin/URL/Host header value."""
+        value = (value or "").strip()
+        if not value:
+            return None
+        try:
+            parts = _urlsplit(value if "//" in value else f"//{value}")
+            host, port = parts.hostname, parts.port
+        except ValueError:
+            return None
+        if not host:
+            return None
+        if port is not None and _DEFAULT_PORTS.get(parts.scheme) == port:
+            port = None
+        return host, port
+
+    def _same_authority(source, allowed) -> bool:
+        # Host names must match; ports too when both sides state one (a proxy
+        # passing "Host: name" without the public port still matches).
+        return source[0] == allowed[0] and (
+            source[1] is None or allowed[1] is None or source[1] == allowed[1]
+        )
+
+    if isinstance(trusted_origins, str):
+        trusted_origins = [trusted_origins]
+    _trusted = [a for a in (_authority(o) for o in (trusted_origins or [])) if a]
+
+    @app.middleware("http")
+    async def same_origin_for_cookie_session(request: Request, call_next):
+        if (
+            request.method not in _SAFE_METHODS
+            and getattr(request.state, "ui_user_id", None) is not None
+            and not request.headers.get("authorization", "").startswith("Bearer ")
+        ):
+            source = request.headers.get("origin") or request.headers.get("referer")
+            if source:
+                source_auth = _authority(source)
+                allowed = list(_trusted)
+                for h in (
+                    request.headers.get("host", ""),
+                    request.headers.get("x-forwarded-host", "").split(",")[0],
+                ):
+                    auth = _authority(h)
+                    if auth:
+                        allowed.append(auth)
+                if source_auth is None or not any(
+                    _same_authority(source_auth, a) for a in allowed
+                ):
+                    logger.warning(
+                        "Cross-origin %s %s rejected (cookie session)",
+                        request.method, request.url.path,
+                    )
+                    return JSONResponse(
+                        status_code=403,
+                        content={"detail": "Cross-origin request rejected"},
+                    )
+        return await call_next(request)
 
     # Session resolver — ALWAYS runs, registered AFTER auth gate so it runs
     # FIRST in request flow (Starlette: last-registered = outermost).
@@ -218,12 +309,25 @@ def create_app(
         return response
 
     # REST API Prometheus metrics middleware
+    _METRIC_METHODS = {"GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"}
     if prometheus_metrics:
         @app.middleware("http")
         async def track_rest_metrics(request: Request, call_next):
             response = await call_next(request)
+            # Route template, not the raw path: raw paths carry invoice numbers
+            # (seller NIP) and let unauthenticated clients mint unlimited series.
+            route = request.scope.get("route")
+            template = getattr(route, "path", None)
+            if template:
+                # include_router(prefix=...) already bakes the prefix into route.path
+                prefix = "/api/v1" if request.url.path.startswith("/api/v1/") else ""
+                endpoint = template if template.startswith(prefix) else prefix + template
+            else:
+                endpoint = "unmatched"
             prometheus_metrics.rest_api_requests_total.labels(
-                endpoint=request.url.path, method=request.method
+                endpoint=endpoint,
+                # arbitrary tokens are valid methods over HTTP — keep the label set bounded
+                method=request.method if request.method in _METRIC_METHODS else "OTHER",
             ).inc()
             return response
 
@@ -235,6 +339,25 @@ def create_app(
     app.state.rate_limit_config = rl_config
     app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
     app.add_middleware(SlowAPIMiddleware)
+
+    # Explicit global default-limit enforcement. slowapi's SlowAPIMiddleware fails
+    # to apply the default limit to FastAPI include_router routes under Starlette
+    # 1.x (route wrapped in `_IncludedRouter`, no `endpoint` → treated as exempt),
+    # so enforce it here. Health/docs/static are exempt.
+    _RL_EXEMPT = {"/docs", "/redoc", "/openapi.json", "/api/v1/monitor/health"}
+
+    @app.middleware("http")
+    async def enforce_global_default_limit(request: Request, call_next):
+        path = request.url.path
+        if path not in _RL_EXEMPT and not path.startswith("/ui/static"):
+            if not check_global_default_limit(request):
+                return JSONResponse(
+                    status_code=429,
+                    content={"detail": "Rate limit exceeded"},
+                    headers={"Retry-After": "60"},
+                )
+        return await call_next(request)
+
     if rl_config.get("enabled", False):
         logger.info("API rate limiting: default=%s", rl_config.get("default", "60/minute"))
 

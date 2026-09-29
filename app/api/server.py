@@ -20,10 +20,15 @@ class APIServer:
         app,
         host: str = "127.0.0.1",
         port: int = 8080,
+        forwarded_allow_ips: Optional[str] = None,
     ):
         self.app = app
         self.host = host
         self.port = port
+        # Reverse proxies whose X-Forwarded-For/-Proto are trusted. Without it,
+        # behind a proxy every client shares the proxy's IP for rate limiting
+        # and login lockout. None keeps uvicorn's default (127.0.0.1 only).
+        self.forwarded_allow_ips = forwarded_allow_ips
         self._server = None
         self._thread: Optional[threading.Thread] = None
 
@@ -35,12 +40,16 @@ class APIServer:
         try:
             import uvicorn
 
+            extra = {}
+            if self.forwarded_allow_ips:
+                extra["forwarded_allow_ips"] = self.forwarded_allow_ips
             config = uvicorn.Config(
                 app=self.app,
                 host=self.host,
                 port=self.port,
                 log_level="warning",
                 access_log=False,
+                **extra,
             )
             self._server = uvicorn.Server(config)
 

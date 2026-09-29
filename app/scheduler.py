@@ -22,7 +22,7 @@ class Scheduler:
         'friday': 4, 'saturday': 5, 'sunday': 6
     }
 
-    def __init__(self, config: Dict):
+    def __init__(self, config: Dict, tz=None):
         """
         Initialize scheduler with configuration
 
@@ -43,6 +43,9 @@ class Scheduler:
         """
         self.mode = config.get('mode', 'simple').lower()
         self.config = config
+        # daily/weekly times are wall-clock times in monitoring.timezone; the
+        # container itself runs in UTC
+        self.tz = tz
         self.last_run = None
         self.completed_times_today = set()  # Track completed times for current day
 
@@ -97,6 +100,21 @@ class Scheduler:
                 for day in days:
                     if day.lower() not in self.VALID_WEEKDAYS:
                         raise ValueError(f"Invalid weekday: {day}")
+
+    def interval_seconds(self) -> Optional[float]:
+        """Effective cycle interval in seconds for interval-based modes.
+
+        Returns None for 'daily'/'weekly' (few runs/day — low API volume).
+        The interval is already clamped to MIN_INTERVAL_SECONDS by _validate_config.
+        """
+        if self.mode not in ('simple', 'minutes', 'hourly'):
+            return None
+        interval = self.config.get('interval')
+        if self.mode == 'minutes':
+            return interval * 60
+        if self.mode == 'hourly':
+            return interval * 3600
+        return interval  # 'simple' = seconds
 
     def _parse_time(self, time_str: str) -> dt_time:
         """Parse time string in HH:MM format"""
@@ -160,6 +178,13 @@ class Scheduler:
                 times_str = ', '.join(t.strftime('%H:%M') for t in times)
                 logger.info(f"  Schedule: Weekly on {days_str} at {times_str} ({len(times)} times per day)")
 
+    def _now(self) -> datetime:
+        """Naive 'now': wall clock in the configured timezone for daily/weekly
+        schedules, system time for interval modes (elapsed time only)."""
+        if self.tz is not None and self.mode in ('daily', 'weekly'):
+            return datetime.now(self.tz).replace(tzinfo=None)
+        return datetime.now()
+
     def should_run(self) -> bool:
         """
         Check if it's time to run based on schedule
@@ -167,11 +192,19 @@ class Scheduler:
         Returns:
             True if check should run now, False otherwise
         """
-        now = datetime.now()
+        now = self._now()
 
         # First run always executes
         if self.last_run is None:
             self.last_run = now
+            if self.mode in ('daily', 'weekly'):
+                # The startup run covers today's times that already passed —
+                # otherwise each of them fires again right after startup.
+                self.completed_times_today = {
+                    t.strftime('%H:%M')
+                    for t in self._parse_times(self.config['time'])
+                    if now.time() >= t
+                }
             return True
 
         if self.mode == 'simple':
@@ -254,7 +287,7 @@ class Scheduler:
         Returns:
             String describing when next run will occur
         """
-        now = datetime.now()
+        now = self._now()
 
         if self.mode == 'simple':
             interval = self.config['interval']
@@ -337,7 +370,7 @@ class Scheduler:
 
     def _calculate_sleep_time(self) -> int:
         """Calculate how many seconds to sleep before next check"""
-        now = datetime.now()
+        now = self._now()
 
         if self.mode == 'simple':
             if self.last_run is None:

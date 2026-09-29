@@ -22,6 +22,46 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["invoices"])
 
+_SUBJECT_TYPES = {s.lower(): s for s in ("Subject1", "Subject2", "Subject3", "SubjectAuthorized")}
+
+# KSeF calls per hour kept for the monitor itself when the API fetches
+# uncached XML on demand (shares the monitor's KSeF rate limiter).
+_KSEF_HOURLY_RESERVE = 10
+
+
+def _ksef_busy_response(monitor) -> Optional[JSONResponse]:
+    """503 instead of blocking a server thread in the KSeF rate limiter.
+
+    The limiter may wait up to an hour for a free slot; an API request must
+    not hold a worker thread that long or eat the monitor's hourly budget.
+    """
+    limiter_ = getattr(getattr(monitor, "ksef", None), "rate_limiter", None)
+    if limiter_ is None or not hasattr(limiter_, "remaining"):
+        return None
+    busy = JSONResponse(
+        status_code=503,
+        content={"detail": "KSeF rate limit budget exhausted — try again later"},
+        headers={"Retry-After": "600"},
+    )
+    try:
+        remaining = limiter_.remaining()
+        paused = limiter_.paused_for() if hasattr(limiter_, "paused_for") else 0
+    except Exception:
+        return busy  # fail closed: better a retry than a blocked thread
+    if isinstance(paused, (int, float)) and paused > 0:
+        return busy
+    if not isinstance(remaining, dict):
+        return None
+    windows = {k: v for k, v in remaining.items() if k in ("1s", "60s", "3600s")}
+    if any(v <= 0 for v in windows.values()) or windows.get("3600s", _KSEF_HOURLY_RESERVE + 1) <= _KSEF_HOURLY_RESERVE:
+        retry = "60" if windows.get("60s", 1) <= 0 or windows.get("1s", 1) <= 0 else "600"
+        return JSONResponse(
+            status_code=503,
+            content={"detail": "KSeF rate limit budget exhausted — try again later"},
+            headers={"Retry-After": retry},
+        )
+    return None
+
 # Validation patterns
 _NIP_PATTERN = re.compile(r"^\d{10}$")
 
@@ -31,7 +71,7 @@ def list_invoices(
     request: Request,
     page: int = Query(1, ge=1, le=10000),
     per_page: int = Query(20, ge=1, le=100),
-    subject_type: Optional[str] = Query(None, pattern="^(subject[12])$"),
+    subject_type: Optional[str] = Query(None, pattern="(?i)^(subject1|subject2|subject3|subjectauthorized)$"),
     seller_nip: Optional[str] = None,
     buyer_nip: Optional[str] = None,
     issue_date_from: Optional[str] = None,
@@ -59,7 +99,8 @@ def list_invoices(
 
         # Apply filters
         if subject_type:
-            query = query.filter(Invoice.subject_type == subject_type)
+            # Stored as KSeF spells it (Subject1…); accept any case (docs used subject1)
+            query = query.filter(Invoice.subject_type == _SUBJECT_TYPES[subject_type.lower()])
         if seller_nip:
             query = query.filter(Invoice.seller_nip == seller_nip)
         if buyer_nip:
@@ -165,6 +206,9 @@ def get_invoice_xml(request: Request, ksef_number: KsefNumberPath):
     # Fallback: fetch live from KSeF API
     if not monitor or not hasattr(monitor, 'ksef'):
         return JSONResponse(status_code=503, content={"detail": "KSeF client not available"})
+    busy = _ksef_busy_response(monitor)
+    if busy is not None:
+        return busy
 
     try:
         result = monitor.ksef.get_invoice_xml(ksef_number)
@@ -185,6 +229,48 @@ def get_invoice_xml(request: Request, ksef_number: KsefNumberPath):
         media_type="application/xml",
         headers={"Content-Disposition": f'attachment; filename="{safe_filename}"'},
     )
+
+
+@router.get("/invoices/{ksef_number}/upo")
+@limiter.limit(lambda key: _endpoint_limits["invoice_download"])
+def get_invoice_upo(request: Request, ksef_number: KsefNumberPath):
+    """Return the UPO (official receipt) XML for a sales invoice from local cache.
+
+    UPO is downloaded by the monitor's UPO phase (monitoring.fetch_upo) and served
+    here from disk. Returns 404 if not yet available (e.g. fetch_upo disabled or
+    UPO not yet issued by KSeF).
+    """
+    db = request.app.state.db
+    if not db:
+        return JSONResponse(status_code=503, content={"detail": "Database not available"})
+
+    from app.database import Invoice, InvoiceArtifact
+
+    session = db.get_session()
+    try:
+        invoice = session.query(Invoice).filter_by(ksef_number=ksef_number).first()
+        if not invoice:
+            return JSONResponse(status_code=404, content={"detail": "Invoice not found"})
+
+        artifact = (
+            session.query(InvoiceArtifact)
+            .filter_by(invoice_id=invoice.id, artifact_type="upo", status="downloaded")
+            .first()
+        )
+        upo_path = artifact.file_path if (artifact and artifact.file_path) else invoice.upo_path
+        if not upo_path or not os.path.exists(upo_path):
+            return JSONResponse(status_code=404, content={"detail": "UPO not available yet"})
+
+        with open(upo_path, "r", encoding="utf-8") as f:
+            upo_content = f.read()
+        safe_filename = quote(f"{ksef_number}-upo.xml")
+        return Response(
+            content=upo_content,
+            media_type="application/xml",
+            headers={"Content-Disposition": f'attachment; filename="{safe_filename}"'},
+        )
+    finally:
+        session.close()
 
 
 @router.get("/invoices/{ksef_number}/pdf")
@@ -228,6 +314,9 @@ def get_invoice_pdf(request: Request, ksef_number: KsefNumberPath):
     # Need to generate PDF: fetch XML first
     if not monitor or not hasattr(monitor, 'ksef'):
         return JSONResponse(status_code=503, content={"detail": "KSeF client not available"})
+    busy = _ksef_busy_response(monitor)
+    if busy is not None:
+        return busy
 
     try:
         xml_result = monitor.ksef.get_invoice_xml(ksef_number)
@@ -254,7 +343,11 @@ def get_invoice_pdf(request: Request, ksef_number: KsefNumberPath):
                         if monitor and hasattr(monitor, 'config') else None)
         buf = generate_invoice_pdf(xml_content, ksef_number=ksef_number,
                                    environment=environment, timezone=tz_name,
-                                   ksef_generator_url=ksef_gen_url)
+                                   ksef_generator_url=ksef_gen_url,
+                                   # same renderer inputs as the monitor, so the cached
+                                   # PDF does not depend on which path produced it
+                                   template_dir=(monitor.config.get('storage', 'pdf_templates_dir')
+                                                 if monitor and hasattr(monitor, 'config') else None))
         if buf is None:
             return JSONResponse(
                 status_code=422,

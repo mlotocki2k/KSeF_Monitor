@@ -225,7 +225,11 @@ function flash(msg, type = 'ok') {
   const colors = { ok: 'bg-green-50 border-green-200 text-green-800',
                    err: 'bg-red-50 border-red-200 text-red-700',
                    warn: 'bg-yellow-50 border-yellow-200 text-yellow-700' };
-  el.innerHTML = `<div class="rounded-md border p-3 text-sm ${colors[type] || colors.ok}">${msg}</div>`;
+  // msg is plain text (may carry server error details) — never parse it as HTML
+  const box = document.createElement('div');
+  box.className = `rounded-md border p-3 text-sm ${colors[type] || colors.ok}`;
+  box.textContent = msg;
+  el.replaceChildren(box);
   el.classList.remove('hidden');
   setTimeout(() => el.classList.add('hidden'), 4000);
 }

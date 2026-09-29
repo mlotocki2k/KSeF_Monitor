@@ -191,7 +191,7 @@ Poprawki niezwiązane z konkretnymi feature'ami, ale krytyczne dla stabilności:
 
 ### 3) Push notyfikacje iOS — Monitor KSeF (Cloudflare Worker) ✅
 - nowy kanał powiadomień: natywne push notifications na iOS via aplikację **Monitor KSeF**
-- Aplikacja iOS: Monitor KSeF (w trakcie review w App Store)
+- Aplikacja iOS: Monitor KSeF (dostępna w App Store, v1.1.2+ — parowanie push działa)
 - **Architektura** (wg `architektura_push_notifications_v1_1_PL.md`):
   - Central Push Service: Cloudflare Worker (`push.monitorksef.com`) jako proxy do APNs
   - Worker przechowuje klucz .p8 — nigdy nie opuszcza Worker
@@ -234,10 +234,10 @@ Cel: uniwersalny monitor i generator PDF dla każdego typu faktury w KSeF — ni
 - [x] Auto-detekcja schematu z namespace XML (bez konfiguracji — `detect_schema_type()`)
 - [x] Parser FA(2) — mapowanie pól na wspólny model danych (obsługa obu namespace URI)
 - [x] Parser PEF(3) / PEF_KOR(3) — `PEFInvoiceXMLParser` (UBL CBC/CAC namespaces)
-- [x] Parser FA_RR(1) — `FA_RRInvoiceXMLParser` (rolnik PESEL, KwotaVatRR, oświadczenie)
+- [x] Parser FA_RR(1) — `FA_RRInvoiceXMLParser` (⚠️ w v0.5 niefunkcjonalny: zły namespace + zmyślone pola; przepisany w v0.6 — patrz niżej)
 - [x] Template PDF per schemat — `invoice_pdf_fa_rr.html.j2` dla FA_RR, PEF → ReportLab minimal
 - [x] Fallback: nieznany schemat → zapis XML bez PDF + warning w logu i powiadomieniu
-- [x] Specyfikacje XSD stubs: `spec/schemat_FA(2)_v1-0E.xsd`, `spec/schemat_FA_RR_v1-0E.xsd`
+- [x] Specyfikacje XSD stubs: `spec/schemat_FA(2)_v1-0E.xsd`, `spec/schemat_FA_RR_v1-0E.xsd` (zastąpione realnymi XSD w v0.6)
 - [x] Aktualizacja szablonów powiadomień — pole `schema_type` w webhook.json.j2 i ios_push.json.j2
 - [x] Dokumentacja: rozszerzenie `PDF_TEMPLATES.md` o nowe schematy i CIRFMF integrację
 - [x] 50 nowych testów (`test_multi_schema_parser.py`)
@@ -361,7 +361,7 @@ _Pełna lista zmian: `CHANGELOG.md` [0.5.3]. Siedem defektów wykrytych w pre-me
 - [x] **Logo↔menu spacing** — active nav-link niebieskie tło zlewało się z brand text. `ml-2 sm:ml-4` na `<nav>`, prawa strona spacing bez zmian.
 
 ### Dokumentacja
-- [x] **iOS App Store status notice** — App Store v1.0.2 nie obsługuje parowania push. Amber callout w `/ui/push` pod CTA + blockquote w `README.md` iOS Push, oba pointujące na `kontakt@krzewilabs.pl` po TestFlight v1.1.x.
+- [x] **iOS App Store status notice** — (historyczne: App Store v1.0.2 nie obsługiwał parowania push; amber callout w `/ui/push` + blockquote w `README.md` kierujące na TestFlight). **Nieaktualne od v1.1.2 (2026-07-08): parowanie push działa w App Store; blockquote README zaktualizowany, amber callout w `/ui/push` do usunięcia.**
 
 ### Migracje
 - [x] `h3c4d5e67890` — phase 8 `initial_load_windows`. Idempotent, head-revision check w `tests/test_db_migration.py` zaktualizowany.
@@ -383,15 +383,15 @@ _Pełna lista zmian: `CHANGELOG.md` [0.5.3]. Siedem defektów wykrytych w pre-me
 - Poll co 60s = niemożliwe (3× przekroczony limit hour=20)
 
 ### 1) Dwufazowy cykl monitoringu
-- [ ] Faza 1: detekcja — `pageSize=10`, tylko metadane, bez XML (1-2 API calls per cykl)
-- [ ] Faza 2: artefakty — lazy/background, osobny rate budget (`GET /invoices/ksef/{ksefNumber}` hour=64)
-- [ ] Konfiguracja interwału pollingu per subject type w `config.json`
-- [ ] Update `invoice_monitor.py` — oddzielenie detekcji od artifact download
+- [x] Faza 1: detekcja na metadanych + push z metadanych (bazowo już tak działało) — w trybie lazy artefakty NIE są pobierane inline *(pageSize bez zmian — `get_invoices_metadata` paginuje pełne metadane)*
+- [x] Faza 2: artefakty — osobna faza `process_pending_artifacts()` (rate limiter globalny); flaga **opt-in** `monitoring.lazy_artifacts` (default: inline, bez zmiany zachowania)
+- [x] Konfiguracja interwału pollingu per subject type w `config.json` — `monitoring.subject_poll_intervals` (sekundy/subject); `_subject_due` pomija subject jeśli interwał nie minął; testy `TestInvoiceMonitorSubjectIntervals` (5)
+- [x] Update `invoice_monitor.py` — oddzielenie detekcji od artifact download (`_enqueue_artifacts` / `process_pending_artifacts` / `_check_and_drain`); testy `tests/test_invoice_monitor.py::TestInvoiceMonitorLazyArtifacts` (9)
 
 ### 2) Push notification z metadata (bez XML)
-- [ ] Treść push budowana z pól `InvoiceMetadata` (seller, buyer, kwoty, typ, daty)
-- [ ] XML pobierany lazy dopiero gdy user otwiera fakturę w app
-- [ ] Update `ios_push.json.j2` — template oparty wyłącznie o metadata
+- [x] Treść push budowana z pól `InvoiceMetadata` — realizowane przez `build_template_context` (push nigdy nie wymagał XML)
+- [x] XML pobierany lazy (gdy `lazy_artifacts=true`) — pobieranie przeniesione do Fazy 2 (Docker); w iOS XML i tak fetch-owany na żądanie
+- [x] `ios_push.json.j2` zweryfikowany — używa wyłącznie pól metadanych (nazwy/NIP, kwoty, daty, `ksef_number`, `invoice_number`); `schema_type` z `_detect_schema_type_from_metadata` (pole `type`/`schemaType` z metadanych, bez parsowania XML). Bez zmian w kodzie.
 
 ### 3) Dokumentacja
 - [x] Analiza limitów per endpoint (z OpenAPI spec `x-rate-limits`) — [KSEF_API_LIMITATIONS.md](KSEF_API_LIMITATIONS.md)
@@ -402,25 +402,26 @@ _Pełna lista zmian: `CHANGELOG.md` [0.5.3]. Siedem defektów wykrytych w pre-me
 
 **Status:** ścieżka API zweryfikowana skryptem `examples/test_upo_download.py` (env=test, 2026-04-29) — auth + listing sesji + UPO faktury + UPO sesji, SHA256 OK, schema `http://upo.schematy.mf.gov.pl/KSeF/v4-3`.
 
-- [ ] Rozszerzenie `app/ksef_client.py`:
-  - `list_sessions(sessionType, dateFrom, dateTo, statuses)` → `GET /v2/sessions` (rate: 5/s, 10/min, 60/h)
-  - `get_session_invoices(referenceNumber)` → `GET /v2/sessions/{ref}/invoices` (zwraca też `upoDownloadUrl` SAS direct)
-  - `get_invoice_upo(sessionRef, ksefNumber)` → `GET /v2/sessions/{ref}/invoices/ksef/{ksefNumber}/upo` (rate: 10/s, 120/min, 1200/h)
-  - Weryfikacja `x-ms-meta-hash` (SHA256 base64) per artefakt
-- [ ] Integracja z `invoice_monitor.py`:
-  - Dla faktur Subject1 (sprzedażowe) — po wykryciu znajdź sesję i pobierz UPO XML
-  - Strategia mapowania ksefNumber → sessionRef: cache sesji (lista + invoices), TTL np. 24h
-  - Backoff przy 21178 (UPO not found) — UPO może pojawić się z opóźnieniem po wystawieniu
-- [ ] Storage:
-  - Aktywacja kolumn `has_upo`/`upo_path` w `invoices` (już w schema, dotąd nieużywane)
-  - Zapis pliku obok XML/PDF: `{output_dir}/upo/{ksefNumber}.xml`
-  - `artifact_type='upo'` w `invoice_artifacts` (typ już dopuszczony w schema)
-- [ ] Web UI:
+- [x] Rozszerzenie `app/ksef_client.py`:
+  - `list_sessions(session_type, page_size, date_from, date_to)` → `GET /v2/sessions`
+  - `get_session_invoices(reference)` → `GET /v2/sessions/{ref}/invoices` (`upoDownloadUrl` SAS direct)
+  - `get_invoice_upo(sessionRef, ksefNumber)` → `GET /v2/sessions/{ref}/invoices/ksef/{ksefNumber}/upo`
+  - Weryfikacja `x-ms-meta-hash` (SHA256 base64) — `_verify_sha256`, odrzut przy mismatch
+- [x] Integracja z `invoice_monitor.py` (`process_pending_upo`, osobna faza po detekcji):
+  - Dla faktur Subject1 (sprzedażowe) — odnajdź sesję i pobierz UPO XML
+  - Mapa ksefNumber → sessionRef: cache `list_sessions` + `get_session_invoices`, TTL 24h
+  - Bounded retry przy 21178 / brak sesji — artefakt `upo` z licznikiem prób (<3)
+- [x] Storage:
+  - `has_upo`/`upo_path` w `invoices` aktywowane
+  - Zapis pliku: `{output_dir}/upo/{ksefNumber}.xml` (guard path traversal)
+  - `artifact_type='upo'` w `invoice_artifacts`
+- [x] Web UI:
   - Przycisk "Pobierz UPO" na `invoice_detail.html` (gdy `has_upo=True`)
-  - Endpoint `GET /api/invoices/{ksefNumber}/upo` zwracający XML
-- [ ] Konfiguracja: flaga `monitoring.fetch_upo` (default: false — opt-in, dodatkowy rate budget)
-- [ ] Token wymaga uprawnienia `Introspection` (lub `InvoiceWrite` — ograniczone do sesji własnych) — udokumentować w [KSEF_TOKEN.md](KSEF_TOKEN.md)
-- [ ] Testy: mock `/sessions` + `/sessions/{ref}/invoices/ksef/{ksefNumber}/upo`, weryfikacja SHA256 mismatch handling, 21178
+  - Endpoint `GET /api/v1/invoices/{ksefNumber}/upo` (serwuje z cache; 404 gdy brak)
+- [x] Konfiguracja: flaga `monitoring.fetch_upo` (default: false — opt-in, dodatkowy rate budget)
+- [x] Token wymaga uprawnienia `Introspection` — udokumentowane w `config.example.json` (opis `fetch_upo`) i tutaj *(KSEF_TOKEN.md nie aktualizowany osobno)*
+- [x] Testy: mock `/sessions` + `/upo`, SHA256 mismatch, brak sesji, bounded retry (21178), endpoint UI — `test_ksef_client.py::TestKSeFClientUPO` (10) + `test_invoice_monitor.py::TestInvoiceMonitorUPO` (9) + `test_api_invoices.py::TestUpoEndpoint` (4)
+- [ ] **Weryfikacja end-to-end** przeciw realnemu KSeF — wymaga tokenu z uprawnieniem Introspection (dotąd tylko testy mock)
 
 ### 5) Adaptacja KSeF API v2.5.0
 **Cel:** forward-compat z rotacją kluczy publicznych KSeF; zaktualizowane spec'i dla wszystkich środowisk.
@@ -432,19 +433,85 @@ _Pełna lista zmian: `CHANGELOG.md` [0.5.3]. Siedem defektów wykrytych w pre-me
 
 **Smoke test (2026-05-07, env=test):** auth flow 6/6 OK przeciw `api-test.ksef.mf.gov.pl` — backward compat potwierdzony, klient działa **bez** wysyłania `publicKeyId`.
 
-- [x] `spec/openapi-test.json` → v2.5.0 (TEST)
-- [ ] `spec/openapi-demo.json` → v2.5.0 (po wdrożeniu DEMO 07.05)
-- [ ] `spec/openapi.json` → v2.5.0 (po wdrożeniu PRD 11.05)
-- [ ] **Forward-compat dla rotacji kluczy** (przed PRD):
-  - `KSeFClient._fetch_public_key` — zachować `cert["publicKeyId"]` obok `_ksef_public_key`
-  - `KSeFClient._authenticate_with_token` — wysyłać `publicKeyId` w body `POST /auth/ksef-token` (pole opcjonalne, nullable, ale zalecane jako selektor klucza przy rotacji)
-- [ ] Limity TEST API zrównane z PRD (ten sam profil) — zweryfikować że `_request_with_retry` + 429 backoff radzi sobie pod nowym budżetem; rozważyć wyrównanie defaultowego `check_interval` jeśli polling poprzednio bazował na luźniejszych limitach test
+- [x] `spec/openapi-test.json` → **2.6.1** (TEST, build `20260610.2`, sync `d6d05e1`) — KSeF wyszedł poza 2.5.0
+- [x] `spec/openapi-demo.json` → **2.6.1** (DEMO, build `20260615.1`, sync `f1c1ca7`)
+- [x] `spec/openapi.json` → **2.6.1** (PRD, build `20260616.3`, sync `f1c1ca7`)
+- [x] **Forward-compat dla rotacji kluczy** (przed PRD):
+  - `KSeFClient._fetch_public_key` — zachowuje `cert["publicKeyId"]` w `self._ksef_public_key_id`
+  - `KSeFClient._authenticate_with_token` — wysyła `publicKeyId` w body `POST /auth/ksef-token` gdy znany (nullable, omijany dla środowisk pre-2.5 bez rotacji); testy w `tests/test_ksef_client.py::TestKSeFClientPublicKeyId`
+- [x] Limity TEST API zrównane z PRD — kod: 429 backoff w `_request_with_retry` (otestowany); default interwał wyrównany **5→7 min** (bezpieczny dla 2 subjectów pod limit 20/h) + ostrzeżenie startowe gdy `subjects × cykle/h > 20` (`_warn_if_polling_exceeds_limit`, uwzględnia `subject_poll_intervals`). *Pozostaje weryfikacja operacyjna na żywym API.*
 - [ ] (Opcjonalnie) Endpointy `/testdata/rate-limits` — wrapper do testów integracyjnych pod customowy profil limitów
-- [ ] (Opcjonalnie) Wsparcie `X-Error-Format: problem-details` dla 400/429 — dziś `_extract_api_error_details` parsuje `application/json`; nowy header daje spójny `application/problem+json` wszędzie
-- [ ] Test `tests/test_ksef_client.py` — snapshot nowego `PublicKeyCertificate` schema (pola `certificateId`, `publicKeyId` jako wymagane w response)
+- [x] Wsparcie `X-Error-Format: problem-details` dla 400/429 — nagłówek wysyłany w `session.headers` (`_extract_api_error_details` parsuje `problem+json`); spójny `application/problem+json` wszędzie
+- [x] Test `tests/test_ksef_client.py` — snapshot `PublicKeyCertificate` schema v2.5.0 (`certificateId` + `publicKeyId`, wybór cert `KsefTokenEncryption` spośród wielu usage) — `test_fetch_public_key_snapshot_v25_schema`
+
+### 6) Pełne pokrycie schematów faktur + FA_RR rewrite ✅
+**Cel:** audyt pokrycia pól FA(3) względem opublikowanego XSD, przepisanie FA_RR wg realnego schematu, realne pliki XSD zamiast stubów. _Pełna lista zmian: `CHANGELOG.md` [0.6.0]._
+
+**Schematy (`spec/`):**
+| Schema | Wersja | Namespace | Status |
+|---|---|---|---|
+| FA(3) | v1-0E | `…/2025/06/25/13775/` | aktualny (sha `b646b6b…`), bez zmian |
+| FA(2) | v1-0E | `…/2023/06/29/12648/` | stub → realny XSD |
+| FA_RR(1) | v1-1E | `…/2026/03/06/14189/` | stub → realny XSD; stary `FA_RR_v1-0E` usunięty |
+
+- [x] **FA_RR rewrite** — stary parser niefunkcjonalny: zarejestrowane namespace'y (`…/12978/`, `…/13836/`) nie istnieją na CRD, a wszystkie pola RR (`KwotaVatRR`, `P_15RR`, `OswiadczenieDostawcy`…) były zmyślone. `FA_RRInvoiceXMLParser` przepisany wg realnej struktury: `FakturaRR` / `FakturaRRWiersz`, pola `P_4A-C`/`P_5`/`P_6A-C`/`P_7-11`/`P_11_1/2`/`P_12_1/2`, `DokumentZaplaty`, `NrKontrahenta`, korekty (`Podmiot1K/2K`, `NrFaKorygowany`, `NrKSeF/N`). Role: Podmiot1 = nabywca (skupujący), Podmiot2 = rolnik. Template `invoice_pdf_fa_rr.html.j2` przepisany.
+- [x] **FA(3) — rozszerzone pokrycie** (55 dotąd pomijanych elementów; render w jinja + ReportLab fallback):
+  - korekty: `Podmiot1K`/`Podmiot2K`, `NrFaKorygowany`, `OkresFaKorygowanej`, `NrKSeF`/`NrKSeFN`
+  - znaczniki: `GV`, `JST`, `StatusInfoPodatnika`, `SystemInfo`, `BrakID`, `IDWew`, `IDNabywcy`, `AdresKoresp`
+  - `PodmiotUpowazniony` (+`RolaPU`/`EmailPU`/`TelefonPU`)
+  - płatność: `IPKSeF`, `LinkDoPlatnosci`, `RachunekWlasnyBanku`; `WZ`, `ZwrotAkcyzy`
+  - transport: `WysylkaZ`/`Przez`/`Do`, `AdresPrzewoznika`
+  - negacje: `P_19N`, `P_PMarzyN`, `P_22N`; pełne pola pojazdów `P_22B2-4`/`P_22BT`/`P_22C1`/`P_22D1`/`P_NrWierszaNST`
+  - `ZamowienieWiersz` warianty Z (`UU_IDZ`, `P_12Z_XII`, `GTINZ`…), `Zalacznik/Tabela`
+  - render gap: flagi `FP`/`TP` dodane do szablonu
+- [x] **Drift detection** — `check_ksef_fa_schema.yml` matryca rozszerzona o FA(2) v1-0E i FA_RR(1) v1-1E (CRD + CIRFMF); skan nowych wersji obejmuje `faktury/schemy/FA` + `faktury/schemy/RR`
+- [x] Testy — `test_multi_schema_parser.py`: FA_RR przepisane na realny schemat + `TestFA3ExtendedFields` (61 passed)
+
+### 7) Logowanie przez certyfikat (XAdES)
+**Cel:** alternatywna metoda uwierzytelniania KSeF — podpis dokumentu `AuthTokenRequest` certyfikatem (kwalifikowany podpis/pieczęć lub certyfikat KSeF) zamiast tokenu KSeF. Endpoint `POST /auth/xades-signature` (zwraca 202).
+
+**Flow API (openapi v2 + [uwierzytelnianie.md](https://github.com/CIRFMF/ksef-api/blob/main/uwierzytelnianie.md)):**
+1. `POST /auth/challenge` → `challenge` + `timestamp`
+2. Budowa `AuthTokenRequest` XML (schemat `auth v2-0`/`v2-1`) z `challenge`, `contextIdentifier` (Nip), typem podmiotu
+3. Podpis XAdES (enveloped) kluczem prywatnym certyfikatu
+4. `POST /auth/xades-signature` (`application/xml`) → 202 → `referenceNumber` + `authenticationToken`
+5. `GET /auth/{referenceNumber}` polling — jak w token flow; `authenticationMethodInfo.category = "XadesSignature"`
+6. `POST /auth/token/redeem` → access/refresh token (reużycie istniejącego kodu)
+
+- [x] `app/ksef_client.py`: `_authenticate_certificate_flow()` + `_authenticate_with_xades()` — dispatch w `authenticate()` wg `auth_method`; wspólny challenge/poll/redeem, nowy krok podpisu
+- [x] Budowa + podpis `AuthTokenRequest` (XAdES-BES enveloped, RSA-SHA256) — `app/xades_signer.py`, biblioteka **signxml** (bez systemowych zależności; pull `lxml`)
+- [x] Ładowanie certyfikatu: `.p12`/`.pfx` (PKCS#12) z hasłem — ścieżka w configu, hasło przez `KSEF_CERT_PASSWORD` (`SecretsManager`/Docker secret)
+- [x] Konfiguracja: `ksef.auth_method = "token" | "certificate"` + `ksef.certificate.{path, password, subject_identifier_type}`; walidacja w `config_manager` (token vs certyfikat)
+- [x] Walidacja certyfikatu przed próbą auth — `_validate_certificate` w `load_pkcs12`: blokuje wygasły / jeszcze nieważny certyfikat; dopasowanie NIP do subject best-effort (ostrzeżenie). Testy `TestCertificateValidity` (5)
+- [x] Web UI: upload `.p12`/`.pfx` na stronie `/ui/certificate` (auth-required) — walidacja PKCS#12 hasłem (hasło niezapisywane) + atomowy zapis 0600 do `ksef.certificate.path`; status pliku. *(Przełączenie `auth_method` nadal w `config.json`.)*
+- [x] Testy: mock `/auth/xades-signature`, weryfikacja struktury podpisanego XML (XAdES-BES, rsa-sha256, enveloped), błędne hasło, brak pliku, dispatch — `tests/test_certificate_auth.py` (25 testów)
+- [x] Dokumentacja: [KSEF_CERTIFICATE_AUTH.md](KSEF_CERTIFICATE_AUTH.md)
+- [ ] **Weryfikacja end-to-end** przeciw realnemu KSeF — wymaga prawdziwego certyfikatu (dziś tylko testy mock)
+
+> *(Osobny temat, poza tym wpisem)* Zarządzanie certyfikatami KSeF: `/certificates/enrollments`, `/certificates/query`, `/certificates/retrieve`, `/certificates/{serial}/revoke` — wydawanie i rotacja certyfikatów KSeF.
+
+### 8) Adaptacja KSeF API 2.7.x/2.8.x
+Rollout PRD 2.7.1 + 2.8.0 + 2.8.1 zapowiedziany na 23.09.2026; w dniu zapowiedzi live spec PRD nadal miał powierzchnię 2.6.1 (build `2.8.0-pr-20260917.3`). TEST i DEMO: 2.8.1.
+
+- [x] Baseline OpenAPI TEST/DEMO → 2.8.1 (0.6.4)
+- [x] Eksport: jawne `compressionType: "Zip"` + odrzucenie paczki o innej kompresji (`InvoicePackage.compressionType`) (0.6.4)
+- [x] Log nagłówka `X-System-Warning` — raz na wartość, sanityzowany (0.6.4)
+- [x] Test regresji 403 `problem+json` bez `timestamp` (0.6.4)
+- [x] Eksport: `package: null` przy statusie 200 = nieudane okno zamiast wyjątku całego joba (0.6.4; znalezione w cross-review Codex)
+- [x] Cross-review gałęzi: Codex (GPT) + lokalny qwen3-coder w pętli do zera uwag (2026-09-23)
+- [ ] (Opcjonalnie) sonda `examples/probe_date_range.py` na TEST — czy KSeF przyjmuje pełne 100 dni; dziś aplikacja odpytuje 99 dni z marginesem
+- [x] `dateRange` 90 → 100 dni w `invoice_monitor` i `initial_load_manager` (0.6.5; span 99 dni) — PRD z limitem 100 dni potwierdzony w live spec 25.09.2026
+- [x] Baseline `openapi.json` (PRD) → 2.8.1 (0.6.5)
+- [x] Zależności: cryptography 50.0.1, pytz 2026.4, signxml 5.1, reportlab 5.0.1 (0.6.5)
+- Radar: `EffectiveApiRateLimits.global` (`GET /rate-limits`) — przyszłe limity per IP, dziś wyłączone; docker monitor działa z jednego IP.
+- Poza zakresem: wrapper `/testdata/rate-limits` (endpoint już dostępny na TEST — patrz status v0.6), identyfikatory zbiorcze IZ, limity zamykania sesji, błąd 21184.
+
+Plan: [2026-09-23-ksef-api-2.8-adaptation.md](superpowers/plans/2026-09-23-ksef-api-2.8-adaptation.md)
 
 **Zależności:** v0.5
-**DoD:** monitor wykrywa nowe faktury i wysyła push w jednym tanim API call; artefakty pobierane niezależnie; konfigurowalny interwał pollingu; UPO faktur sprzedażowych pobierane i zapisywane gdy `fetch_upo=true`; klient wysyła `publicKeyId` w `/auth/ksef-token` przed PRD 11.05.2026; specy demo i prod zaktualizowane; testy aktualne.
+**DoD:** monitor wykrywa nowe faktury i wysyła push w jednym tanim API call; artefakty pobierane niezależnie; konfigurowalny interwał pollingu; UPO faktur sprzedażowych pobierane i zapisywane gdy `fetch_upo=true`; klient wysyła `publicKeyId` w `/auth/ksef-token` przed PRD 11.05.2026; logowanie certyfikatem XAdES przez `POST /auth/xades-signature` jako alternatywa dla tokenu; specy demo i prod zaktualizowane; testy aktualne.
+
+**Status (2026-06-28):** wszystkie elementy zaimplementowane i pokryte testami (suite 837). Pozostaje **weryfikacja end-to-end na żywym KSeF**: logowanie certyfikatem (§7) i UPO (§4) — wymaga realnego certyfikatu / tokenu z uprawnieniem `Introspection`; oraz operacyjne potwierdzenie limitów TEST=PRD (§5). Opcjonalny wrapper `/testdata/rate-limits` pominięty (wartość tylko przy testach integracyjnych na żywym env).
 
 ---
 

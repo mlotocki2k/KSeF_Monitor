@@ -18,32 +18,49 @@ branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 
+# Idempotent: tables of later phases may already exist (created by
+# Base.metadata.create_all on older app versions) — see app/database.py.
+def _has_table(name: str) -> bool:
+    return name in sa.inspect(op.get_bind()).get_table_names()
+
+
+def _has_index(table: str, name: str) -> bool:
+    return any(i["name"] == name for i in sa.inspect(op.get_bind()).get_indexes(table))
+
+
+def _has_column(table: str, name: str) -> bool:
+    return any(c["name"] == name for c in sa.inspect(op.get_bind()).get_columns(table))
+
+
 def upgrade() -> None:
     """Add initial_load_jobs table for async historical invoice import tracking."""
-    op.create_table(
-        'initial_load_jobs',
-        sa.Column('id', sa.String(), nullable=False),
-        sa.Column('status', sa.String(), nullable=False, server_default='pending'),
-        sa.Column('subject_types', sa.Text(), nullable=False),
-        sa.Column('date_type', sa.String(), nullable=False, server_default='Invoicing'),
-        sa.Column('start_date', sa.DateTime(), nullable=False),
-        sa.Column('end_date', sa.DateTime(), nullable=False),
-        sa.Column('current_window_from', sa.DateTime(), nullable=True),
-        sa.Column('current_window_to', sa.DateTime(), nullable=True),
-        sa.Column('current_subject_type', sa.String(), nullable=True),
-        sa.Column('windows_total', sa.Integer(), nullable=False, server_default='0'),
-        sa.Column('windows_completed', sa.Integer(), nullable=False, server_default='0'),
-        sa.Column('invoices_imported', sa.Integer(), nullable=False, server_default='0'),
-        sa.Column('invoices_skipped', sa.Integer(), nullable=False, server_default='0'),
-        sa.Column('error_message', sa.Text(), nullable=True),
-        sa.Column('created_at', sa.DateTime(), nullable=False,
-                  server_default=sa.text('CURRENT_TIMESTAMP')),
-        sa.Column('updated_at', sa.DateTime(), nullable=False,
-                  server_default=sa.text('CURRENT_TIMESTAMP')),
-        sa.PrimaryKeyConstraint('id'),
-    )
-    op.create_index('ix_initial_load_jobs_status', 'initial_load_jobs', ['status'])
-    op.create_index('ix_initial_load_jobs_created', 'initial_load_jobs', ['created_at'])
+    if not _has_table('initial_load_jobs'):
+        op.create_table(
+            'initial_load_jobs',
+            sa.Column('id', sa.String(), nullable=False),
+            sa.Column('status', sa.String(), nullable=False, server_default='pending'),
+            sa.Column('subject_types', sa.Text(), nullable=False),
+            sa.Column('date_type', sa.String(), nullable=False, server_default='Invoicing'),
+            sa.Column('start_date', sa.DateTime(), nullable=False),
+            sa.Column('end_date', sa.DateTime(), nullable=False),
+            sa.Column('current_window_from', sa.DateTime(), nullable=True),
+            sa.Column('current_window_to', sa.DateTime(), nullable=True),
+            sa.Column('current_subject_type', sa.String(), nullable=True),
+            sa.Column('windows_total', sa.Integer(), nullable=False, server_default='0'),
+            sa.Column('windows_completed', sa.Integer(), nullable=False, server_default='0'),
+            sa.Column('invoices_imported', sa.Integer(), nullable=False, server_default='0'),
+            sa.Column('invoices_skipped', sa.Integer(), nullable=False, server_default='0'),
+            sa.Column('error_message', sa.Text(), nullable=True),
+            sa.Column('created_at', sa.DateTime(), nullable=False,
+                      server_default=sa.text('CURRENT_TIMESTAMP')),
+            sa.Column('updated_at', sa.DateTime(), nullable=False,
+                      server_default=sa.text('CURRENT_TIMESTAMP')),
+            sa.PrimaryKeyConstraint('id'),
+        )
+    if not _has_index('initial_load_jobs', 'ix_initial_load_jobs_status'):
+        op.create_index('ix_initial_load_jobs_status', 'initial_load_jobs', ['status'])
+    if not _has_index('initial_load_jobs', 'ix_initial_load_jobs_created'):
+        op.create_index('ix_initial_load_jobs_created', 'initial_load_jobs', ['created_at'])
 
 
 def downgrade() -> None:

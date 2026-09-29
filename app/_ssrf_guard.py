@@ -56,6 +56,8 @@ def is_safe_public_url(url: Optional[str], allow_private: bool = False) -> bool:
         except ValueError:
             logger.warning("URL rejected: unparseable IP %r", ip_str[:64])
             return False
+        # CGNAT 100.64.0.0/10 (is_private False) passes on purpose: Tailscale
+        # webhook receivers rely on it without allow_private (issue #64).
         if (ip.is_loopback or ip.is_link_local or ip.is_multicast
                 or ip.is_reserved or ip.is_unspecified
                 or (ip.is_private and not allow_private)):

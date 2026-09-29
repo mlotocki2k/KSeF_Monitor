@@ -70,8 +70,8 @@ class TestCountWindows:
         start = datetime(2024, 1, 1)
         end = datetime(2024, 12, 31)
         count = _count_windows(start, end, ["Subject1"])
-        # ceil(365/90) = 5
-        assert count == 5
+        # effective range 366 d (end + 1 d), 99-day windows → ceil(366/99) = 4
+        assert count == 4
 
     def test_two_subject_types_doubles(self):
         start = datetime(2024, 1, 1)
@@ -79,18 +79,18 @@ class TestCountWindows:
         assert _count_windows(start, end, ["Subject1", "Subject2"]) == 2
 
     def test_max_one_window_span(self):
-        # end - start = 88 days → effective_end = start + 89d → fits one
-        # window (89-day span). 89 calendar days inclusive.
+        # end - start = 98 days → effective_end = start + 99d → fits one
+        # window (99-day span). 99 calendar days inclusive.
         start = datetime(2024, 1, 1)
-        end = start + timedelta(days=88)
+        end = start + timedelta(days=98)
         assert _count_windows(start, end, ["Subject1"]) == 1
 
     def test_one_day_past_window_span_splits(self):
-        # end - start = 89 days (90 calendar days inclusive). Effective
-        # range overflows the 89-day span → 2 windows; the boundary day
+        # end - start = 99 days (100 calendar days inclusive). Effective
+        # range overflows the 99-day span → 2 windows; the boundary day
         # gets captured by the second window's `from`.
         start = datetime(2024, 1, 1)
-        end = start + timedelta(days=89)
+        end = start + timedelta(days=99)
         assert _count_windows(start, end, ["Subject1"]) == 2
 
     def test_same_day_range_is_one_window(self):

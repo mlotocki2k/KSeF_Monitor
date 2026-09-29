@@ -5,8 +5,9 @@ Customize the visual appearance of generated invoice PDFs using HTML/CSS templat
 **New in v0.3** - Invoice PDFs are now rendered from a Jinja2 HTML/CSS template via xhtml2pdf,
 with automatic fallback to the direct ReportLab generator.
 
-**New in v0.5** - Multi-schema support: FA(2), FA_RR, PEF (PEPPOL UBL), UNKNOWN.
-FA_RR uses a dedicated template. Optional CIRFMF microservice integration.
+**Multi-schema support (v0.5; full coverage v0.6):** FA(3), FA(2), FA_RR(1) v1-1E,
+PEF (PEPPOL UBL), UNKNOWN. FA_RR uses a dedicated template (rewritten in v0.6
+against the real schema). Optional CIRFMF microservice integration.
 
 ## How It Works
 
@@ -283,27 +284,37 @@ Use `table` layout for all structural elements (already done in the default temp
 ## FA_RR Template (Faktura VAT RR)
 
 FA_RR invoices (agricultural flat-rate VAT invoices) use a dedicated template
-`invoice_pdf_fa_rr.html.j2` with RR-specific layout.
+`invoice_pdf_fa_rr.html.j2` with RR-specific layout. The parser and template
+target the **real published schema FA_RR(1) v1-1E** (namespace
+`http://crd.gov.pl/wzor/2026/03/06/14189/`), whose body node is `FakturaRR` with
+`FakturaRRWiersz` line items — structurally distinct from FA(3).
+
+> Rewritten in v0.6. Earlier versions registered non-existent namespaces
+> (`…/12978/`, `…/13836/`) and invented field names; FA_RR was non-functional.
 
 ### Additional template variables for FA_RR
 
-The `fa_rr` context dict contains:
+The `fa_rr` context dict contains the RR totals and payment documents:
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `fa_rr.kwota_vat_rr` | str | Flat-rate VAT refund amount |
-| `fa_rr.stawka_vat_rr` | str | Flat-rate VAT refund rate |
-| `fa_rr.p15_rr` | str | Total amount due (with VAT RR) |
-| `fa_rr.data_odbioru` | str | Date of product delivery |
-| `fa_rr.oswiadczenie` | str | Farmer's declaration text |
-| `fa_rr.farmer_pesel` | str | Farmer's PESEL number |
+| `fa_rr.p11_1` | str | Net value of acquired products/services (`P_11_1`) |
+| `fa_rr.p11_2` | str | Flat-rate VAT refund amount (`P_11_2`) |
+| `fa_rr.p12_1` | str | Grand total incl. flat-rate refund (`P_12_1`) |
+| `fa_rr.p12_2` | str | Grand total in words (`P_12_2`) |
+| `fa_rr.dokumenty_zaplaty` | list | Payment documents — `{nr, data}` per `DokumentZaplaty` |
+
+Line items (`items`) use RR-specific fields: `p5` (name), `p6a` (unit),
+`p6b` (quantity), `p6c` (class/quality), `p7` (unit price net), `p8` (net value),
+`p9` (refund rate %), `p10` (refund amount), `p11` (gross value).
 
 Party mapping differs from standard FA:
 
 | Template var | FA_RR meaning |
 |--------------|---------------|
-| `buyer` | Skupujący (Podmiot1 — the purchasing company) |
-| `seller` | Rolnik ryczałtowy (Podmiot2 — the farmer) |
+| `buyer` | Nabywca / skupujący (Podmiot1 — issues the RR invoice) |
+| `farmer` | Rolnik ryczałtowy (Podmiot2 — the supplier) |
+| `seller` | Alias of Podmiot1 — kept so the QR-code builder finds the issuer NIP |
 
 ### Customize FA_RR template
 

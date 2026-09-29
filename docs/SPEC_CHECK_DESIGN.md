@@ -6,7 +6,14 @@ KSeF API jest aktywnie rozwijane przez Ministerstwo Finansów. Zmiany mogą doty
 - **OpenAPI spec** — nowe/zmienione endpointy, parametry, formaty odpowiedzi → łamie `ksef_client.py`
 - **Schemat FA (XSD)** — nowa struktura faktur → łamie parsowanie XML w `invoice_pdf_generator.py` i szablony
 
-Aktualna wersja w repo: API `2.4.0`, schemat `FA(3)_v1-0E`.
+Aktualna wersja w repo: API `2.6.0`; schematy FA: `FA(3)_v1-0E`, `FA(2)_v1-0E`,
+`FA_RR(1)_v1-1E` (realne XSD z CRD + CIRFMF).
+
+> **Stan wdrożenia (v0.6):** drift-detection schematów FA działa jako
+> `.github/workflows/check_ksef_fa_schema.yml` (matryca cron + workflow_dispatch).
+> Od v0.6 matryca obejmuje wszystkie trzy schematy FA (FA(3)/FA(2)/FA_RR(1));
+> sprawdza CRD i `CIRFMF/ksef-docs`, skanuje katalogi `faktury/schemy/FA` + `…/RR`
+> pod nowe wersje, otwiera issue + Pushover przy zmianie hash.
 
 ## Trzy możliwe podejścia
 

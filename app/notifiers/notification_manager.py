@@ -97,9 +97,26 @@ class NotificationManager:
     def _log_to_db(self, event_type: str, channel: str, status: str,
                    title: Optional[str] = None, priority: int = 0,
                    invoice_id: Optional[int] = None, error_message: Optional[str] = None,
-                   dedup_key: Optional[str] = None):
-        """Log notification event to database (if available)."""
+                   dedup_key: Optional[str] = None, db_session=None):
+        """Log notification event to database (if available).
+
+        db_session: the caller's open transaction (invoice notifications). The
+        invoice row is not committed yet and SQLite allows one writer — a second
+        connection would wait on the lock and drop the log row.
+        """
         if not self.db:
+            return
+        if db_session is not None:
+            try:
+                with db_session.begin_nested():
+                    self.db.log_notification(
+                        session=db_session, event_type=event_type, channel=channel,
+                        status=status, title=title, priority=priority,
+                        invoice_id=invoice_id, error_message=error_message,
+                        dedup_key=dedup_key,
+                    )
+            except Exception as e:
+                logger.debug(f"Failed to log notification to DB: {e}")
             return
         session = None
         try:
@@ -130,7 +147,7 @@ class NotificationManager:
                 except Exception:
                     pass
 
-    def send_invoice_notification(self, context: Dict[str, Any]) -> bool:
+    def send_invoice_notification(self, context: Dict[str, Any], db_session=None) -> bool:
         """
         Send invoice notification using templates to all enabled channels.
 
@@ -159,7 +176,7 @@ class NotificationManager:
                     self._log_to_db(
                         event_type="invoice", channel=channel, status="sent",
                         title=context.get("title"), priority=context.get("priority", 0),
-                        invoice_id=invoice_id,
+                        invoice_id=invoice_id, db_session=db_session,
                         dedup_key=f"{ksef_number}:{channel}" if ksef_number else None,
                     )
                 else:
@@ -167,13 +184,13 @@ class NotificationManager:
                     self._log_to_db(
                         event_type="invoice", channel=channel, status="failed",
                         title=context.get("title"), priority=context.get("priority", 0),
-                        invoice_id=invoice_id,
+                        invoice_id=invoice_id, db_session=db_session,
                     )
             except Exception as e:
                 logger.error(f"✗ {notifier.channel_name} invoice notification error: {e}", exc_info=True)
                 self._log_to_db(
                     event_type="invoice", channel=channel, status="failed",
-                    invoice_id=invoice_id, error_message=str(e),
+                    invoice_id=invoice_id, error_message=str(e), db_session=db_session,
                 )
 
         if success_count > 0:
