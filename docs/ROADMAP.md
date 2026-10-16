@@ -508,6 +508,10 @@ Rollout PRD 2.7.1 + 2.8.0 + 2.8.1 zapowiedziany na 23.09.2026; w dniu zapowiedzi
 
 Plan: [2026-09-23-ksef-api-2.8-adaptation.md](superpowers/plans/2026-09-23-ksef-api-2.8-adaptation.md)
 
+**KSeF API 2.9.0** (TEST/DEMO 13.10.2026, PRD 15.10.2026) — bez zmian w kodzie. Zmiany: `ownerPermissions` w odpowiedzi `POST /permissions/query/personal/grants` (endpoint nieużywany) oraz kod `21001` („Nieczytelna treść”) dopisany do tabel błędów 400 większości endpointów, także tych, których używa monitor — według changelogu MF zmiana tylko dokumentacyjna (kod był zwracany już wcześniej).
+
+- [x] Baseline OpenAPI PRD/TEST/DEMO → 2.9.0 (2026-10-16)
+
 **Zależności:** v0.5
 **DoD:** monitor wykrywa nowe faktury i wysyła push w jednym tanim API call; artefakty pobierane niezależnie; konfigurowalny interwał pollingu; UPO faktur sprzedażowych pobierane i zapisywane gdy `fetch_upo=true`; klient wysyła `publicKeyId` w `/auth/ksef-token` przed PRD 11.05.2026; logowanie certyfikatem XAdES przez `POST /auth/xades-signature` jako alternatywa dla tokenu; specy demo i prod zaktualizowane; testy aktualne.
 
