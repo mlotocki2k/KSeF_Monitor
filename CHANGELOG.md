@@ -2,6 +2,16 @@
 
 All notable changes to KSeF Monitor are documented here.
 
+## [Unreleased]
+
+### Changed
+
+- OpenAPI baselines for PROD, TEST and DEMO refreshed to KSeF API 2.9.0 (PROD build
+  `2.9.0-pr-20261015.1`). No code changes: 2.9.0 adds `ownerPermissions` to
+  `POST /permissions/query/personal/grants` (not used by the monitor) and documents error
+  code `21001` on 400 responses of most endpoints, including the ones the monitor calls. Per the
+  MF API changelog the code was already returned before; the client handles any `exceptionCode`.
+
 ## [0.6.5] — 2026-09-25
 
 ### Changed
