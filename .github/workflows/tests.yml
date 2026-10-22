@@ -26,12 +26,15 @@ jobs:
 
       - name: Install system dependencies
         run: |
-          sudo apt-get update
+          # A dead third-party PPA (e.g. Launchpad 503) must not fail the job;
+          # the install below still fails if the packages are really unavailable.
+          if ! sudo apt-get update; then
+            echo "::warning::apt-get update failed, installing from available package indexes"
+          fi
           sudo apt-get install -y libcairo2-dev
 
       - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install pytest pytest-mock httpx
 
@@ -51,12 +54,15 @@ jobs:
 
       - name: Install system dependencies
         run: |
-          sudo apt-get update
+          # A dead third-party PPA (e.g. Launchpad 503) must not fail the job;
+          # the install below still fails if the packages are really unavailable.
+          if ! sudo apt-get update; then
+            echo "::warning::apt-get update failed, installing from available package indexes"
+          fi
           sudo apt-get install -y libcairo2-dev
 
       - name: Install tools
         run: |
-          python -m pip install --upgrade pip
           pip install bandit pip-audit
 
       - name: Run bandit (SAST)

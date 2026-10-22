@@ -18,6 +18,9 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
+      # Matrix jobs share the runner tool cache, so run them one at a time.
+      # Honoured only by Gitea >= 28 (go-gitea/gitea#36357); 1.27 ignores it.
+      max-parallel: 1
       matrix:
         branch: [test, main]
     steps:
@@ -32,15 +35,20 @@ jobs:
           python-version: "3.12"
 
       - name: Install system dependencies
+        shell: bash
         run: |
-          sudo apt-get update
+          set -euo pipefail
+          # A dead third-party PPA (e.g. Launchpad 503) must not fail the job;
+          # the install below still fails if the packages are really unavailable.
+          if ! sudo apt-get update; then
+            echo "::warning::apt-get update failed, installing from available package indexes"
+          fi
           sudo apt-get install -y libcairo2-dev pkg-config
 
       - name: Install requirements
         shell: bash
         run: |
           set -euo pipefail
-          python -m pip install --upgrade pip
           pip install -r requirements.txt
 
       - name: Check outdated packages (direct dependencies only)
